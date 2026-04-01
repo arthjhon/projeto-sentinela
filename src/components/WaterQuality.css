@@ -1,0 +1,107 @@
+.water-quality-section {
+  position: relative;
+  z-index: 10;
+  padding-top: 4rem;
+}
+
+.parameters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.parameter-card {
+  padding: 2rem;
+  border-top: 3px solid transparent;
+  transition: transform 0.3s ease, background 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.parameter-card:hover {
+  transform: translateY(-5px);
+  background: rgba(10, 25, 47, 0.9);
+}
+
+.param-normal { border-top-color: var(--success); }
+.param-warning { border-top-color: var(--warning); }
+.param-danger { border-top-color: var(--danger); }
+
+.param-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.param-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.param-normal .param-icon { color: var(--success); background: rgba(16, 185, 129, 0.1); }
+.param-warning .param-icon { color: var(--warning); background: rgba(245, 158, 11, 0.1); }
+.param-danger .param-icon { color: var(--danger); background: rgba(239, 68, 68, 0.1); }
+
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-normal { color: var(--success); border: 1px solid var(--success); }
+.badge-warning { color: var(--warning); border: 1px solid var(--warning); }
+.badge-danger { color: var(--danger); border: 1px solid var(--danger); }
+
+.param-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.param-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #fff;
+}
+
+.param-value-container {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.param-value {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  font-family: 'Outfit', sans-serif;
+}
+
+.param-normal .param-value { color: var(--success); }
+.param-warning .param-value { color: var(--warning); }
+.param-danger .param-value { color: var(--danger); }
+
+.param-unit {
+  font-size: 1rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.param-desc {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  margin-top: auto;
+}

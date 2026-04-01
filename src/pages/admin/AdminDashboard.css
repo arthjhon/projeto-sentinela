@@ -1,0 +1,302 @@
+.dashboard-content-area {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-header h1 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.page-header p {
+  color: var(--text-muted);
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+}
+
+.metric-card {
+  padding: 1.5rem;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.metric-warning-bg {
+  background: rgba(245, 158, 11, 0.05);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.metric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.metric-header h4 {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.metric-value {
+  font-size: 2rem;
+  font-weight: 700;
+  font-family: 'Outfit', sans-serif;
+  color: #fff;
+}
+
+.metric-trend {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* Charts Grid */
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 1.5rem;
+}
+
+.chart-panel {
+  padding: 1.5rem;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-height: 350px;
+}
+
+.chart-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chart-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chart-title h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Custom CSS Bar Chart */
+.css-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex: 1;
+  padding: 2rem 1rem 0;
+  gap: 1rem;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  border: 1px dashed rgba(255,255,255,0.05);
+}
+
+.css-bar-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  height: 100%;
+  justify-content: flex-end;
+  position: relative;
+}
+
+.css-bar {
+  width: 100%;
+  max-width: 40px;
+  background: linear-gradient(0deg, var(--surface) 0%, var(--primary) 100%);
+  border-radius: 4px 4px 0 0;
+  transition: all 0.5s ease;
+  cursor: pointer;
+  box-shadow: 0 -2px 10px rgba(0, 240, 255, 0.2);
+}
+
+.css-bar:hover {
+  filter: brightness(1.2);
+  box-shadow: 0 -5px 15px rgba(0, 240, 255, 0.4);
+}
+
+.css-bar-tooltip {
+  position: absolute;
+  top: -30px;
+  background: #fff;
+  color: #000;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.2s;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.css-bar-wrapper:hover .css-bar-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.css-bar-label {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Complex Doughnut Chart via CSS SVG */
+.fleet-stats-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+  gap: 2rem;
+}
+
+.fleet-ring-chart {
+  width: 180px;
+  height: 180px;
+}
+
+.circular-chart {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  max-height: 250px;
+}
+
+.circle-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.05);
+  stroke-width: 3.8;
+}
+
+.circle {
+  fill: none;
+  stroke-width: 3.8;
+  stroke-linecap: round;
+  animation: progress 1s ease-out forwards;
+}
+
+.active-stroke { stroke: var(--success); }
+.maint-stroke { stroke: var(--danger); }
+.alert-stroke { stroke: var(--warning); }
+
+.percentage {
+  fill: #fff;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.4em;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.fleet-legends {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0 1rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.legend-val {
+  margin-left: auto;
+  font-weight: 700;
+  color: #fff;
+  font-family: monospace;
+}
+
+/* Alerts */
+.view-panel {
+  padding: 2rem;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.recent-alerts h3 {
+  margin-bottom: 1.5rem;
+  font-size: 1.25rem;
+}
+
+.alert-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.alert-item {
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-left: 4px solid transparent;
+}
+
+.alert-time {
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  min-width: 100px;
+}
+
+.alert-msg {
+  font-size: 0.95rem;
+  color: #e2e8f0;
+}
+
+.warning-item {
+  border-left-color: var(--warning);
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, transparent 100%);
+}
+
+.error-item {
+  border-left-color: var(--danger);
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.1) 0%, transparent 100%);
+}
+
+.success-item {
+  border-left-color: var(--success);
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.1) 0%, transparent 100%);
+}
+
+@keyframes progress {
+  0% { stroke-dasharray: 0 100; }
+}
+
+@media (max-width: 992px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}

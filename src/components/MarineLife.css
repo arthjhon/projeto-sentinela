@@ -1,0 +1,170 @@
+.marine-life-section {
+  position: relative;
+  z-index: 10;
+  padding-top: 6rem;
+  padding-bottom: 6rem;
+  overflow: hidden;
+}
+
+.marine-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+  align-items: center;
+}
+
+.marine-text {
+  max-width: 600px;
+}
+
+.marine-description {
+  font-size: 1.125rem;
+  color: var(--text-muted);
+  line-height: 1.8;
+  margin-bottom: 2.5rem;
+}
+
+.marine-impact-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.impact-item {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.impact-icon-wrapper {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.impact-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--primary);
+}
+
+.impact-icon.warning { color: var(--warning); }
+.impact-icon.success { color: var(--success); }
+
+.impact-item h4 {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.impact-item p {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* Visualization */
+.marine-visual {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.marine-circle-container {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  aspect-ratio: 1/1;
+}
+
+.marine-circle-outer {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,240,255,0.1) 0%, rgba(0,240,255,0) 70%);
+  position: relative;
+  animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sururu-illustration {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: float 5s ease-in-out infinite;
+}
+
+.shell {
+  width: 80px;
+  height: 120px;
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  position: absolute;
+  border: 2px solid #334155;
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+}
+
+.shell-left {
+  transform: rotate(-15deg) translateX(-15px);
+  z-index: 2;
+}
+
+.shell-right {
+  transform: rotate(15deg) translateX(15px);
+  z-index: 1;
+}
+
+.pearl {
+  width: 25px;
+  height: 25px;
+  background: radial-gradient(circle at 30% 30%, #fff, #94a3b8);
+  border-radius: 50%;
+  position: absolute;
+  z-index: 3;
+  box-shadow: 0 0 15px rgba(255,255,255,0.5);
+  animation: glow 3s ease-in-out infinite alternate;
+}
+
+.marine-circle-inner {
+  width: 70%;
+  height: 70%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 40px rgba(0, 240, 255, 0.1);
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+@keyframes glow {
+  from { box-shadow: 0 0 10px rgba(255,255,255,0.3); }
+  to { box-shadow: 0 0 30px rgba(0,240,255,0.8); }
+}
+
+@media (max-width: 992px) {
+  .marine-content {
+    grid-template-columns: 1fr;
+    gap: 3rem;
+  }
+  
+  .marine-visual {
+    order: -1;
+  }
+}
