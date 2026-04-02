@@ -715,3 +715,9 @@
   margin-bottom: 0.5rem;
 }
 
+.input-error {
+  border: 1px solid var(--danger) !important;
+  background: rgba(239, 68, 68, 0.05) !important;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+  outline: none !important;
+}

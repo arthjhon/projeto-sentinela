@@ -49,6 +49,15 @@ Além do monitoramento estuarino, a plataforma é projetada para suportar també
 | **Lucide React** | Biblioteca de ícones leves e consistentes |
 | **CSS Vanilla (Design System próprio)** | Sistema de design autoral com Flexbox, CSS Grid, variáveis CSS (`:root`) e animações via `@keyframes` — sem frameworks externos |
 
+### 🖧 Arquitetura de Dados (Cloud & IoT)
+
+| Tecnologia | Componente |
+|---|---|
+| **Supabase (PostgreSQL)** | Banco de dados relacional em nuvem encarregado da segurança. Protege as rotas, detém o sistema nativo de Autenticação Edge e tabela de perfis (RBAC). Substituiu o armazenamento local. |
+| **Microcontrolador ESP32** | Cérebro embarcado nas bóias responsável pela coleta via sensores. |
+| **Broker MQTT (HiveMQ)** | Estrutura de mensageria leve para tráfego contínuo e pub/sub de telemetria estuarina. |
+| **InfluxDB** | Banco de dados Time-Series (alta capacidade temporal) para abrigar o volume massivo histórico da água. |
+
 <br/>
 
 ## 🛠️ Rodando Localmente
@@ -72,8 +81,25 @@ npm run dev
 O app estará disponível em `http://localhost:5173`.
 
 > **⚠️ Acesso ao painel administrativo**
-> A rota `/admin` está disponível para desenvolvedores locais. O acesso pode ser feito pelo botão oculto na Landing Page ou navegando diretamente para `/admin`.
-> As credenciais de acesso para desenvolvimento estão definidas em variáveis de ambiente (`.env`). Consulte o arquivo `.env.example` na raiz do projeto.
+> A rota `/admin` está disponível para desenvolvedores locais, mas está totalmente protegida via API.
+> As credenciais de acesso para desenvolvimento estão atreladas aos Cofres do Supabase listados abaixo.
+
+<br/>
+
+## ☁️ Configurando o Backend (Supabase)
+
+O painel administrativo do Projeto Sentinela requer um projeto Cloud no Supabase para rodar a Gestão de Usuários com segurança.
+
+1. Crie uma conta e um projeto gratuito no [Supabase Platform](https://supabase.com/).
+2. Copie suas credenciais secretas em *Project Settings -> API*.
+3. Na raiz do projeto, crie o arquivo `.env.local` e injete o motor:
+   ```env
+   VITE_SUPABASE_URL="https://[sua-referencia].supabase.co"
+   VITE_SUPABASE_ANON_KEY="sua_chave_publica_jwt..."
+   ```
+4. **Desabilite E-mails de Confirmação:** Vá em *Authentication* -> *Providers* -> Selecione *Email* e DESLIGUE as travas `Confirm email` e `Secure email change`. (Isso é obrigatório pois o painel utiliza domínios virtuais como `@sentinela.app` para forjar Operadores).
+5. **Esquema de Dados:** Abra a aba *SQL Editor* no painel esquerdo do Supabase, cole o código contido no arquivo `supabase_schema.sql` (na raiz do projeto) e clique em RUN.
+6. **Primeiro Acesso (Bootstrap):** Crie o seu usuário Mestre (*Admin*) manualmente ali mesmo no Supabase indo no botão lateral *Authentication -> Add User*. Coloque seu e-mail verdadeiro e crie uma senha. O Trigger que você ativou no passo cinco assinará sua carteira de administrador no mesmo instante para você entrar na aplicação!
 
 <br/>
 
@@ -94,7 +120,7 @@ O app estará disponível em `http://localhost:5173`.
 - [x] Landing Page com painel analítico
 - [x] Admin Dashboard com CRUD de bóias
 - [x] Modo de manutenção e log de ocorrências
-- [ ] Integração com backend / API de sensores em tempo real
+- [ ] Integração real do Frontend com a API do banco **InfluxDB** e broker MQTT.
 - [ ] Suporte a ambientes de aquicultura (tanques)
 - [ ] Módulo de coletas de campo assistidas
 - [ ] Alertas automáticos por parâmetros fora do padrão

@@ -7,7 +7,10 @@ import {
   Wrench, 
   ActivitySquare,
   BarChart,
-  PieChart
+  PieChart,
+  Thermometer,
+  Droplet,
+  Activity
 } from 'lucide-react';
 import './AdminDashboard.css';
 
@@ -35,6 +38,13 @@ const AdminDashboard = () => {
     { title: 'Em Manutenção', value: '3', icon: Wrench, color: 'danger', desc: 'Previsão: 48 horas' },
   ];
 
+  // Sensor Averages
+  const sensorAverages = [
+    { name: 'Temperatura da Água', value: '27.4', unit: '°C', icon: Thermometer, trend: '+0.2', color: 'var(--danger)' },
+    { name: 'Turbidez Média', value: '12.5', unit: 'NTU', icon: Activity, trend: '-1.5', color: 'var(--warning)' },
+    { name: 'Nível de pH (Médio)', value: '7.6', unit: '', icon: Droplet, trend: '+0.1', color: 'var(--primary)' }
+  ];
+
   return (
     <div className="dashboard-content-area">
       <div className="page-header">
@@ -51,6 +61,24 @@ const AdminDashboard = () => {
             </div>
             <div className="metric-value">{m.value}</div>
             <p className={`metric-trend text-${m.color}`}>{m.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="averages-grid">
+        {sensorAverages.map((sensor, idx) => (
+          <div key={idx} className="avg-card glass">
+            <div className="avg-icon-wrapper" style={{ color: sensor.color, backgroundColor: `color-mix(in srgb, ${sensor.color} 15%, transparent)` }}>
+              <sensor.icon size={28} />
+            </div>
+            <div className="avg-data">
+              <span className="avg-title">{sensor.name}</span>
+              <div className="avg-value-row">
+                <span className="avg-value">{sensor.value}</span>
+                <span className="avg-unit">{sensor.unit}</span>
+              </div>
+              <span className="avg-trend">Variação 24h: <strong style={{ color: sensor.trend.startsWith('+') ? 'var(--warning)' : 'var(--success)'}}>{sensor.trend} {sensor.unit}</strong></span>
+            </div>
           </div>
         ))}
       </div>

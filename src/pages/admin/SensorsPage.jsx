@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useAuth } from './../../contexts/AuthContext';
+import { useToast } from './../../contexts/ToastContext';
+import ConfirmModal from './../../components/ConfirmModal';
 import { Wifi, WifiOff, MapPin, Search, ChevronDown, ChevronUp, Activity, Droplet, Thermometer, Wrench, FileText, CheckCircle2, RotateCw, History, Plus, Edit2, Trash2, X } from 'lucide-react';
 import './SensorsPage.css';
 
@@ -13,10 +16,21 @@ const SensorsPage = () => {
   const [testStatuses, setTestStatuses] = useState({});
   const [maintenanceNotes, setMaintenanceNotes] = useState('');
 
+  // Access Auth Profile & Contexts
+  const { currentUser } = useAuth();
+  const { addToast } = useToast();
+
   // CRUD States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBuoy, setEditingBuoy] = useState(null);
   
+  // Confirmation state
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [buoyToDelete, setBuoyToDelete] = useState(null);
+  
+  // Validation State
+  const [formErrors, setFormErrors] = useState({});
+
   const initialFormData = {
     id: '', name: '', status: 'online', location: 'Lagoa Mundaú', battery: 100, coordinates: ''
   };
@@ -56,6 +70,7 @@ const SensorsPage = () => {
   const handleOpenCreate = () => {
     setEditingBuoy(null);
     setFormData(initialFormData);
+    setFormErrors({});
     setIsModalOpen(true);
   };
 
@@ -69,19 +84,39 @@ const SensorsPage = () => {
       battery: buoy.battery,
       coordinates: buoy.details.coordinates
     });
+    setFormErrors({});
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id) => {
-    if(window.confirm(`Tem certeza que deseja remover permanentemente o sistema de bóia ${id}?`)) {
-      setBuoys(buoys.filter(b => b.id !== id));
-      if(expandedId === id) setExpandedId(null);
-    }
+  const requestDelete = (id) => {
+    setBuoyToDelete(id);
+    setConfirmDeleteOpen(true);
+  };
+
+  const confirmDeleteAction = () => {
+    setBuoys(buoys.filter(b => b.id !== buoyToDelete));
+    if(expandedId === buoyToDelete) setExpandedId(null);
+    addToast("Bóia desconectada e deletada permanentemente da nuvem.", "success");
+    setConfirmDeleteOpen(false);
+    setBuoyToDelete(null);
   };
 
   const handleSaveForm = (e) => {
     e.preventDefault();
     
+    // Custom Validation
+    const errors = {};
+    if (!formData.id.trim()) errors.id = true;
+    if (!formData.name.trim()) errors.name = true;
+    if (!formData.coordinates.trim()) errors.coordinates = true;
+    if (formData.battery === '' || formData.battery === null) errors.battery = true;
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      addToast("Preencha todos os campos destacados em vermelho.", "error");
+      return;
+    }
+
     if(editingBuoy) {
       // Edit
       setBuoys(buoys.map(b => {
@@ -98,6 +133,7 @@ const SensorsPage = () => {
         }
         return b;
       }));
+      addToast("Parâmetros operacionais da bóia alterados.", "success");
     } else {
       // Create
       const newBuoy = {
@@ -114,10 +150,13 @@ const SensorsPage = () => {
           collectionRate: '1 leitur/min'
         },
         sensors: [
-          { name: 'Sensor G', icon: Activity, status: 'online', value: '--' }
+          { name: 'Sensor de OD', icon: Activity, status: 'online', value: '--' },
+          { name: 'Sensor de pH', icon: Droplet, status: 'online', value: '--' },
+          { name: 'Termômetro', icon: Thermometer, status: 'online', value: '--' }
         ]
       };
       setBuoys([...buoys, newBuoy]);
+      addToast("Bóia de Sensoriamento registrada e conectada na rede.", "success");
     }
     
     setIsModalOpen(false);
@@ -146,7 +185,7 @@ const SensorsPage = () => {
   };
 
   const handleSaveMaintenance = (buoyId) => {
-    alert(`Relatório de manutenção para ${buoyId} salvo com sucesso!`);
+    addToast(`Log salvo! A bóia ${buoyId} voltou a operar em modo normal.`, "success");
     setActiveMaintenanceId(null);
     setMaintenanceNotes('');
     const newStatuses = { ...testStatuses };
@@ -197,9 +236,11 @@ const SensorsPage = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button className="btn-primary" onClick={handleOpenCreate}>
-            <Plus size={18} /> Nova Bóia
-          </button>
+          {currentUser?.role === 'admin' && (
+            <button className="btn-primary" onClick={handleOpenCreate}>
+              <Plus size={18} /> Nova Bóia
+            </button>
+          )}
         </div>
       </div>
 
@@ -213,15 +254,15 @@ const SensorsPage = () => {
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleSaveForm} className="crud-modal-body">
+            <form onSubmit={handleSaveForm} className="crud-modal-body" noValidate>
               <div className="form-grid">
                 <div className="form-group">
                   <label>Identificação de Frota (ID)</label>
-                  <input type="text" required value={formData.id} onChange={e => setFormData({...formData, id: e.target.value})} placeholder="Ex: SM-09" />
+                  <input type="text" className={`w-100 ${formErrors.id ? 'input-error' : ''}`} value={formData.id} onChange={e => {setFormData({...formData, id: e.target.value}); setFormErrors({...formErrors, id: false})}} placeholder="Ex: SM-09" />
                 </div>
                 <div className="form-group">
                   <label>Nome Comercial/Apelido</label>
-                  <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Ponto Canal A" />
+                  <input type="text" className={`w-100 ${formErrors.name ? 'input-error' : ''}`} value={formData.name} onChange={e => {setFormData({...formData, name: e.target.value}); setFormErrors({...formErrors, name: false})}} placeholder="Ponto Canal A" />
                 </div>
                 <div className="form-group">
                   <label>Lagoa / Área de Atuação</label>
@@ -233,7 +274,7 @@ const SensorsPage = () => {
                 </div>
                 <div className="form-group">
                   <label>Coordenadas (GPS)</label>
-                  <input type="text" required value={formData.coordinates} onChange={e => setFormData({...formData, coordinates: e.target.value})} placeholder="9°XX'XX S 35°XX'XX W" />
+                  <input type="text" className={`w-100 ${formErrors.coordinates ? 'input-error' : ''}`} value={formData.coordinates} onChange={e => {setFormData({...formData, coordinates: e.target.value}); setFormErrors({...formErrors, coordinates: false})}} placeholder="9°XX'XX S 35°XX'XX W" />
                 </div>
                 <div className="form-group">
                   <label>Status Operacional</label>
@@ -245,7 +286,7 @@ const SensorsPage = () => {
                 </div>
                 <div className="form-group">
                   <label>Bateria Reportada (%)</label>
-                  <input type="number" min="0" max="100" required value={formData.battery} onChange={e => setFormData({...formData, battery: e.target.value})} />
+                  <input type="number" min="0" max="100" className={`w-100 ${formErrors.battery ? 'input-error' : ''}`} value={formData.battery} onChange={e => {setFormData({...formData, battery: e.target.value}); setFormErrors({...formErrors, battery: false})}} />
                 </div>
               </div>
               <div className="crud-modal-footer">
@@ -448,18 +489,25 @@ const SensorsPage = () => {
                               </div>
                             </div>
                             <div className="details-footer" style={{ flexWrap: 'wrap' }}>
-                              <button className="btn-table action-btn" onClick={() => handleOpenEdit(buoy)}>
-                                <Edit2 size={16} /> Editar
-                              </button>
-                              <button className="btn-table action-btn danger-btn" onClick={() => handleDelete(buoy.id)}>
-                                <Trash2 size={16} /> Remover
-                              </button>
+                              {currentUser?.role === 'admin' && (
+                                <>
+                                  <button className="btn-table action-btn" onClick={() => handleOpenEdit(buoy)}>
+                                    <Edit2 size={16} /> Editar
+                                  </button>
+                                  <button className="btn-table action-btn danger-btn" onClick={() => requestDelete(buoy.id)}>
+                                    <Trash2 size={16} /> Remover
+                                  </button>
+                                </>
+                              )}
                               <button className="btn-table action-btn" onClick={() => setActiveHistoryId(buoy.id)}>
                                 <History size={16} /> Histórico de Coletas
                               </button>
-                              <button className="btn-table action-btn maintenance-trigger-btn" onClick={() => setActiveMaintenanceId(buoy.id)}>
-                                <Wrench size={16} /> Entrar em Modo Manutenção
-                              </button>
+                              
+                              {currentUser?.role !== 'visualizador' && (
+                                <button className="btn-table action-btn maintenance-trigger-btn" onClick={() => setActiveMaintenanceId(buoy.id)}>
+                                  <Wrench size={16} /> Entrar em Modo Manutenção
+                                </button>
+                              )}
                             </div>
                           </>
                         )}
@@ -472,6 +520,16 @@ const SensorsPage = () => {
           </tbody>
         </table>
       </div>
+
+      <ConfirmModal 
+        isOpen={confirmDeleteOpen}
+        title="Expurgar Bóia de Sensoriamento"
+        text={`Você irá remover todo o registro físico da bóia do lago da base de dados. Esta ação é irreversível. Deseja prosseguir com o expurgo?`}
+        confirmText="Sim, Expurgar Bóia"
+        onConfirm={confirmDeleteAction}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
+
     </div>
   );
 };

@@ -119,3 +119,46 @@
   text-shadow: none;
   color: var(--primary);
 }
+
+.btn-warning {
+  background: var(--warning);
+  color: #000;
+  border: none;
+  font-weight: 700;
+  transition: all 0.2s;
+  padding: 0.85rem;
+  border-radius: 8px;
+}
+
+.btn-warning:hover {
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
+}
+
+.login-success {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.login-logo.warning {
+  background: rgba(245, 158, 11, 0.1);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
+}
+
+.reset-mode {
+  border-top: 3px solid var(--warning);
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4), 0 0 40px rgba(245, 158, 11, 0.05);
+}
+
+.mt-4 {
+  margin-top: 1.5rem;
+}

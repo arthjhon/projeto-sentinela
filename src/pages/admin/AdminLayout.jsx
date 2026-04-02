@@ -1,11 +1,11 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert } from 'lucide-react';
+import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users } from 'lucide-react';
 import './AdminLayout.css';
 
 const AdminLayout = () => {
-  const { logout } = useAuth();
+  const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -44,14 +44,24 @@ const AdminLayout = () => {
             <ActivitySquare size={20} />
             <span>Sensores e Bóias</span>
           </NavLink>
+
+          {currentUser?.role === 'admin' && (
+            <NavLink 
+              to="/admin/users" 
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            >
+              <Users size={20} />
+              <span>Gerenciar Usuários</span>
+            </NavLink>
+          )}
         </nav>
 
         <div className="sidebar-footer">
           <div className="user-profile">
-            <div className="avatar">A</div>
+            <div className="avatar">{currentUser?.name?.charAt(0).toUpperCase() || 'U'}</div>
             <div className="user-info">
-              <span className="user-name">Administrador</span>
-              <span className="user-role">Sistema Base</span>
+              <span className="user-name">{currentUser?.name || 'Usuário'}</span>
+              <span className="user-role" style={{textTransform: 'capitalize'}}>{currentUser?.role || 'Visitante'}</span>
             </div>
           </div>
           <button onClick={handleLogout} className="logout-btn">
