@@ -19,6 +19,6 @@ jobs:
           script: |
             cd /home/teranex-sentinela/repo
             git pull origin prod
-            npm install --omit=dev
+            npm install
             npm run build
             cp -r dist/* /home/teranex-sentinela/htdocs/sentinela.teranex.inf.br/
