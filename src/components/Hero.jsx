@@ -1,5 +1,6 @@
 import React from 'react';
-import { Droplet } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Droplet, Activity } from 'lucide-react';
 import './Hero.css';
 
 const Hero = () => {
@@ -20,10 +21,10 @@ const Hero = () => {
           Analisando a qualidade da água e o impacto vital na vida marinha do complexo estuarino-lagunar. Dados precisos para preservar nossa biodiversidade e economia local.
         </p>
         
-        <div className="hero-actions animate-fade-in delay-300">
-          <a href="#water-quality" className="btn btn-primary">
-            Ver Indicadores
-          </a>
+        <div className="hero-actions animate-fade-in delay-300" style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+          <Link to="/monitoramento" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.8rem 2rem', fontSize: '1.1rem' }}>
+             <Activity size={20} /> Acessar Analytics
+          </Link>
           <a href="#about" className="btn btn-secondary">
             Conheça o Projeto
           </a>

@@ -1,0 +1,132 @@
+.heart-icon-wrapper {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(255, 59, 59, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pulse-heart 2s infinite ease-in-out;
+}
+
+@keyframes pulse-heart {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 59, 59, 0.4); }
+  70% { transform: scale(1.1); box-shadow: 0 0 0 15px rgba(255, 59, 59, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 59, 59, 0); }
+}
+
+.support-split-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+@media (max-width: 800px) {
+  .support-split-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.support-card {
+  padding: 3rem 2rem;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: center;
+}
+
+.support-card.align-left {
+  text-align: left;
+}
+
+.qr-code-box {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  background: rgba(0,0,0,0.4);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(255,255,255,0.2);
+  overflow: hidden;
+}
+
+.qr-scan-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--primary);
+  box-shadow: 0 0 10px var(--primary);
+  animation: scan-loop 3s infinite linear;
+}
+
+@keyframes scan-loop {
+  0% { top: 0; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.copy-pix-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  max-width: 350px;
+  margin: 0 auto;
+}
+
+.pix-key-text {
+  font-family: monospace;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.btn-copy {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  cursor: pointer;
+  padding: 0.4rem;
+  border-radius: 6px;
+  color: #fff;
+  transition: background 0.2s;
+  display: flex;
+}
+
+.btn-copy:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+.benefits-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.benefits-list li {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.benefit-icon {
+  background: rgba(255,255,255,0.05);
+  padding: 0.8rem;
+  border-radius: 12px;
+  display: flex;
+}
+
+.text-sm {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-top: 0.3rem;
+}

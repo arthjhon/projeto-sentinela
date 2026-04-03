@@ -1,0 +1,172 @@
+/* RADAR TACTICAL MAP */
+.radar-map-container {
+  position: relative;
+  width: 100%;
+  height: 400px;
+  background: #080D15;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 240, 255, 0.1);
+  overflow: hidden;
+  box-shadow: inset 0 0 50px rgba(0,0,0,0.8);
+}
+
+.radar-grid {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image: 
+    linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.grid-line {
+  position: absolute;
+  background: rgba(0, 240, 255, 0.15);
+}
+.grid-line.horizontal {
+  top: 50%; width: 100%; height: 1px;
+}
+.grid-line.vertical {
+  left: 50%; width: 1px; height: 100%;
+}
+
+.radar-sweep {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(from 0deg, transparent 70%, rgba(0, 240, 255, 0.3) 100%);
+  transform-origin: 0 0;
+  animation: sweep 8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* INTERACTIVE PINS */
+.map-pin {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  z-index: 10;
+}
+
+.pin-core {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 8px; height: 8px;
+  background: #00f0ff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 10px #00f0ff;
+}
+
+.pin-pulse {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 24px; height: 24px;
+  transform: translate(-50%, -50%);
+  border: 1px solid #00f0ff;
+  border-radius: 50%;
+  animation: radar-pulse 2s infinite ease-out;
+}
+
+.map-pin.active .pin-pulse {
+  border-color: #ff007f;
+  background: rgba(255, 0, 127, 0.2);
+  animation: radar-pulse 1s infinite ease-out;
+}
+.map-pin.active .pin-core {
+  background: #ff007f;
+  box-shadow: 0 0 10px #ff007f;
+}
+
+@keyframes radar-pulse {
+  0% { width: 8px; height: 8px; opacity: 1; }
+  100% { width: 40px; height: 40px; opacity: 0; }
+}
+
+/* TOOLTIP MODAL */
+.pin-tooltip {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  min-width: 200px;
+  padding: 1rem;
+  background: rgba(10, 15, 25, 0.95);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  border-radius: 8px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.pin-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 10px; height: 10px;
+  background: rgba(10, 15, 25, 0.95);
+  border-right: 1px solid rgba(0, 240, 255, 0.3);
+  border-bottom: 1px solid rgba(0, 240, 255, 0.3);
+}
+
+.tooltip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.8rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.tooltip-header h5 {
+  font-size: 0.9rem;
+  margin: 0;
+  color: #fff;
+}
+
+.live-badge {
+  background: rgba(255, 0, 127, 0.2);
+  color: #ff007f;
+  font-size: 0.6rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 0, 127, 0.5);
+  animation: blink 2s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.tooltip-metrics {
+  display: flex;
+  gap: 1rem;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-weight: 600;
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.metric small {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 0.7rem;
+}
