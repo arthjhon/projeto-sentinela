@@ -23,7 +23,7 @@ const AdminLayout = () => {
         <div className="sidebar-header">
           <div className="admin-logo">
             <img src="/Sentinela%20LOGO.svg" alt="Sentinela" className="sidebar-logo-img" />
-            <span>Admin Sentinela</span>
+            <span>Sentinela</span>
           </div>
         </div>
 
@@ -34,7 +34,7 @@ const AdminLayout = () => {
             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
           >
             <LayoutDashboard size={20} />
-            <span>Painel Geral</span>
+            <span>Dashboard</span>
           </NavLink>
 
           <NavLink 
@@ -42,7 +42,7 @@ const AdminLayout = () => {
             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
           >
             <ActivitySquare size={20} />
-            <span>Sensores e Bóias</span>
+            <span>Bóias</span>
           </NavLink>
 
           {currentUser?.role === 'admin' && (
@@ -51,7 +51,7 @@ const AdminLayout = () => {
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
             >
               <Users size={20} />
-              <span>Gerenciar Usuários</span>
+              <span>Operadores</span>
             </NavLink>
           )}
 
@@ -61,7 +61,7 @@ const AdminLayout = () => {
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
             >
               <Cpu size={20} />
-              <span>Atualização OTA</span>
+              <span>Firmware</span>
             </NavLink>
           )}
         </nav>
@@ -83,7 +83,7 @@ const AdminLayout = () => {
 
       <main className="admin-main">
         <header className="admin-header glass">
-          <h2>Painel de Controle Restrito</h2>
+          <h2>Centro de Comando</h2>
           <div className="header-status">
             <span className="status-dot green"></span>
             Sistema Operacional
