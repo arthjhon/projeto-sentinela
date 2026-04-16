@@ -1,0 +1,349 @@
+/* ═══════════════════════════════════════════════════════
+   OtaPage — Gerenciamento de Firmware OTA
+   Segue o design system do painel admin (glass/dark)
+═══════════════════════════════════════════════════════ */
+
+/* ── Seções ──────────────────────────────────────────── */
+.ota-section {
+  margin-bottom: 2.5rem;
+}
+
+.ota-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 1.25rem;
+}
+
+.mqtt-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  padding: 3px 10px;
+  border-radius: 20px;
+  margin-left: auto;
+}
+.mqtt-indicator.online {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+.mqtt-indicator.offline {
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.08);
+  border: 1px solid rgba(100, 116, 139, 0.15);
+}
+
+/* ── Fleet Grid ──────────────────────────────────────── */
+.ota-fleet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.ota-device-card {
+  padding: 1.1rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: border-color 0.2s;
+}
+.ota-device-card.card-online  { border-color: rgba(34, 197, 94, 0.2); }
+.ota-device-card.card-offline { border-color: rgba(100, 116, 139, 0.15); opacity: 0.75; }
+
+.device-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.device-id-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #00f0ff;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.18);
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.device-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.device-status-dot.online  { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+.device-status-dot.offline { background: #475569; }
+
+.device-name {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin: 0 0 0.75rem;
+}
+
+.device-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+.device-meta span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Barra de progresso OTA na fleet card */
+.device-ota-progress {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.ota-phase-label {
+  display: block;
+  font-size: 0.72rem;
+  color: #00f0ff;
+  margin-bottom: 5px;
+  text-transform: capitalize;
+}
+.ota-progress-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.ota-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.fill-active  { background: #00f0ff; }
+.fill-success { background: #22c55e; }
+.fill-error   { background: #ef4444; }
+
+/* ── Deploy Grid ─────────────────────────────────────── */
+.ota-deploy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+@media (max-width: 900px) {
+  .ota-deploy-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Formulário ──────────────────────────────────────── */
+.ota-form {
+  padding: 1.5rem;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.ota-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.ota-field label {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+.ota-field input,
+.ota-field select,
+.ota-field textarea {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: #fff;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.88rem;
+  outline: none;
+  transition: border-color 0.2s;
+  resize: vertical;
+}
+.ota-field input:focus,
+.ota-field select:focus,
+.ota-field textarea:focus {
+  border-color: rgba(0, 240, 255, 0.35);
+}
+.ota-field select option {
+  background: #0D141F;
+}
+
+.ota-field-warning {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  color: #eab308;
+  margin-top: 2px;
+}
+
+.optional {
+  color: #475569;
+  font-weight: 400;
+}
+
+/* Dropzone do arquivo */
+.ota-file-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  border: 2px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  color: #64748b;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+  text-align: center;
+}
+.ota-file-drop:hover:not(.disabled) {
+  border-color: rgba(0, 240, 255, 0.3);
+  color: #fff;
+}
+.ota-file-drop.has-file {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.04);
+  color: #e2e8f0;
+}
+.ota-file-drop.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.file-name { font-weight: 600; font-size: 0.85rem; }
+.file-size { font-size: 0.75rem; color: #64748b; }
+
+.ota-form-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.25rem;
+}
+
+/* ── Log de Deploy ───────────────────────────────────── */
+.ota-log {
+  padding: 1.25rem;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ota-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.ota-upload-pct {
+  font-family: monospace;
+  color: #00f0ff;
+  font-size: 0.85rem;
+}
+
+.ota-log-body {
+  flex: 1;
+  min-height: 200px;
+  max-height: 320px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+  line-height: 1.7;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ota-log-body::-webkit-scrollbar { width: 4px; }
+.ota-log-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+.ota-log-empty {
+  color: #475569;
+  font-style: italic;
+  margin: auto;
+}
+.ota-log-line       { color: #94a3b8; }
+.ota-log-line.log-success { color: #22c55e; }
+.ota-log-line.log-error   { color: #ef4444; }
+
+/* ── Spin animation ──────────────────────────────────── */
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Modal de confirmação ────────────────────────────── */
+.ota-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(4px);
+}
+.ota-confirm-modal {
+  background: #0D141F;
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  border-radius: 12px;
+  padding: 2rem;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.ota-confirm-icon {
+  margin-bottom: 0.25rem;
+}
+.ota-confirm-modal h3 {
+  font-size: 1.1rem;
+  color: #e2e8f0;
+}
+.ota-confirm-modal p {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  line-height: 1.6;
+}
+.ota-confirm-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  font-size: 0.8rem !important;
+  color: #eab308 !important;
+  background: rgba(234, 179, 8, 0.07);
+  border: 1px solid rgba(234, 179, 8, 0.15);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem !important;
+}
+.ota-confirm-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+}

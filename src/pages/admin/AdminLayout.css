@@ -32,6 +32,14 @@
   letter-spacing: 0.02em;
 }
 
+.sidebar-logo-img {
+  height: 36px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
 .sidebar-nav {
   display: flex;
   flex-direction: column;

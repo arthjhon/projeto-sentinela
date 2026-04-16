@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Droplet, Menu, X, Shield, Users, HeartHandshake, Rocket, Activity } from 'lucide-react';
-import './PublicNavbar.css';
+import { Menu, X, Shield, Users, HeartHandshake, Rocket, Activity } from 'lucide-react';
 import './PublicNavbar.css';
 
 const PublicNavbar = () => {
@@ -26,8 +25,7 @@ const PublicNavbar = () => {
       <div className="navbar-container">
         {/* LOGO */}
         <Link to="/" className="navbar-brand">
-          <img src="/Sentinela.svg" alt="Projeto Sentinela Logo" className="navbar-logo" />
-          <span className="brand-text">Proj. Sentinela</span>
+          <img src="/Sentinela%20LOGO.svg" alt="Projeto Sentinela" className="navbar-logo" />
         </Link>
 
         {/* DESKTOP MENU */}

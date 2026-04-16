@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Droplet, Lock, User, LogIn, KeyRound, ShieldCheck } from 'lucide-react';
+import { Lock, User, LogIn, KeyRound, ShieldCheck } from 'lucide-react';
 import './LoginPage.css';
 
 const LoginPage = () => {
@@ -80,7 +80,7 @@ const LoginPage = () => {
           <>
             <div className="login-header">
               <div className="login-logo">
-                <Droplet size={32} color="var(--primary)" />
+                <img src="/Sentinela%20LOGO.svg" alt="Projeto Sentinela" className="login-logo-img" />
               </div>
               <h2>Acesso Restrito</h2>
               <p>Painel de Controle - Projeto Sentinela</p>

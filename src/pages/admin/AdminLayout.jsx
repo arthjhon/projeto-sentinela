@@ -1,7 +1,7 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users } from 'lucide-react';
+import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users, Cpu } from 'lucide-react';
 import './AdminLayout.css';
 
 const AdminLayout = () => {
@@ -22,7 +22,7 @@ const AdminLayout = () => {
       <aside className="admin-sidebar glass">
         <div className="sidebar-header">
           <div className="admin-logo">
-            <ShieldAlert size={24} className="text-primary" />
+            <img src="/Sentinela%20LOGO.svg" alt="Sentinela" className="sidebar-logo-img" />
             <span>Admin Sentinela</span>
           </div>
         </div>
@@ -46,12 +46,22 @@ const AdminLayout = () => {
           </NavLink>
 
           {currentUser?.role === 'admin' && (
-            <NavLink 
-              to="/admin/users" 
+            <NavLink
+              to="/admin/users"
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
             >
               <Users size={20} />
               <span>Gerenciar Usuários</span>
+            </NavLink>
+          )}
+
+          {currentUser?.role === 'admin' && (
+            <NavLink
+              to="/admin/ota"
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            >
+              <Cpu size={20} />
+              <span>Atualização OTA</span>
             </NavLink>
           )}
         </nav>

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useMqtt } from '../../hooks/useMqtt';
 import { useAuth } from './../../contexts/AuthContext';
 import { useToast } from './../../contexts/ToastContext';
 import ConfirmModal from './../../components/ConfirmModal';
@@ -19,6 +20,51 @@ const SensorsPage = () => {
   // Access Auth Profile & Contexts
   const { currentUser } = useAuth();
   const { addToast } = useToast();
+
+  // --- MQTT: mapeia device_id → buoy_id ---
+  const DEVICE_BUOY_MAP = { 'esp_sururu': 'SM-01' };
+  const { messages, connected } = useMqtt(['esp_sururu/sensores', 'esp_sururu/status']);
+
+  // Atualiza sensores da bóia com dados reais do tópico esp_sururu/sensores
+  useEffect(() => {
+    const data = messages['esp_sururu/sensores'];
+    if (!data) return;
+    const buoyId = DEVICE_BUOY_MAP['esp_sururu'];
+    const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setBuoys(prev => prev.map(b => {
+      if (b.id !== buoyId) return b;
+      return {
+        ...b,
+        status: 'online',
+        lastPing: now,
+        sensors: b.sensors.map(s => {
+          if (s.name === 'Termômetro')   return { ...s, value: `${data.temperatura?.toFixed(1)} °C`, status: 'online' };
+          if (s.name === 'Sensor de pH') return { ...s, value: `${data.ph?.toFixed(2)}`,             status: 'online' };
+          if (s.name === 'Turbidez')     return { ...s, value: `${data.turbidez?.toFixed(2)} NTU`,   status: 'online' };
+          return s;
+        }),
+      };
+    }));
+  }, [messages]);
+
+  // Atualiza detalhes da bóia com dados de status (RSSI, uptime, latência MQTT)
+  useEffect(() => {
+    const data = messages['esp_sururu/status'];
+    if (!data) return;
+    const buoyId = DEVICE_BUOY_MAP['esp_sururu'];
+    setBuoys(prev => prev.map(b => {
+      if (b.id !== buoyId) return b;
+      return {
+        ...b,
+        details: {
+          ...b.details,
+          rssi:        `${data.rssi} dBm`,
+          uptime:      `${Math.floor(data.uptime / 60)} min`,
+          mqttLatency: `${data.mqtt_latency} ms`,
+        },
+      };
+    }));
+  }, [messages]);
 
   // CRUD States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -41,9 +87,9 @@ const SensorsPage = () => {
       id: 'SM-01', name: 'Bóia Mundaú Centro', status: 'online', battery: 85, lastPing: 'Agora', location: 'Lagoa Mundaú',
       details: { coordinates: "9°39'21.1\"S 35°46'12.4\"W", installedAt: '12/05/2023', lastMaintenance: '01/03/2024', collectionRate: '1 leitur/min' },
       sensors: [
-        { name: 'Sensor de OD', icon: Activity, status: 'online', value: '4.5 mg/L' },
-        { name: 'Sensor de pH', icon: Droplet, status: 'online', value: '7.8' },
-        { name: 'Termômetro', icon: Thermometer, status: 'online', value: '28.5 °C' }
+        { name: 'Turbidez',     icon: Activity,    status: 'online', value: '-- NTU' },
+        { name: 'Sensor de pH', icon: Droplet,      status: 'online', value: '--'     },
+        { name: 'Termômetro',   icon: Thermometer,  status: 'online', value: '-- °C'  }
       ]
     },
     { 
@@ -227,11 +273,15 @@ const SensorsPage = () => {
         </div>
         
         <div className="header-actions">
+          <span className={`badge badge-${connected ? 'online' : 'offline'}`} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
+            MQTT {connected ? 'Online' : 'Offline'}
+          </span>
           <div className="search-bar glass">
             <Search size={18} className="text-muted" />
-            <input 
-              type="text" 
-              placeholder="Buscar bóia..." 
+            <input
+              type="text"
+              placeholder="Buscar bóia..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -370,6 +420,24 @@ const SensorsPage = () => {
                             <span className="info-label">Última Manutenção</span>
                             <span className="info-value">{buoy.details.lastMaintenance}</span>
                           </div>
+                          {buoy.details.rssi && (
+                            <div className="info-block">
+                              <span className="info-label">Sinal WiFi (RSSI)</span>
+                              <span className="info-value">{buoy.details.rssi}</span>
+                            </div>
+                          )}
+                          {buoy.details.uptime && (
+                            <div className="info-block">
+                              <span className="info-label">Uptime do Dispositivo</span>
+                              <span className="info-value">{buoy.details.uptime}</span>
+                            </div>
+                          )}
+                          {buoy.details.mqttLatency && (
+                            <div className="info-block">
+                              <span className="info-label">Latência MQTT</span>
+                              <span className="info-value">{buoy.details.mqttLatency}</span>
+                            </div>
+                          )}
                         </div>
 
                         {activeMaintenanceId === buoy.id ? (

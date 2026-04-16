@@ -5,11 +5,12 @@
   left: 0;
   width: 100%;
   z-index: 1000;
-  padding: 0.5rem 2rem;
-  background: rgba(10, 15, 25, 0.7);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(0, 240, 255, 0.1);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+  padding: 0 2rem;
+  background: rgba(10, 15, 25, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(0, 240, 255, 0.08);
+  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.4);
 }
 
 .navbar-container {
@@ -18,39 +19,31 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 60px;
+  height: 68px;
 }
 
 .navbar-brand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
   text-decoration: none;
-  font-family: 'Outfit', sans-serif;
+  flex-shrink: 0;
 }
 
 .navbar-logo {
-  height: 48px;
+  height: 44px;
   width: auto;
   object-fit: contain;
-  filter: brightness(0) invert(1);
-  opacity: 0.95;
-  transition: all 0.3s ease;
+  border-radius: 8px;
+  opacity: 1;
+  transition: transform 0.25s ease, opacity 0.25s ease;
 }
 
 .navbar-brand:hover .navbar-logo {
-  transform: scale(1.05);
+  transform: scale(1.04);
+  opacity: 0.9;
 }
 
-.brand-text {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
-/* DESKTOP MENU */
+/* ── DESKTOP MENU ─────────────────────────────────── */
 .navbar-menu {
   display: flex;
   align-items: center;

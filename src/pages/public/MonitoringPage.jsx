@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Filter, TrendingUp, MapPin } from 'lucide-react';
-import LagoonMap from '../../components/public/LagoonMap';
+import InteractiveMap from '../../components/public/InteractiveMap';
 import './MonitoringPage.css';
 
 const MonitoringPage = () => {
@@ -110,14 +110,16 @@ const MonitoringPage = () => {
               </div>
             </div>
 
-            {/* MAP SECTION */}
+            {/* MAP SECTION — Digital Twin Interativo */}
             <div className="map-section mt-5">
                <div className="map-header mb-3 d-flex-align gap-2 text-white">
-                  <MapPin size={20} color="var(--primary)" /> 
-                  <h3 className="m-0">Mapa de Telemetria e Coleta</h3>
+                  <MapPin size={20} color="var(--primary)" />
+                  <h3 className="m-0">Digital Twin — Mapa de Telemetria</h3>
                </div>
-               <p className="text-muted mb-4" style={{fontSize: '0.9rem'}}>Monitore em tempo real as boias ativas espalhadas pelo complexo estuarino.</p>
-               <LagoonMap activeArea={activeTab} />
+               <p className="text-muted mb-4" style={{ fontSize: '0.9rem' }}>
+                 Bóias plotadas em coordenadas reais do CEMM. Heatmap de qualidade e slider temporal para análise histórica.
+               </p>
+               <InteractiveMap activeArea={activeTab} />
             </div>
 
           </main>

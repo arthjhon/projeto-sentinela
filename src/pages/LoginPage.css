@@ -24,12 +24,17 @@
 }
 
 .login-logo {
-  display: inline-flex;
-  padding: 1rem;
-  background: rgba(0, 240, 255, 0.1);
-  border-radius: 50%;
+  display: flex;
+  justify-content: center;
   margin-bottom: 1rem;
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
+}
+
+.login-logo-img {
+  height: 90px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 10px;
+  filter: drop-shadow(0 0 18px rgba(0, 240, 255, 0.25));
 }
 
 .login-header h2 {
