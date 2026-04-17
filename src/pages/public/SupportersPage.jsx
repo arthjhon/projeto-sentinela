@@ -22,6 +22,15 @@ const SupportersPage = () => {
         </div>
       </div>
 
+      {/* Teranex — parceiro tecnológico */}
+      <div className="umj-card glass animate-fade-in" style={{ animationDelay: '0.15s' }}>
+        <img src="/teranex.svg" alt="Logotipo da Teranex" className="umj-logo teranex-logo" />
+        <div className="umj-info">
+          <h2>Teranex</h2>
+          <p>Parceira tecnológica no fornecimento de infraestrutura, soluções de conectividade e suporte ao desenvolvimento de hardware embarcado para as bóias de monitoramento.</p>
+        </div>
+      </div>
+
       <h3 className="mb-4 text-center">Fomentadores em Tecnologia e Infraestrutura</h3>
 
       <div className="supporters-grid">

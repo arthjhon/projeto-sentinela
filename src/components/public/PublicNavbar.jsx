@@ -42,10 +42,10 @@ const PublicNavbar = () => {
           </ul>
           
           <div className="nav-actions">
-            <Link to="/apoie" className="btn btn-warning nav-btn-apoie">
+            <Link to="/apoie" className="nav-btn-apoie">
               Apoie a Causa
             </Link>
-            <Link to="/login" className="btn btn-outline nav-btn-admin">
+            <Link to="/login" className="nav-btn-admin">
               <Shield size={16} /> Acesso Restrito
             </Link>
           </div>

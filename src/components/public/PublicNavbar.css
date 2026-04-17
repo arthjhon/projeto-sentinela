@@ -88,23 +88,40 @@
 }
 
 .nav-btn-apoie {
-  padding: 0.5rem 1.2rem;
+  padding: 0.45rem 1.2rem;
+  font-size: 0.9rem;
   font-weight: 600;
   border-radius: 20px;
-  box-shadow: 0 0 15px rgba(255, 170, 0, 0.3);
-  transition: box-shadow 0.3s;
+  background: rgba(0, 240, 255, 0.1);
+  color: var(--primary) !important;
+  border: 1px solid rgba(0, 240, 255, 0.35);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.12);
+  transition: background 0.2s, box-shadow 0.2s, text-shadow 0s;
+  text-shadow: none !important;
 }
 .nav-btn-apoie:hover {
-  box-shadow: 0 0 25px rgba(255, 170, 0, 0.5);
+  background: rgba(0, 240, 255, 0.18);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.25);
+  text-shadow: none !important;
 }
 
 .nav-btn-admin {
-  padding: 0.5rem 1rem;
+  padding: 0.45rem 1rem;
   font-size: 0.9rem;
   border-radius: 8px;
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  background: transparent;
+  color: var(--text-muted) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: color 0.2s, border-color 0.2s, text-shadow 0s;
+  text-shadow: none !important;
+}
+.nav-btn-admin:hover {
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, 0.3);
+  text-shadow: none !important;
 }
 
 /* MOBILE TOGGLE */

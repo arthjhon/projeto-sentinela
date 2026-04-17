@@ -6,47 +6,46 @@ const TeamPage = () => {
   const teamMembers = [
     {
       name: 'Arthur Jhonathas',
-      role: 'Desenvolvedor Full Stack & Gestor de Arquitetura',
-      bio: 'Foco no ecossistema de dados em nuvem, integração IoT e experiência em interfaces sensíveis ao contexto.',
+      role: 'Engenheiro de Infraestrutura & IoT',
+      bio: 'Responsável pela hospedagem e manutenção da plataforma web, administração do banco de dados em nuvem e pela camada de comunicação MQTT das bóias de monitoramento.',
       image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Arthur&backgroundColor=00f0ff',
-      tag: 'Tech Lead'
-    },
-    {
-      name: 'Anwar Quirino',
-      role: 'Engenheiro de IoT & Hardware',
-      bio: 'Especialista em hardware e IoT. Responsável pela parte de hardware do projeto.',
-      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Anwar&backgroundColor=00f0ff',
-      tag: 'Hardware'
-    },
-    {
-      name: 'Maycon Vinicius',
-      role: 'Engenheiro de IoT & Hardware',
-      bio: 'Especialista em firmware embarcado (ESP32) e protocolos de sensoriamento remoto estuarino.',
-      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Maycon&backgroundColor=ffaa00',
-      tag: 'Hardware'
-    },
-    {
-      name: 'Luiz Henrique',
-      role: 'Pesquisador em Dados e Calibração',
-      bio: 'Responsável matemático pela filtragem de ruídos do sensor de ph e mapeamento de turbidez profunda.',
-      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Luiz&backgroundColor=ff3b3b',
-      tag: 'Data Science'
-    },
-    {
-      name: 'Marcos Paulo',
-      role: 'Engenheiro Mecatrônico de Campo',
-      bio: 'Projeção estrutural das bóias flutuantes para resistir ao tráfego de canoas e maré do sistema.',
-      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Marcos&backgroundColor=00ff88',
       tag: 'Infraestrutura'
     },
     {
+      name: 'Maycon Vinicius',
+      role: 'Desenvolvedor de Firmware',
+      bio: 'Responsável pela programação do microcontrolador ESP32 embarcado nas bóias, incluindo leitura de sensores, transmissão de dados e atualizações OTA.',
+      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Maycon&backgroundColor=ffaa00',
+      tag: 'Firmware'
+    },
+    {
+      name: 'Anwar Quirino',
+      role: 'Desenvolvedor de Firmware',
+      bio: 'Atua no desenvolvimento e testes do firmware embarcado no ESP32, garantindo a confiabilidade da coleta e envio dos dados dos sensores.',
+      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Anwar&backgroundColor=00f0ff',
+      tag: 'Firmware'
+    },
+    {
+      name: 'Luiz Henque',
+      role: 'Engenheiro de Hardware',
+      bio: 'Responsável pela montagem e integração dos sensores nas bóias, garantindo a correta instalação dos componentes físicos do sistema de monitoramento.',
+      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Luiz&backgroundColor=ff3b3b',
+      tag: 'Hardware'
+    },
+    {
       name: 'Pedro Henrique',
-      role: 'DevOps & Testes de Redundância',
-      bio: 'Análise contínua das falhas MQTT e estruturação da persistência gráfica InfluxDB.',
+      role: 'Engenheiro de Hardware',
+      bio: 'Atua na montagem dos sensores e na validação física dos componentes eletrônicos das bóias de monitoramento estuarino.',
       image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Pedro&backgroundColor=8800ff',
-      tag: 'Segurança'
-    }
-
+      tag: 'Hardware'
+    },
+    {
+      name: 'Marcos Paulo',
+      role: 'Analista de Documentação Técnica',
+      bio: 'Responsável pelo registro e organização de toda a documentação técnica do projeto, desde especificações de hardware até fluxos de software e relatórios acadêmicos.',
+      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Marcos&backgroundColor=00ff88',
+      tag: 'Documentação'
+    },
   ];
 
   return (
@@ -82,11 +81,32 @@ const TeamPage = () => {
         ))}
       </div>
 
+      {/* Orientador */}
+      <div className="advisor-card glass animate-fade-in mt-5">
+        <div className="advisor-avatar">
+          <img
+            src="https://api.dicebear.com/7.x/notionists/svg?seed=PedroLopes&backgroundColor=0a498a"
+            alt="Prof. Pedro Henrique Lopes"
+          />
+        </div>
+        <div className="advisor-info">
+          <span className="member-tag" style={{ marginBottom: '0.5rem', display: 'inline-block' }}>Orientador Acadêmico</span>
+          <h3>Prof. Pedro Henrique de Meneses Bittencourt Lopes</h3>
+          <p className="member-role text-primary" style={{ margin: '0.4rem 0 0.75rem' }}>
+            <GraduationCap size={14} style={{ marginRight: '0.3rem' }} />
+            Engenharia Mecatrônica & Matemática
+          </p>
+          <p className="text-muted" style={{ fontSize: '0.92rem', lineHeight: '1.6' }}>
+            Responsável pela orientação acadêmica e direcionamento científico do Projeto Sentinela, assegurando o rigor técnico e a relevância ambiental da pesquisa aplicada.
+          </p>
+        </div>
+      </div>
+
       <div className="umj-banner glass mt-5 text-center animate-fade-in">
         <GraduationCap size={48} color="var(--primary)" className="mb-3" />
         <h2>Um projeto nascido na Academia</h2>
         <p className="text-muted mt-2">
-          Orgulhosamente desenvolvido pelos laboratórios do Centro Universitário Mário Pontes Jucá (UMJ). 
+          Orgulhosamente desenvolvido pelos laboratórios do Centro Universitário Mário Pontes Jucá (UMJ).
           Nosso compromisso é devolver o progresso tecnológico para nossa comunidade riberinha local.
         </p>
       </div>

@@ -119,6 +119,49 @@
   background: rgba(0, 240, 255, 0.1);
 }
 
+/* ── Advisor card ───────────────────────── */
+.advisor-card {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 2rem 2.5rem;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  background: linear-gradient(135deg, rgba(10, 73, 138, 0.12) 0%, transparent 100%);
+}
+
+.advisor-avatar {
+  flex-shrink: 0;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 240, 255, 0.25);
+  padding: 0.3rem;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.advisor-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.advisor-info h3 {
+  font-size: 1.15rem;
+  color: #fff;
+}
+
+@media (max-width: 600px) {
+  .advisor-card {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 1.5rem;
+    gap: 1.25rem;
+  }
+}
+
+/* ── UMJ banner ─────────────────────────── */
 .umj-banner {
   padding: 3rem 2rem;
   border-radius: 16px;
