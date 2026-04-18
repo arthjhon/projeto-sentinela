@@ -26,7 +26,7 @@ const TeamPage = () => {
       tag: 'Firmware'
     },
     {
-      name: 'Luiz Henque',
+      name: 'Luiz Henrique',
       role: 'Engenheiro de Hardware',
       bio: 'Responsável pela montagem e integração dos sensores nas bóias, garantindo a correta instalação dos componentes físicos do sistema de monitoramento.',
       image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Luiz&backgroundColor=ff3b3b',
@@ -103,7 +103,7 @@ const TeamPage = () => {
       </div>
 
       <div className="umj-banner glass mt-5 text-center animate-fade-in">
-        <GraduationCap size={48} color="var(--primary)" className="mb-3" />
+        <img src="/UMJ.png" alt="Logo UMJ" className="umj-banner-logo" />
         <h2>Um projeto nascido na Academia</h2>
         <p className="text-muted mt-2">
           Orgulhosamente desenvolvido pelos laboratórios do Centro Universitário Mário Pontes Jucá (UMJ).
