@@ -168,3 +168,12 @@
   background: linear-gradient(90deg, rgba(16, 25, 45, 0.8) 0%, rgba(5, 10, 20, 0.9) 100%);
   border: 1px solid rgba(0, 240, 255, 0.2);
 }
+
+.umj-banner-logo {
+  height: 64px;
+  width: auto;
+  object-fit: contain;
+  margin: 0 auto 1.25rem;
+  display: block;
+  filter: brightness(1.1);
+}
