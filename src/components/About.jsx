@@ -36,16 +36,16 @@ const About = () => {
 
       <div className="about-stats glass">
         <div className="stat-item">
-          <span className="stat-value">2</span>
-          <span className="stat-label">Lagoas Monitoradas</span>
+          <span className="stat-value">P&D</span>
+          <span className="stat-label">Fase Atual</span>
         </div>
         <div className="stat-item">
-          <span className="stat-value">Constante</span>
-          <span className="stat-label">Análise de Qualidade</span>
+          <span className="stat-value">1</span>
+          <span className="stat-label">Bóia Protótipo</span>
         </div>
         <div className="stat-item">
-          <span className="stat-value">Milhares</span>
-          <span className="stat-label">Vidas Impactadas</span>
+          <span className="stat-value">5</span>
+          <span className="stat-label">Parâmetros Planejados</span>
         </div>
       </div>
     </section>
