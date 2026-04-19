@@ -3,9 +3,9 @@ import { Heart, Mail, TrendingUp, Cpu, Cloud, Wrench, Copy, CheckCircle2, Waves,
 import './SupportUsPage.css';
 
 const IMPACT_STATS = [
-  { value: '2',    label: 'Lagoas Monitoradas' },
-  { value: '4+',   label: 'Bóias em Operação' },
-  { value: '5',    label: 'Parâmetros da Água' },
+  { value: 'P&D',  label: 'Fase Atual' },
+  { value: '1',    label: 'Bóia Protótipo' },
+  { value: '5',    label: 'Parâmetros Planejados' },
 ];
 
 const FUNDING_ITEMS = [
