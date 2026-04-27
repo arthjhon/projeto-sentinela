@@ -93,9 +93,12 @@ const LoginPage = () => {
                 <div className="input-icon">
                   <User size={18} />
                 </div>
-                <input 
-                  type="text" 
-                  placeholder="Usuário (Ex: admin)" 
+                <input
+                  type="text"
+                  id="username"
+                  name="username"
+                  autoComplete="username"
+                  placeholder="Usuário (Ex: admin)"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
@@ -106,9 +109,12 @@ const LoginPage = () => {
                 <div className="input-icon">
                   <Lock size={18} />
                 </div>
-                <input 
-                  type="password" 
-                  placeholder="Senha" 
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
+                  autoComplete="current-password"
+                  placeholder="Senha"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required

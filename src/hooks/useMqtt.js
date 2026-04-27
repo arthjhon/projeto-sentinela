@@ -1,15 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import mqtt from 'mqtt';
 
-// Configurações do broker HiveMQ Cloud.
-// Adicione estas variáveis ao seu .env.local:
-//   VITE_MQTT_BROKER_URL=wss://be2e9cb2203e45e3a2e11013afc84924.s1.eu.hivemq.cloud:8884/mqtt
-//   VITE_MQTT_USER=esp32
-//   VITE_MQTT_PASS=Admin2023
-const BROKER_URL = import.meta.env.VITE_MQTT_BROKER_URL
-  ?? 'wss://be2e9cb2203e45e3a2e11013afc84924.s1.eu.hivemq.cloud:8884/mqtt';
-const MQTT_USER  = import.meta.env.VITE_MQTT_USER ?? 'esp32';
-const MQTT_PASS  = import.meta.env.VITE_MQTT_PASS ?? 'Admin2023';
+const BROKER_URL = import.meta.env.VITE_MQTT_BROKER_URL;
+const MQTT_USER  = import.meta.env.VITE_MQTT_USER;
+const MQTT_PASS  = import.meta.env.VITE_MQTT_PASS;
 
 /**
  * Hook que mantém uma conexão MQTT persistente com o broker HiveMQ

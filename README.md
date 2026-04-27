@@ -15,7 +15,7 @@
 
 O **Projeto Sentinela** é uma iniciativa de monitoramento ambiental voltada à telemetria em tempo real da qualidade da água nos estuários alagoanos. Bóias flutuantes equipadas com microcontroladores ESP32 coletam dados de campo continuamente e os transmitem via MQTT para uma plataforma web interativa.
 
-O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve essencial para o equilíbrio ecológico do CEMM, para a economia regional e para a subsistência de milhares de famílias riberinhas. A plataforma também é projetada para suportar ambientes de **aquicultura** (tanques de tilápia, camarão e outros organismos aquáticos cujo manejo exige monitoramento frequente da água).
+O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve essencial para o equilíbrio ecológico do CELMM, para a economia regional e para a subsistência de milhares de famílias riberinhas. A plataforma também é projetada para suportar ambientes de **aquicultura** (tanques de tilápia, camarão e outros organismos aquáticos cujo manejo exige monitoramento frequente da água).
 
 <br/>
 
