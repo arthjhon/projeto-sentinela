@@ -69,7 +69,10 @@ const UsersPage = () => {
   };
 
   const generateRandomStr = () => {
-    return Math.random().toString(36).slice(-6).toUpperCase();
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#';
+    const bytes = new Uint8Array(12);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => chars[b % chars.length]).join('');
   };
 
   const handleResetGenerate = (e) => {
@@ -149,7 +152,7 @@ const UsersPage = () => {
       
       if(res.success) {
         if (passwordType === 'random' || generatedPassword) {
-            addToast("Conta Criada na Nuvem! Copie a senha provisória e repasse.", "password", passToSave, false);
+            addToast("Conta Criada na Nuvem! Copie a senha provisória e repasse.", "password", passToSave, 30000);
         } else {
             addToast("Conta Criada! O usuário já pode logar.", "success");
         }

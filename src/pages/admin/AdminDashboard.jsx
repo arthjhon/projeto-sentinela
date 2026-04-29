@@ -8,6 +8,7 @@ import {
   Wifi, WifiOff, Radio,
 } from 'lucide-react';
 import { useMqtt } from '../../hooks/useMqtt';
+import { FLEET, getMqttTopics } from '../../config/fleet';
 import './AdminDashboard.css';
 
 // Mantém os últimos 120 pontos (≈ 10 min com leituras a cada 5 s)
@@ -32,17 +33,17 @@ const ChartTooltip = ({ active, payload, label, unit }) => {
   );
 };
 
+// SM-01 é a bóia de referência do dashboard (única com hardware ativo)
+const SM01 = FLEET.find(b => b.id === 'SM-01');
+
 const AdminDashboard = () => {
-  const { messages, connected } = useMqtt([
-    'esp_sururu/sensores',
-    'esp_sururu/status',
-  ]);
+  const { messages, connected } = useMqtt(getMqttTopics());
 
   // ── Buffer circular de leituras ───────────────────────────────────────────────
   const [buffer, setBuffer]         = useState([]);
   const [activeParam, setActiveParam] = useState('temperatura');
 
-  const sensorMsg = messages['esp_sururu/sensores'];
+  const sensorMsg = SM01?.deviceId ? messages[`${SM01.deviceId}/sensores`] : null;
 
   useEffect(() => {
     if (!sensorMsg) return;
@@ -65,7 +66,7 @@ const AdminDashboard = () => {
 
   // ── Última leitura + status do hardware ──────────────────────────────────────
   const latest     = buffer.at(-1) ?? {};
-  const sm01Online = !!messages['esp_sururu/status'] && connected;
+  const sm01Online = SM01?.deviceId ? (!!messages[`${SM01.deviceId}/status`] && connected) : false;
 
   // ── Estatísticas da sessão (avg / min / max) ──────────────────────────────────
   const stats = useMemo(() => {
@@ -142,8 +143,8 @@ const AdminDashboard = () => {
 
       {/* ── Metric Cards ── */}
       <div className="metrics-grid">
-        {metricCards.map((m, idx) => (
-          <div key={idx} className="metric-card glass" style={m.style}>
+        {metricCards.map((m) => (
+          <div key={m.title} className="metric-card glass" style={m.style}>
             <div className="metric-header">
               <h4>{m.title}</h4>
               <m.icon className={`text-${m.color}`} size={22} />
@@ -160,8 +161,8 @@ const AdminDashboard = () => {
           { name: 'Temperatura Média', key: 'temperatura', unit: '°C',   icon: Thermometer, color: 'var(--danger)'  },
           { name: 'Turbidez Média',    key: 'turbidez',    unit: ' NTU', icon: Activity,    color: 'var(--warning)' },
           { name: 'pH Médio',          key: 'ph',          unit: '',     icon: Droplet,     color: 'var(--primary)' },
-        ].map((s, idx) => (
-          <div key={idx} className="avg-card glass">
+        ].map((s) => (
+          <div key={s.key} className="avg-card glass">
             <div
               className="avg-icon-wrapper"
               style={{

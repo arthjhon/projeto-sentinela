@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import mqtt from 'mqtt';
 
+// Configurações do broker HiveMQ Cloud.
+// Todas as três variáveis são obrigatórias em .env.local:
+//   VITE_MQTT_BROKER_URL=wss://<seu-cluster>.hivemq.cloud:8884/mqtt
+//   VITE_MQTT_USER=<usuario>
+//   VITE_MQTT_PASS=<senha>
 const BROKER_URL = import.meta.env.VITE_MQTT_BROKER_URL;
 const MQTT_USER  = import.meta.env.VITE_MQTT_USER;
 const MQTT_PASS  = import.meta.env.VITE_MQTT_PASS;
+
+if (!BROKER_URL || !MQTT_USER || !MQTT_PASS) {
+  console.error('useMqtt: VITE_MQTT_BROKER_URL, VITE_MQTT_USER e VITE_MQTT_PASS são obrigatórios em .env.local');
+}
 
 /**
  * Hook que mantém uma conexão MQTT persistente com o broker HiveMQ
@@ -20,6 +29,8 @@ export function useMqtt(topics = []) {
   const clientRef = useRef(null);
 
   useEffect(() => {
+    if (!BROKER_URL || !MQTT_USER || !MQTT_PASS) return;
+
     // Gera um clientId único para evitar colisões de sessão
     const clientId = `sentinela_web_${Math.random().toString(16).slice(2, 8)}`;
 
@@ -64,6 +75,20 @@ export function useMqtt(topics = []) {
   }, []); // conecta apenas uma vez — os tópicos são estáveis na montagem
 
   /**
+   * Subscreve em tópicos adicionais após a montagem do hook.
+   * Útil quando novas bóias são cadastradas dinamicamente.
+   * @param {string[]} newTopics
+   */
+  const addTopics = (newTopics) => {
+    if (!newTopics?.length) return;
+    if (clientRef.current?.connected) {
+      clientRef.current.subscribe(newTopics, (err) => {
+        if (err) console.error('MQTT: erro ao subscrever novos tópicos', err);
+      });
+    }
+  };
+
+  /**
    * Publica uma mensagem em um tópico MQTT.
    * @param {string} topic
    * @param {object|string} payload — objeto será serializado em JSON
@@ -78,5 +103,5 @@ export function useMqtt(topics = []) {
     return clientRef.current.publish(topic, msg);
   };
 
-  return { messages, connected, publish };
+  return { messages, connected, publish, addTopics };
 }

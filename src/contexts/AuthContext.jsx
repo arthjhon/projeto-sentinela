@@ -7,7 +7,8 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  
+  const [authError, setAuthError] = useState(null);
+
   // Lista central de usuários
   const [users, setUsers] = useState([]);
 
@@ -38,29 +39,34 @@ export const AuthProvider = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserProfile = async (authUser) => {
+  // Busca o profile do usuário com até 4 tentativas (trigger PostgreSQL pode demorar ms após o signup)
+  const fetchUserProfile = async (authUser, attempt = 0) => {
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', authUser.id)
         .single();
-        
+
       if (profile) {
         setCurrentUser(profile);
         setIsAuthenticated(true);
+        setAuthError(null);
         if (profile.role === 'admin') fetchAdminUsersList();
-      } else if (!error) {
-        // Fallback: Autenticado mas ainda sem profile sync (muito rápido)
-        // Isso acontece pq enviamos o form, o backend auth loga na hora, e a trigger PostgreSQL pode demorar ms.
-        setTimeout(() => fetchUserProfile(authUser), 500); 
-        return;
+      } else if (!error && attempt < 4) {
+        // Profile ainda não foi criado pela trigger — aguarda e tenta novamente
+        setTimeout(() => fetchUserProfile(authUser, attempt + 1), 500);
+        return; // não chama setIsLoading ainda; o retry finaliza
+      } else {
+        // Esgotou tentativas ou erro real no banco
+        setAuthError('Não foi possível carregar seu perfil. Tente fazer login novamente.');
+        console.error('fetchUserProfile falhou:', error);
       }
     } catch (e) {
-      console.error(e);
-    } finally {
-      setIsLoading(false);
+      setAuthError('Erro de conexão ao carregar perfil.');
+      console.error('fetchUserProfile exception:', e);
     }
+    setIsLoading(false);
   };
 
   const fetchAdminUsersList = async () => {
@@ -126,19 +132,16 @@ export const AuthProvider = ({ children }) => {
   };
 
   const deleteAdminUser = async (userId) => {
-    // Exclusão Otimista: Removemos da tela instantaneamente para UX Premium
+    // Exclusão Otimista: remove da tela imediatamente para UX fluida
     setUsers(prev => prev.filter(u => u.id !== userId));
 
-    // A deleção profunda bloqueada na camada auth será feita superficialmente no Profiles,
-    // o que cega e remove o acesso do fulano no sistema (já que tudo bloqueia se não houver Profile)
     const { error } = await supabase.from('profiles').delete().eq('id', userId);
-    
+
     if (!error) {
-       await fetchAdminUsersList(); 
-       return { success: true };
+      return { success: true };
     }
-    
-    // Se falhar na nuvem, busca a lista original de volta (Rollback)
+
+    // Falhou no servidor — desfaz o otimismo buscando a lista original
     await fetchAdminUsersList();
     return { success: false, error: error.message };
   };
@@ -177,11 +180,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      isAuthenticated, 
-      currentUser, 
-      isLoading, 
-      login, 
+    <AuthContext.Provider value={{
+      isAuthenticated,
+      currentUser,
+      isLoading,
+      authError,
+      login,
       logout,
       users,
       setUsers,
