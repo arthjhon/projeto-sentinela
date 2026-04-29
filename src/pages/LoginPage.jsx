@@ -50,8 +50,8 @@ const LoginPage = () => {
     setError('');
     setSuccessMsg('');
 
-    if (newPassword.length < 6) {
-      setError('A nova senha deve ter no mínimo 6 caracteres.');
+    if (newPassword.length < 8) {
+      setError('A nova senha deve ter no mínimo 8 caracteres.');
       return;
     }
     if (newPassword !== confirmPassword) {

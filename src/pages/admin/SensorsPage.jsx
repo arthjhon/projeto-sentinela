@@ -5,12 +5,68 @@ import { useAuth } from './../../contexts/AuthContext';
 import { useToast } from './../../contexts/ToastContext';
 import ConfirmModal from './../../components/ConfirmModal';
 import { Wifi, WifiOff, MapPin, Search, ChevronDown, ChevronUp, Activity, Droplet, Thermometer, Wrench, FileText, CheckCircle2, RotateCw, History, Plus, Edit2, Trash2, X } from 'lucide-react';
+import { FLEET, getMqttTopics } from '../../config/fleet';
 import './SensorsPage.css';
+
+// Mapa de ícones por nome de sensor — usado para reidratar dados do localStorage
+const SENSOR_ICONS = {
+  'Turbidez':     Activity,
+  'Sensor de pH': Droplet,
+  'Termômetro':   Thermometer,
+  'Sensor de OD': Activity,
+};
+
+// Remove funções React (icons) antes de serializar para localStorage
+const dehydrate = (buoys) => buoys.map(({ sensors, ...rest }) => ({
+  ...rest,
+  sensors: sensors.map(({ icon, ...s }) => s),
+}));
+
+// Reinsere os ícones após carregar do localStorage
+const rehydrate = (raw) => raw.map(b => ({
+  ...b,
+  sensors: b.sensors.map(s => ({ ...s, icon: SENSOR_ICONS[s.name] ?? Activity })),
+}));
+
+// Dados iniciais construídos a partir da frota centralizada (fleet.js)
+const INITIAL_BUOYS = FLEET.map(b => ({
+  ...b,
+  deviceId: b.deviceId ?? '',
+  status: 'online',
+  lastPing: b.id === 'SM-02' ? '2 min' : 'Agora',
+  details: {
+    coordinates: b.coordinates,
+    installedAt: b.installedAt,
+    lastMaintenance: b.lastMaintenance,
+    collectionRate: '1 leitur/min',
+  },
+  sensors: b.id === 'SM-01'
+    ? [
+        { name: 'Turbidez',     icon: Activity,   status: 'online', value: '-- NTU' },
+        { name: 'Sensor de pH', icon: Droplet,     status: 'online', value: '--'     },
+        { name: 'Termômetro',   icon: Thermometer, status: 'online', value: '-- °C'  },
+      ]
+    : [
+        { name: 'Sensor de OD', icon: Activity,   status: 'online', value: b.id === 'SM-02' ? '5.1 mg/L' : '6.0 mg/L' },
+        { name: 'Sensor de pH', icon: Droplet,     status: b.id === 'SM-02' ? 'warning' : 'online', value: b.id === 'SM-02' ? '8.2' : '7.2' },
+        { name: 'Termômetro',   icon: Thermometer, status: 'online', value: b.id === 'SM-02' ? '27.9 °C' : '26.8 °C'  },
+      ],
+}));
+
+const STORAGE_KEY = 'sentinela_buoys_v1';
+
+const getInitialBuoys = () => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) return rehydrate(JSON.parse(stored));
+  } catch {}
+  return INITIAL_BUOYS;
+};
 
 const SensorsPage = () => {
   const [expandedId, setExpandedId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   // Maintenance & History
   const [activeMaintenanceId, setActiveMaintenanceId] = useState(null);
   const [activeHistoryId, setActiveHistoryId] = useState(null);
@@ -21,47 +77,46 @@ const SensorsPage = () => {
   const { currentUser } = useAuth();
   const { addToast } = useToast();
 
-  // --- MQTT: mapeia device_id → buoy_id ---
-  const DEVICE_BUOY_MAP = { 'esp_sururu': 'SM-01' };
-  const { messages, connected } = useMqtt(['esp_sururu/sensores', 'esp_sururu/status']);
+  const { messages, connected, addTopics } = useMqtt(getMqttTopics());
 
-  // Atualiza sensores da bóia com dados reais do tópico esp_sururu/sensores
+  // Persiste bóias no localStorage sempre que o estado mudar
   useEffect(() => {
-    const data = messages['esp_sururu/sensores'];
-    if (!data) return;
-    const buoyId = DEVICE_BUOY_MAP['esp_sururu'];
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(dehydrate(buoys)));
+    } catch {}
+  }, [buoys]);
+
+  // Atualiza sensores e status de todas as bóias com deviceId vinculado
+  useEffect(() => {
     const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setBuoys(prev => prev.map(b => {
-      if (b.id !== buoyId) return b;
+      if (!b.deviceId) return b;
+      const sData = messages[`${b.deviceId}/sensores`];
+      const stData = messages[`${b.deviceId}/status`];
+      if (!sData && !stData) return b;
       return {
         ...b,
-        status: 'online',
-        lastPing: now,
-        sensors: b.sensors.map(s => {
-          if (s.name === 'Termômetro')   return { ...s, value: `${data.temperatura?.toFixed(1)} °C`, status: 'online' };
-          if (s.name === 'Sensor de pH') return { ...s, value: `${data.ph?.toFixed(2)}`,             status: 'online' };
-          if (s.name === 'Turbidez')     return { ...s, value: `${data.turbidez?.toFixed(2)} NTU`,   status: 'online' };
-          return s;
-        }),
-      };
-    }));
-  }, [messages]);
-
-  // Atualiza detalhes da bóia com dados de status (RSSI, uptime, latência MQTT)
-  useEffect(() => {
-    const data = messages['esp_sururu/status'];
-    if (!data) return;
-    const buoyId = DEVICE_BUOY_MAP['esp_sururu'];
-    setBuoys(prev => prev.map(b => {
-      if (b.id !== buoyId) return b;
-      return {
-        ...b,
-        details: {
-          ...b.details,
-          rssi:        `${data.rssi} dBm`,
-          uptime:      `${Math.floor(data.uptime / 60)} min`,
-          mqttLatency: `${data.mqtt_latency} ms`,
-        },
+        ...(sData ? {
+          status: 'online',
+          lastPing: now,
+          sensors: b.sensors.map(s => {
+            if (s.name === 'Termômetro')
+              return { ...s, value: sData.temperatura != null ? `${sData.temperatura.toFixed(1)} °C` : '-- °C', status: 'online' };
+            if (s.name === 'Sensor de pH')
+              return { ...s, value: sData.ph != null ? `${sData.ph.toFixed(2)}` : '--', status: 'online' };
+            if (s.name === 'Turbidez')
+              return { ...s, value: sData.turbidez != null ? `${sData.turbidez.toFixed(2)} NTU` : '-- NTU', status: 'online' };
+            return s;
+          }),
+        } : {}),
+        ...(stData ? {
+          details: {
+            ...b.details,
+            rssi:        `${stData.rssi} dBm`,
+            uptime:      `${Math.floor(stData.uptime / 60)} min`,
+            mqttLatency: `${stData.mqtt_latency} ms`,
+          },
+        } : {}),
       };
     }));
   }, [messages]);
@@ -78,39 +133,11 @@ const SensorsPage = () => {
   const [formErrors, setFormErrors] = useState({});
 
   const initialFormData = {
-    id: '', name: '', status: 'online', location: 'Lagoa Mundaú', battery: 100, coordinates: ''
+    id: '', deviceId: '', name: '', status: 'online', location: 'Lagoa Mundaú', battery: 100, coordinates: ''
   };
   const [formData, setFormData] = useState(initialFormData);
 
-  const [buoys, setBuoys] = useState([
-    { 
-      id: 'SM-01', name: 'Bóia Mundaú Centro', status: 'online', battery: 85, lastPing: 'Agora', location: 'Lagoa Mundaú',
-      details: { coordinates: "9°39'21.1\"S 35°46'12.4\"W", installedAt: '12/05/2023', lastMaintenance: '01/03/2024', collectionRate: '1 leitur/min' },
-      sensors: [
-        { name: 'Turbidez',     icon: Activity,    status: 'online', value: '-- NTU' },
-        { name: 'Sensor de pH', icon: Droplet,      status: 'online', value: '--'     },
-        { name: 'Termômetro',   icon: Thermometer,  status: 'online', value: '-- °C'  }
-      ]
-    },
-    { 
-      id: 'SM-02', name: 'Bóia Mundaú Sul', status: 'online', battery: 60, lastPing: '2 min', location: 'Lagoa Mundaú',
-      details: { coordinates: "9°41'10.5\"S 35°47'05.2\"W", installedAt: '20/08/2023', lastMaintenance: '15/02/2024', collectionRate: '1 leitur/min' },
-      sensors: [
-        { name: 'Sensor de OD', icon: Activity, status: 'online', value: '5.1 mg/L' },
-        { name: 'Sensor de pH', icon: Droplet, status: 'warning', value: '8.2' },
-        { name: 'Termômetro', icon: Thermometer, status: 'online', value: '27.9 °C' }
-      ]
-    },
-    { 
-      id: 'MG-01', name: 'Bóia Manguaba Norte', status: 'online', battery: 92, lastPing: 'Agora', location: 'Lagoa Manguaba',
-      details: { coordinates: "9°35'14.2\"S 35°50'22.1\"W", installedAt: '10/01/2024', lastMaintenance: '10/01/2024', collectionRate: '1 leitur/min' },
-      sensors: [
-        { name: 'Sensor de OD', icon: Activity, status: 'online', value: '6.0 mg/L' },
-        { name: 'Sensor de pH', icon: Droplet, status: 'online', value: '7.2' },
-        { name: 'Termômetro', icon: Thermometer, status: 'online', value: '26.8 °C' }
-      ]
-    }
-  ]);
+  const [buoys, setBuoys] = useState(getInitialBuoys);
 
   // CRUD Functions
   const handleOpenCreate = () => {
@@ -124,6 +151,7 @@ const SensorsPage = () => {
     setEditingBuoy(buoy);
     setFormData({
       id: buoy.id,
+      deviceId: buoy.deviceId || '',
       name: buoy.name,
       status: buoy.status,
       location: buoy.location,
@@ -165,11 +193,16 @@ const SensorsPage = () => {
 
     if(editingBuoy) {
       // Edit
+      const newDeviceId = formData.deviceId.trim();
+      if (newDeviceId && newDeviceId !== editingBuoy.deviceId) {
+        addTopics([`${newDeviceId}/sensores`, `${newDeviceId}/status`]);
+      }
       setBuoys(buoys.map(b => {
         if(b.id === editingBuoy.id) {
           return {
             ...b,
             id: formData.id,
+            deviceId: newDeviceId,
             name: formData.name,
             status: formData.status,
             location: formData.location,
@@ -182,8 +215,13 @@ const SensorsPage = () => {
       addToast("Parâmetros operacionais da bóia alterados.", "success");
     } else {
       // Create
+      const newDeviceId = formData.deviceId.trim();
+      if (newDeviceId) {
+        addTopics([`${newDeviceId}/sensores`, `${newDeviceId}/status`]);
+      }
       const newBuoy = {
         id: formData.id,
+        deviceId: newDeviceId,
         name: formData.name,
         status: formData.status,
         battery: Number(formData.battery),
@@ -311,6 +349,10 @@ const SensorsPage = () => {
                   <input type="text" className={`w-100 ${formErrors.id ? 'input-error' : ''}`} value={formData.id} onChange={e => {setFormData({...formData, id: e.target.value}); setFormErrors({...formErrors, id: false})}} placeholder="Ex: SM-09" />
                 </div>
                 <div className="form-group">
+                  <label>Número de Série do Dispositivo</label>
+                  <input type="text" className="w-100" value={formData.deviceId} onChange={e => setFormData({...formData, deviceId: e.target.value})} placeholder="Ex: esp_sururu" style={{ fontFamily: 'monospace' }} />
+                </div>
+                <div className="form-group">
                   <label>Nome Comercial/Apelido</label>
                   <input type="text" className={`w-100 ${formErrors.name ? 'input-error' : ''}`} value={formData.name} onChange={e => {setFormData({...formData, name: e.target.value}); setFormErrors({...formErrors, name: false})}} placeholder="Ponto Canal A" />
                 </div>
@@ -374,6 +416,9 @@ const SensorsPage = () => {
                     <div className={`status-indicator ${buoy.status}`}></div>
                     <span className="sc-id">{buoy.id}</span>
                     <span className="sc-name">{buoy.name}</span>
+                    {buoy.deviceId && (
+                      <span className="sc-serial" title="Número de série / Device ID">{buoy.deviceId}</span>
+                    )}
                   </td>
                   <td onClick={() => toggleRow(buoy.id)}>
                     <span className="sc-location"><MapPin size={14} /> {buoy.location}</span>
@@ -404,6 +449,12 @@ const SensorsPage = () => {
                         {/* Info Header Row moved up since Control Actions is removed */}
 
                         <div className="details-info-grid mt-2">
+                          {buoy.deviceId && (
+                            <div className="info-block">
+                              <span className="info-label">Nº de Série / Device ID</span>
+                              <span className="info-value" style={{ fontFamily: 'monospace', letterSpacing: '0.03em' }}>{buoy.deviceId}</span>
+                            </div>
+                          )}
                           <div className="info-block">
                             <span className="info-label">Coordenadas GPS</span>
                             <span className="info-value">{buoy.details.coordinates}</span>

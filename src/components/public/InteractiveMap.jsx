@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { MapContainer, TileLayer, Circle, CircleMarker, Popup, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useMqtt } from '../../hooks/useMqtt';
+import { FLEET, getMqttTopics } from '../../config/fleet';
 import {
   Thermometer, Droplet, Activity,
   Play, Pause, SkipBack,
@@ -9,28 +10,12 @@ import {
 } from 'lucide-react';
 import './InteractiveMap.css';
 
-// ─── Configuração das bóias (coords reais do CEMM) ────────────────────────────
+// ─── Configuração das bóias para o mapa (coords reais do CEMM) ───────────────
 const BUOYS_CONFIG = [
-  {
-    id: 'SM-01',
-    name: 'Bóia Mundaú Centro',
-    coords: [-9.6559, -35.7701],
-    lagoon: 'mundau',
-    mqttDevice: 'esp_sururu', // única bóia com hardware real por enquanto
-  },
-  {
-    id: 'SM-02',
-    name: 'Bóia Mundaú Sul',
-    coords: [-9.6862, -35.7847],
-    lagoon: 'mundau',
-  },
-  {
-    id: 'MG-01',
-    name: 'Bóia Manguaba Norte',
-    coords: [-9.5873, -35.8394],
-    lagoon: 'manguaba',
-  },
-];
+  { id: 'SM-01', name: 'Bóia Mundaú Centro',  coords: [-9.6559, -35.7701], lagoon: 'mundau'    },
+  { id: 'SM-02', name: 'Bóia Mundaú Sul',      coords: [-9.6862, -35.7847], lagoon: 'mundau'    },
+  { id: 'MG-01', name: 'Bóia Manguaba Norte',  coords: [-9.5873, -35.8394], lagoon: 'manguaba'  },
+].map(b => ({ ...b, deviceId: FLEET.find(f => f.id === b.id)?.deviceId ?? null }));
 
 const PARAMS = [
   { key: 'ph',          label: 'pH',         icon: Droplet,    unit: '' },
@@ -109,8 +94,8 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
   const [liveMode, setLiveMode]           = useState(true);
   const playIntervalRef = useRef(null);
 
-  // MQTT: dados ao vivo da bóia SM-01 via HiveMQ Cloud
-  const { messages, connected } = useMqtt(['esp_sururu/sensores', 'esp_sururu/status']);
+  // MQTT: dados ao vivo de todas as bóias com hardware cadastrado
+  const { messages, connected } = useMqtt(getMqttTopics());
 
   // ── Dados "atuais" (live MQTT ou snapshot histórico) ──────────────────────
   const currentData = useMemo(() => {
@@ -120,9 +105,9 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
     BUOYS_CONFIG.forEach(b => {
       data[b.id] = { ...snapshot.buoys[b.id] };
 
-      // sobrescreve SM-01 com dado real do MQTT quando em modo ao vivo
-      if (liveMode && b.mqttDevice) {
-        const live = messages[`${b.mqttDevice}/sensores`];
+      // sobrescreve com dado real do MQTT quando em modo ao vivo (se tiver hardware)
+      if (liveMode && b.deviceId) {
+        const live = messages[`${b.deviceId}/sensores`];
         if (live) {
           data[b.id] = {
             ...data[b.id],
@@ -242,7 +227,7 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
             const paramVal   = d?.[selectedParam];
             const heatColor  = qualityColor(selectedParam, paramVal);
             const dotColor   = statusColor(d?.status ?? 'online');
-            const isLive     = liveMode && !!buoy.mqttDevice && connected;
+            const isLive     = liveMode && !!buoy.deviceId && connected;
             const param      = PARAMS.find(p => p.key === selectedParam);
 
             return (

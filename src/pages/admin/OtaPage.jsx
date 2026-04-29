@@ -1,29 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMqtt } from '../../hooks/useMqtt';
+import { FLEET, getMqttTopics } from '../../config/fleet';
 import {
   UploadCloud, Cpu, Wifi, WifiOff, CheckCircle2,
   AlertTriangle, RotateCw, Radio, FileCode2, Trash2,
 } from 'lucide-react';
 import './OtaPage.css';
 
-// ─── Bóias conhecidas e seus device IDs MQTT ──────────────────────────────────
-const FLEET = [
-  { id: 'SM-01', name: 'Bóia Mundaú Centro',   mqttDevice: 'esp_sururu' },
-  { id: 'SM-02', name: 'Bóia Mundaú Sul',       mqttDevice: null },  // sem hardware ainda
-  { id: 'MG-01', name: 'Bóia Manguaba Norte',   mqttDevice: null },
-];
-
-// Tópicos: status de cada device + OTA status
-const STATUS_TOPICS = FLEET
-  .filter(b => b.mqttDevice)
-  .map(b => `${b.mqttDevice}/status`);
-
-const OTA_STATUS_TOPICS = FLEET
-  .filter(b => b.mqttDevice)
-  .map(b => `${b.mqttDevice}/ota/status`);
-
-const ALL_TOPICS = [...STATUS_TOPICS, ...OTA_STATUS_TOPICS];
+const ALL_TOPICS = getMqttTopics(['status', 'ota/status']);
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 const OtaPage = () => {
@@ -48,8 +33,8 @@ const OtaPage = () => {
 
   // ── Recebe status OTA do device via MQTT ──
   useEffect(() => {
-    FLEET.filter(b => b.mqttDevice).forEach(buoy => {
-      const otaData = messages[`${buoy.mqttDevice}/ota/status`];
+    FLEET.filter(b => b.deviceId).forEach(buoy => {
+      const otaData = messages[`${buoy.deviceId}/ota/status`];
       if (!otaData) return;
 
       const status = otaData.status;
@@ -83,7 +68,7 @@ const OtaPage = () => {
     if (!firmwareFile || !firmwareVersion.trim()) return;
 
     const target = FLEET.find(b => b.id === targetBuoyId);
-    if (!target?.mqttDevice) {
+    if (!target?.deviceId) {
       appendLog('ERRO: bóia selecionada não possui dispositivo MQTT associado.');
       return;
     }
@@ -116,7 +101,7 @@ const OtaPage = () => {
 
       // ─── 3. Envia comando OTA via MQTT ────────────────────────────────────
       setPhase('sending');
-      const cmdTopic = `${target.mqttDevice}/ota/command`;
+      const cmdTopic = `${target.deviceId}/ota/command`;
       const cmd = { url: publicUrl, version: firmwareVersion };
       const sent = publish(cmdTopic, cmd);
 
@@ -144,11 +129,11 @@ const OtaPage = () => {
 
   // ─── Dados ao vivo de cada bóia ──────────────────────────────────────────
   const fleetStatus = FLEET.map(buoy => {
-    if (!buoy.mqttDevice) {
+    if (!buoy.deviceId) {
       return { ...buoy, online: false, firmware: 'N/A', rssi: null, uptime: null };
     }
-    const status = messages[`${buoy.mqttDevice}/status`];
-    const otaSt  = messages[`${buoy.mqttDevice}/ota/status`];
+    const status = messages[`${buoy.deviceId}/status`];
+    const otaSt  = messages[`${buoy.deviceId}/ota/status`];
     return {
       ...buoy,
       online:   !!status,
@@ -162,7 +147,7 @@ const OtaPage = () => {
 
   const targetBuoy = FLEET.find(b => b.id === targetBuoyId);
   const targetOnline = fleetStatus.find(b => b.id === targetBuoyId)?.online ?? false;
-  const canDeploy = firmwareFile && firmwareVersion.trim() && targetBuoy?.mqttDevice && phase === 'idle';
+  const canDeploy = firmwareFile && firmwareVersion.trim() && targetBuoy?.deviceId && phase === 'idle';
 
   return (
     <div className="dashboard-content-area">
@@ -194,7 +179,7 @@ const OtaPage = () => {
                 <span><FileCode2 size={13} /> {buoy.firmware}</span>
                 {buoy.rssi    && <span><Wifi size={13} /> {buoy.rssi} dBm</span>}
                 {buoy.uptime  && <span><RotateCw size={13} /> {buoy.uptime}</span>}
-                {!buoy.mqttDevice && <span className="text-muted">Sem hardware</span>}
+                {!buoy.deviceId && <span className="text-muted">Sem hardware</span>}
               </div>
 
               {/* Barra de progresso de OTA ativa nesta bóia */}
@@ -234,12 +219,12 @@ const OtaPage = () => {
                 disabled={phase !== 'idle'}
               >
                 {FLEET.map(b => (
-                  <option key={b.id} value={b.id} disabled={!b.mqttDevice}>
-                    {b.id} — {b.name}{!b.mqttDevice ? ' (sem hardware)' : ''}
+                  <option key={b.id} value={b.id} disabled={!b.deviceId}>
+                    {b.id} — {b.name}{!b.deviceId ? ' (sem hardware)' : ''}
                   </option>
                 ))}
               </select>
-              {targetBuoy?.mqttDevice && !targetOnline && (
+              {targetBuoy?.deviceId && !targetOnline && (
                 <span className="ota-field-warning">
                   <AlertTriangle size={13} /> Dispositivo offline — o comando será enviado mas o device precisa estar conectado ao broker.
                 </span>

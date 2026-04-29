@@ -152,6 +152,17 @@
   font-weight: 500;
 }
 
+.sc-serial {
+  font-family: monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+}
+
 .sc-location {
   display: inline-flex;
   align-items: center;
