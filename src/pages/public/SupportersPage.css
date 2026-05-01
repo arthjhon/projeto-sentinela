@@ -1,5 +1,5 @@
 .supporters-page {
-  max-width: 900px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 3rem 2rem;
 }
@@ -19,7 +19,7 @@
   border-radius: 16px;
   border: 1px solid rgba(0, 240, 255, 0.2);
   background: linear-gradient(135deg, rgba(0, 240, 255, 0.05) 0%, transparent 100%);
-  margin-bottom: 3rem;
+  margin-bottom: 2rem;
 }
 
 .umj-logo {
@@ -49,6 +49,33 @@
   border-radius: 10px;
 }
 
+.kodelab-logo-wrap {
+  flex-shrink: 0;
+  width: 96px;
+  height: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.75rem;
+  border-radius: 12px;
+  box-sizing: border-box;
+}
+
+.kodelab-icon-img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.kodelab-text-img {
+  width: 80px;
+  height: auto;
+  object-fit: contain;
+}
+
 @media (max-width: 600px) {
   .umj-card {
     flex-direction: column;
@@ -67,31 +94,90 @@
   }
 }
 
-/* ── Tech grid ──────────────────────────── */
-.supporters-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1.5rem;
+/* ── Sections ───────────────────────────── */
+.sp-section {
   margin-bottom: 3rem;
 }
 
-.supporter-card {
-  padding: 1.75rem 1.5rem;
+.sp-section-title {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+/* ── Impact grid ────────────────────────── */
+.impact-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+}
+
+.impact-card {
+  padding: 1.5rem 1rem;
   border-radius: 14px;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
 }
 
-.supporter-card h4 {
+.impact-number {
+  font-size: 2rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--primary), #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+}
+
+.impact-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+@media (max-width: 600px) {
+  .impact-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ── Areas / Como apoiar grid ───────────── */
+.areas-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+
+.area-card {
+  padding: 1.5rem;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.area-card h4 {
   font-size: 1rem;
   font-weight: 600;
-  margin: 0.75rem 0 0.5rem;
   color: #fff;
+  margin: 0;
 }
 
-.supporter-card p {
+.area-card p {
   color: var(--text-muted);
   font-size: 0.875rem;
   line-height: 1.6;
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .areas-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── CTA footer ─────────────────────────── */
