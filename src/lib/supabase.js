@@ -19,7 +19,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // sem derrubar a sessão ativa (comportamento nativo do Supabase).
 export const supabaseCreateUser = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: false,
-    autoRefreshToken: false,
+    persistSession: false,    // Não escreve no localStorage
+    autoRefreshToken: false,  // Não vira sessão primária
+    storageKey: 'sb-sentinela-create-user', // Chave isolada para evitar conflito com o cliente principal
   }
 })

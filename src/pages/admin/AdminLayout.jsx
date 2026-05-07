@@ -68,7 +68,7 @@ const AdminLayout = () => {
 
         <div className="sidebar-footer">
           <div className="user-profile">
-            <div className="avatar">{currentUser?.name?.charAt(0).toUpperCase() || 'U'}</div>
+            <div className="avatar">{currentUser?.name?.charAt(0)?.toUpperCase() || 'U'}</div>
             <div className="user-info">
               <span className="user-name">{currentUser?.name || 'Usuário'}</span>
               <span className="user-role" style={{textTransform: 'capitalize'}}>{currentUser?.role || 'Visitante'}</span>
