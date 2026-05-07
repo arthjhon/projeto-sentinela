@@ -79,6 +79,25 @@ const SensorsPage = () => {
 
   const { messages, connected, addTopics } = useMqtt(getMqttTopics());
 
+  // Declarado antes dos useEffects que dependem de buoys
+  const [buoys, setBuoys] = useState(getInitialBuoys);
+
+  // CRUD States
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingBuoy, setEditingBuoy] = useState(null);
+
+  // Confirmation state
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [buoyToDelete, setBuoyToDelete] = useState(null);
+
+  // Validation State
+  const [formErrors, setFormErrors] = useState({});
+
+  const initialFormData = {
+    id: '', deviceId: '', name: '', status: 'online', location: 'Lagoa Mundaú', battery: 100, coordinates: ''
+  };
+  const [formData, setFormData] = useState(initialFormData);
+
   // Persiste bóias no localStorage sempre que o estado mudar
   useEffect(() => {
     try {
@@ -120,24 +139,6 @@ const SensorsPage = () => {
       };
     }));
   }, [messages]);
-
-  // CRUD States
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingBuoy, setEditingBuoy] = useState(null);
-  
-  // Confirmation state
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [buoyToDelete, setBuoyToDelete] = useState(null);
-  
-  // Validation State
-  const [formErrors, setFormErrors] = useState({});
-
-  const initialFormData = {
-    id: '', deviceId: '', name: '', status: 'online', location: 'Lagoa Mundaú', battery: 100, coordinates: ''
-  };
-  const [formData, setFormData] = useState(initialFormData);
-
-  const [buoys, setBuoys] = useState(getInitialBuoys);
 
   // CRUD Functions
   const handleOpenCreate = () => {
