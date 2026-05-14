@@ -145,14 +145,35 @@ O app estará disponível em `http://localhost:5173`.
 - [x] OTA firmware via MQTT + Supabase Storage
 - [x] Design responsivo (mobile-first)
 - [x] Ilustração SVG animada do ecossistema estuarino
+- [x] Mapa interativo de localização das bóias
+- [x] Página de Apoiadores do projeto
+- [x] Pipeline de deploy automatizado (GitHub Actions + cloudflared)
+- [x] Versionamento de firmware (v0 original → v1 bugfix → v2 OTA)
 
 ### Próximos passos
+
+#### Observabilidade
+- [ ] Stack Grafana + InfluxDB + Telegraf para histórico de leituras e dashboards avançados
+- [ ] Dashboard Grafana público para transparência dos dados sem necessidade de login
+- [ ] Retenção e downsampling configurável no InfluxDB
+
+#### Alertas
+- [ ] Alertas automáticos quando parâmetros saírem do padrão (temperatura, pH, turbidez)
+- [ ] Notificações por e-mail e/ou WhatsApp para a equipe em casos críticos
+- [ ] Calibração remota de sensores via MQTT
+
+#### Dados e Relatórios
+- [ ] Exportação de dados em CSV e PDF para relatórios acadêmicos
+- [ ] Histórico detalhado de leituras por bóia com filtros por período
+
+#### Hardware e Campo
 - [ ] Módulo 4G/LTE (SIM7600) — conectividade direta em campo, sem dependência de Wi-Fi
 - [ ] Sensores EZO-DO (oxigênio dissolvido) e EZO-EC (salinidade/condutividade)
 - [ ] Modelagem e impressão 3D da case IP67 das bóias
-- [ ] Suporte completo a ambientes de aquicultura (tanques de tilápia, camarão, etc.)
-- [ ] Alertas automáticos por parâmetros fora do padrão
 - [ ] Módulo de coletas de campo assistidas por GPS
+
+#### Aquicultura
+- [ ] Suporte completo a ambientes de aquicultura (tanques de tilápia, camarão, etc.)
 
 <br/>
 
