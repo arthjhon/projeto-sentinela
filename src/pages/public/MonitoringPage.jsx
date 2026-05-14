@@ -1,130 +1,196 @@
-import React, { useState } from 'react';
-import { Filter, TrendingUp, MapPin } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Wifi, WifiOff, Thermometer, Droplet, Activity, Radio, MapPin } from 'lucide-react';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer,
+} from 'recharts';
+import { useMqtt } from '../../hooks/useMqtt';
+import { FLEET, getMqttTopics } from '../../config/fleet';
 import InteractiveMap from '../../components/public/InteractiveMap';
 import './MonitoringPage.css';
 
-const MonitoringPage = () => {
-  const [activeTab, setActiveTab] = useState('mundau');
+const PARAMS = [
+  { key: 'temperatura', label: 'Temperatura', unit: '°C',  decimals: 1, icon: Thermometer, color: '#ff7043' },
+  { key: 'ph',          label: 'pH',          unit: '',    decimals: 2, icon: Droplet,     color: '#00f0ff' },
+  { key: 'turbidez',    label: 'Turbidez',    unit: 'NTU', decimals: 1, icon: Activity,    color: '#b388ff' },
+];
 
-  const chartData = [
-    { day: 'Seg', height: '30%' },
-    { day: 'Ter', height: '40%' },
-    { day: 'Qua', height: '70%' },
-    { day: 'Qui', height: '65%' },
-    { day: 'Sex', height: '55%' },
-    { day: 'Sáb', height: '35%' },
-    { day: 'Dom', height: '50%' },
-  ];
+const BUOYS = FLEET.map(b => ({
+  id: b.id,
+  name: b.name,
+  deviceId: b.deviceId,
+  location: b.location,
+}));
+
+const MAX_HISTORY = 30;
+
+const MonitoringPage = () => {
+  const [selectedBuoy, setSelectedBuoy] = useState(BUOYS[0]);
+  const [chartParam, setChartParam]     = useState('temperatura');
+  const [history, setHistory]           = useState([]);
+
+  const { messages, connected } = useMqtt(getMqttTopics(['sensores', 'status']));
+
+  const sensorTopic = selectedBuoy.deviceId ? `${selectedBuoy.deviceId}/sensores` : null;
+  const latestData  = sensorTopic ? messages[sensorTopic] : null;
+
+  useEffect(() => {
+    if (!latestData) return;
+    const point = {
+      time:        new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      temperatura: latestData.temperatura ?? null,
+      ph:          latestData.ph          ?? null,
+      turbidez:    latestData.turbidez    ?? null,
+    };
+    setHistory(prev => [...prev, point].slice(-MAX_HISTORY));
+  }, [latestData]);
+
+  useEffect(() => { setHistory([]); }, [selectedBuoy.id]);
+
+  const isLive        = connected && !!selectedBuoy.deviceId;
+  const activeParam   = PARAMS.find(p => p.key === chartParam);
+  const activeArea    = selectedBuoy.location.includes('Mundaú') ? 'mundau' : 'manguaba';
 
   return (
-    <div className="public-page-container flex-centered">
-      <div className="analytics-window animate-fade-in">
-        
-        {/* HEADER */}
-        <div className="analytics-header">
-          <div className="mac-dots">
-            <div className="dot red"></div>
-            <div className="dot yellow"></div>
-            <div className="dot green"></div>
+    <div className="monitoring-page">
+
+      {/* ── Header ───────────────────────────────────────────── */}
+      <div className="mon-header">
+        <div className="mon-title-group">
+          <div className={`live-badge ${isLive ? 'live' : 'offline'}`}>
+            <span className="live-dot" />
+            {isLive ? 'AO VIVO' : selectedBuoy.deviceId ? 'SEM SINAL' : 'SEM HARDWARE'}
           </div>
-          <div className="header-title">Sentinela Analytics v1.5</div>
-          <div className="header-actions">
-            <select className="select-dark">
-              <option>Últimos 7 dias</option>
-              <option>Últimos 30 dias</option>
-            </select>
-            <button className="btn-filter">
-              <Filter size={16} /> Filtros
-            </button>
-          </div>
+          <h1 className="mon-title">Monitoramento Estuarino</h1>
+          <p className="mon-subtitle">CEMM — Complexo Estuarino Mundaú-Manguaba, Alagoas</p>
         </div>
-
-        {/* BODY */}
-        <div className="analytics-body">
-          
-          {/* SIDEBAR */}
-          <aside className="analytics-sidebar">
-            <nav className="sidebar-nav">
-              <button 
-                className={`side-link ${activeTab === 'mundau' ? 'active' : ''}`}
-                onClick={() => setActiveTab('mundau')}
-              >
-                Área: Mundaú
-              </button>
-              <button 
-                className={`side-link ${activeTab === 'manguaba' ? 'active' : ''}`}
-                onClick={() => setActiveTab('manguaba')}
-              >
-                Área: Manguaba
-              </button>
-              <button 
-                className={`side-link ${activeTab === 'comparativo' ? 'active' : ''}`}
-                onClick={() => setActiveTab('comparativo')}
-              >
-                Comparativo
-              </button>
-            </nav>
-            <div className="sidebar-footer">
-              <button className="side-link reports-btn">
-                <TrendingUp size={16} /> Relatórios
-              </button>
-            </div>
-          </aside>
-
-          {/* MAIN CONTENT */}
-          <main className="analytics-content scrollable">
-            
-            <div className="top-dashboard-section">
-              {/* CHART CARD */}
-              <div className="analytics-card chart-card">
-                <div className="card-header-flex">
-                  <h3 className="text-white">Variação de Qualidade (Índice Geral) - {activeTab === 'mundau' ? 'Mundaú' : 'Manguaba'}</h3>
-                  <span className="badge-dark">Últimos 7 dias</span>
-                </div>
-                
-                <div className="bar-chart-container">
-                  {chartData.map((data, index) => (
-                    <div key={index} className="bar-wrapper">
-                      <div className="bar-fill" style={{ height: data.height }}></div>
-                      <span className="bar-label">{data.day}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* STATS ROW */}
-              <div className="stats-row">
-                <div className="stat-box box-cyan-edge">
-                  <span className="stat-label-upper">SENSORES ATIVOS ({activeTab.toUpperCase()})</span>
-                  <div className="stat-value text-success">
-                    {activeTab === 'mundau' ? '14' : '8'}
-                  </div>
-                </div>
-                
-                <div className="stat-box box-cyan-fade">
-                  <span className="stat-label-upper">AMOSTRAS FILTRADAS</span>
-                  <div className="stat-value text-white">
-                    {activeTab === 'mundau' ? '8.4k' : '3.1k'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* MAP SECTION — Digital Twin Interativo */}
-            <div className="map-section mt-5">
-               <div className="map-header mb-3 d-flex-align gap-2 text-white">
-                  <MapPin size={20} color="var(--primary)" />
-                  <h3 className="m-0">Digital Twin — Mapa de Telemetria</h3>
-               </div>
-               <p className="text-muted mb-4" style={{ fontSize: '0.9rem' }}>
-                 Bóias plotadas em coordenadas reais do CEMM. Heatmap de qualidade e slider temporal para análise histórica.
-               </p>
-               <InteractiveMap activeArea={activeTab} />
-            </div>
-
-          </main>
+        <div className={`mqtt-status ${connected ? 'connected' : 'disconnected'}`}>
+          {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
+          MQTT {connected ? 'Online' : 'Offline'}
         </div>
       </div>
+
+      {/* ── Seletor de bóias ─────────────────────────────────── */}
+      <div className="buoy-selector">
+        {BUOYS.map(b => {
+          const hasHw    = !!b.deviceId;
+          const isOnline = hasHw && connected;
+          return (
+            <button
+              key={b.id}
+              className={`buoy-tab ${selectedBuoy.id === b.id ? 'active' : ''}`}
+              onClick={() => setSelectedBuoy(b)}
+            >
+              <span className={`buoy-dot ${isOnline ? 'online' : hasHw ? 'warning' : 'no-hw'}`} />
+              <span className="buoy-tab-id">{b.id}</span>
+              <span className="buoy-tab-name">{b.name}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Cards de métricas ────────────────────────────────── */}
+      <div className="metric-grid">
+        {PARAMS.map(param => {
+          const val = latestData?.[param.key];
+          return (
+            <div key={param.key} className="metric-card glass" style={{ '--c': param.color }}>
+              <div className="metric-card-top">
+                <param.icon size={18} style={{ color: param.color }} />
+                <span className="metric-label">{param.label}</span>
+              </div>
+              <div className="metric-value" style={{ color: param.color }}>
+                {val != null ? val.toFixed(param.decimals) : '--'}
+                {param.unit && <span className="metric-unit">{param.unit}</span>}
+              </div>
+              <span className="metric-hint">
+                {!selectedBuoy.deviceId  ? 'hardware não implantado'  :
+                 !connected              ? 'sem sinal MQTT'           :
+                 val == null             ? 'aguardando leitura…'      : 'última leitura ao vivo'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Gráfico ──────────────────────────────────────────── */}
+      <div className="chart-card glass">
+        <div className="chart-card-header">
+          <span className="chart-card-title">
+            Série Histórica
+            <span className="chart-count">{history.length}/{MAX_HISTORY} leituras</span>
+          </span>
+          <div className="chart-param-tabs">
+            {PARAMS.map(p => (
+              <button
+                key={p.key}
+                className={`chart-tab ${chartParam === p.key ? 'active' : ''}`}
+                style={{ '--c': p.color }}
+                onClick={() => setChartParam(p.key)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {history.length === 0 ? (
+          <div className="chart-empty">
+            <Radio size={36} className="chart-empty-icon" />
+            <p>{!selectedBuoy.deviceId
+              ? 'Esta bóia ainda não possui hardware implantado.'
+              : 'Aguardando os primeiros dados do sensor…'}</p>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <defs>
+                <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor={activeParam.color} stopOpacity={0.25} />
+                  <stop offset="95%" stopColor={activeParam.color} stopOpacity={0}    />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis
+                dataKey="time"
+                tick={{ fill: '#555', fontSize: 11 }}
+                tickLine={false}
+                interval="preserveStartEnd"
+              />
+              <YAxis tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} />
+              <Tooltip
+                contentStyle={{ background: '#0D141F', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 13 }}
+                labelStyle={{ color: '#888' }}
+                itemStyle={{ color: activeParam.color }}
+                formatter={v => [`${v?.toFixed(activeParam.decimals)} ${activeParam.unit}`, activeParam.label]}
+              />
+              <Area
+                type="monotone"
+                dataKey={chartParam}
+                stroke={activeParam.color}
+                strokeWidth={2}
+                fill="url(#chartGrad)"
+                dot={false}
+                activeDot={{ r: 4, strokeWidth: 0 }}
+                connectNulls
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* ── Mapa ─────────────────────────────────────────────── */}
+      <div className="mon-map-section glass">
+        <div className="mon-map-header">
+          <MapPin size={18} color="var(--primary)" />
+          <h3>Digital Twin — Mapa de Telemetria</h3>
+        </div>
+        <p className="mon-map-desc">
+          Bóias plotadas em coordenadas reais do CEMM. Selecione uma área na barra acima para filtrar o mapa.
+        </p>
+        <InteractiveMap activeArea={activeArea} />
+      </div>
+
     </div>
   );
 };
