@@ -408,7 +408,7 @@
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 14px;
+  height: 3px;
   background: transparent;
   outline: none;
   cursor: pointer;
@@ -419,6 +419,7 @@
   appearance: none;
   width: 14px;
   height: 14px;
+  margin-top: -5.5px;
   border-radius: 50%;
   background: #00f0ff;
   box-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
