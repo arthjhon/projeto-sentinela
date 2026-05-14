@@ -168,9 +168,20 @@ Contribuições são bem-vindas! Para propor melhorias:
 
 <br/>
 
-## Autor
+## Equipe
 
-Desenvolvido por **Arthur Jhonathas** — Engenharia da Computação, Centro Universitário Mário Pontes Jucá (UMJ).
+Desenvolvido por pesquisadores da **Engenharia da Computação — Centro Universitário Mário Pontes Jucá (UMJ)**.
+
+| Membro | Papel |
+|---|---|
+| **Arthur Jhonathas** | Engenheiro de Infraestrutura & IoT |
+| **Maycon Vinicius** | Desenvolvedor de Firmware |
+| **Anwar Quirino** | Desenvolvedor de Firmware |
+| **Luiz Henrique** | Engenheiro de Hardware |
+| **Pedro Henrique** | Engenheiro de Hardware |
+| **Marcos Paulo** | Analista de Documentação Técnica |
+
+**Orientador:** Prof. Pedro Henrique de Meneses Bittencourt Lopes — Engenharia Mecatrônica & Matemática
 
 > *"A tecnologia como termômetro vital em prol do meio ambiente e do desenvolvimento sustentável."*
 
