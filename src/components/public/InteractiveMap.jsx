@@ -404,6 +404,7 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
           value={sliderIdx}
           onChange={handleSlider}
           className="imap-range"
+          style={{ '--slider-pct': `${(sliderIdx / (HISTORY.length - 1)) * 100}%` }}
         />
 
         <div className="imap-slider-dates">
