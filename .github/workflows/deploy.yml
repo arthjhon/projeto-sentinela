@@ -37,5 +37,6 @@ jobs:
             git pull origin main
             npm install
             npm run build
-            cp -r dist/* /home/teranex-sentinela/htdocs/sentinela.arthlabs.dev/
+            # docroot servido pelo vhost de sentinela.arthlabs.dev (mantém o nome legado da pasta)
+            cp -r dist/* /home/teranex-sentinela/htdocs/sentinela.teranex.inf.br/
           "
