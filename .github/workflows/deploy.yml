@@ -25,4 +25,4 @@ jobs:
             git pull origin prod
             npm install
             npm run build
-            cp -r dist/* /home/teranex-sentinela/htdocs/sentinela.teranex.inf.br/
+            cp -r dist/* /home/teranex-sentinela/htdocs/sentinela.arthlabs.dev/
