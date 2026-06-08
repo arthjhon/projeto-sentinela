@@ -38,5 +38,6 @@ jobs:
             npm install
             npm run build
             # docroot servido pelo vhost de sentinela.arthlabs.dev (mantém o nome legado da pasta)
-            cp -r dist/* /home/teranex-sentinela/htdocs/sentinela.teranex.inf.br/
+            # --delete remove assets antigos (hashes defasados) que o build não gera mais
+            rsync -a --delete dist/ /home/teranex-sentinela/htdocs/sentinela.teranex.inf.br/
           "
