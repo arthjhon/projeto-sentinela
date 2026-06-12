@@ -1,0 +1,15 @@
+.mon-widget { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px; padding: 16px; }
+.mon-widget-title { font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+  color: #8aa0b6; margin-bottom: 12px; display:flex; align-items:center; gap:8px; }
+.mon-grid { display: grid; gap: 14px; }
+.mon-empty { color:#64748b; font-size:13px; text-align:center; padding:24px 0; }
+@media (max-width: 720px){ .mon-grid { grid-template-columns: 1fr !important; } }
+
+/* Layout da MonitoringPage */
+.monitoring-page > * { margin-bottom: 18px; }
+.mon-top-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; align-items: start; }
+.mon-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 860px) {
+  .mon-top-grid, .mon-two-col { grid-template-columns: 1fr; }
+}
