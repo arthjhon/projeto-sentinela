@@ -27,10 +27,10 @@ export default function ThresholdLineChart({ history }) {
         <div className="mon-empty">Aguardando os primeiros dados…</div>
       ) : (
         <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <AreaChart data={history} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-            <XAxis dataKey="time" tick={{ fill: '#555', fontSize: 11 }} tickLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
+            <XAxis dataKey="time" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} interval="preserveStartEnd" />
+            <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
             <ReferenceArea y1={lo} y2={hi} fill="#22c55e" fillOpacity={0.10} stroke="#22c55e" strokeOpacity={0.25} strokeDasharray="3 3" />
             <Tooltip labelStyle={{ color: '#8aa0b6' }}
               contentStyle={{ background: '#0D141F', color: '#e6f0fa', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 13 }}

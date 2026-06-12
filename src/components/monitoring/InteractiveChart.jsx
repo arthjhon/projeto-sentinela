@@ -32,10 +32,10 @@ export default function InteractiveChart({ history, paused, onTogglePause }) {
         <div className="mon-empty">Aguardando os primeiros dados…</div>
       ) : (
         <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <LineChart data={history} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-            <XAxis dataKey="time" tick={{ fill: '#555', fontSize: 11 }} tickLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
+            <XAxis dataKey="time" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} interval="preserveStartEnd" />
+            <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
             <Tooltip contentStyle={{ background: '#0D141F', color: '#e6f0fa', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 }}
               labelStyle={{ color: '#8aa0b6' }} />
             {WATER_PARAMS.filter(p => visible[p.key]).map(p => (
