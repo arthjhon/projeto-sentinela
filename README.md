@@ -91,6 +91,26 @@ ESP32 reinicia com o novo firmware e confirma via MQTT
 
 <br/>
 
+## Deploy & Alta Disponibilidade
+
+### Produção
+O site roda em **`sentinela.arthlabs.dev`**, servido a partir da VM por trás de um **Cloudflare Tunnel** (sem expor portas). O deploy é automático: todo push na branch `main` dispara o GitHub Actions (`deploy.yml`), que builda no servidor e publica o `dist/`.
+
+### Failover (GitHub Pages + Cloudflare Worker)
+Para resiliência, uma cópia estática do site é publicada no **GitHub Pages** a cada push na `main` (workflow `pages.yml`). Um **Cloudflare Worker** fica na frente do domínio e faz o roteamento:
+
+```
+Visitante → sentinela.arthlabs.dev (Cloudflare Worker)
+   ├─ VM no ar  → origem real (tunnel → VM)            → site completo
+   └─ VM caída  → GitHub Pages (estático) + banner     → modo limitado
+```
+
+O Worker testa a origem real (`origin-sentinela.arthlabs.dev`); se a VM estiver indisponível (timeout ou erro 5xx/52x), serve o build do GitHub Pages e injeta um banner de aviso.
+
+> **Modo limitado:** como o backend (Supabase self-hosted) roda na mesma VM, durante uma queda permanecem ativos apenas as **páginas públicas** e o **monitoramento em tempo real** (MQTT/HiveMQ, externo). **Login e painel administrativo** ficam indisponíveis até a VM voltar — o banner sinaliza isso ao visitante.
+
+<br/>
+
 ## Rodando Localmente
 
 Pré-requisitos: **Node.js v18+** e **npm**.
