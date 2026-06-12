@@ -13,6 +13,10 @@ export default function MinMaxAvgBars({ history }) {
     { label: 'Máx', value: +stats.max.toFixed(p.decimals) },
   ] : [];
 
+  // Piso do eixo abaixo do mínimo para a barra "Mín" não ficar com altura zero.
+  const span = stats ? (stats.max - stats.min) || Math.max(Math.abs(stats.max) * 0.05, 0.5) : 1;
+  const yDomain = stats ? [stats.min - span, stats.max + span * 0.2] : [0, 1];
+
   return (
     <div className="mon-widget">
       <div className="mon-widget-title" style={{ justifyContent: 'space-between' }}>
@@ -33,7 +37,7 @@ export default function MinMaxAvgBars({ history }) {
           <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
             <XAxis dataKey="label" tick={{ fill: '#8aa0b6', fontSize: 12 }} tickLine={false} />
-            <YAxis tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
+            <YAxis tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} domain={yDomain} allowDecimals />
             <Tooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }}
               contentStyle={{ background: '#0D141F', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 }}
               formatter={v => [`${v} ${p.unit}`, p.label]} />
