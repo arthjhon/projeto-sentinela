@@ -36,8 +36,8 @@ export default function InteractiveChart({ history, paused, onTogglePause }) {
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
             <XAxis dataKey="time" tick={{ fill: '#555', fontSize: 11 }} tickLine={false} interval="preserveStartEnd" />
             <YAxis tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
-            <Tooltip contentStyle={{ background: '#0D141F', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 }}
-              labelStyle={{ color: '#888' }} />
+            <Tooltip contentStyle={{ background: '#0D141F', color: '#e6f0fa', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 }}
+              labelStyle={{ color: '#8aa0b6' }} />
             {WATER_PARAMS.filter(p => visible[p.key]).map(p => (
               <Line key={p.key} type="monotone" dataKey={p.key} name={p.label} stroke={p.color}
                 strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />

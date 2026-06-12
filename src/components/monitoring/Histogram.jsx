@@ -30,7 +30,8 @@ export default function Histogram({ history }) {
             <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 10 }} tickLine={false} />
             <YAxis allowDecimals={false} tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} />
             <Tooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }}
-              contentStyle={{ background: '#0D141F', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 }}
+              labelStyle={{ color: '#8aa0b6' }}
+              contentStyle={{ background: '#0D141F', color: '#e6f0fa', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 }}
               formatter={v => [`${v} leituras`, `≈ ${p.label}`]} />
             <Bar dataKey="count" fill={p.color} fillOpacity={0.7} radius={[4, 4, 0, 0]} />
           </BarChart>

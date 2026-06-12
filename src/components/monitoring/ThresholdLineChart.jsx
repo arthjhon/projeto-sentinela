@@ -32,7 +32,8 @@ export default function ThresholdLineChart({ history }) {
             <XAxis dataKey="time" tick={{ fill: '#555', fontSize: 11 }} tickLine={false} interval="preserveStartEnd" />
             <YAxis tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
             <ReferenceArea y1={lo} y2={hi} fill="#22c55e" fillOpacity={0.10} stroke="#22c55e" strokeOpacity={0.25} strokeDasharray="3 3" />
-            <Tooltip contentStyle={{ background: '#0D141F', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 13 }}
+            <Tooltip labelStyle={{ color: '#8aa0b6' }}
+              contentStyle={{ background: '#0D141F', color: '#e6f0fa', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 13 }}
               formatter={v => [`${v?.toFixed(p.decimals)} ${p.unit}`, p.label]} />
             <Area type="monotone" dataKey={key} stroke={p.color} strokeWidth={2} fill={p.color} fillOpacity={0.12} dot={false} connectNulls />
           </AreaChart>
