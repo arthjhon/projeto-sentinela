@@ -1,7 +1,7 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users, Cpu } from 'lucide-react';
+import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users, Cpu, SlidersHorizontal } from 'lucide-react';
 import './AdminLayout.css';
 
 const AdminLayout = () => {
@@ -62,6 +62,16 @@ const AdminLayout = () => {
             >
               <Cpu size={20} />
               <span>Firmware</span>
+            </NavLink>
+          )}
+
+          {currentUser?.role === 'admin' && (
+            <NavLink
+              to="/admin/settings"
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            >
+              <SlidersHorizontal size={20} />
+              <span>Configurações</span>
             </NavLink>
           )}
         </nav>
