@@ -25,10 +25,10 @@ export default function Histogram({ history }) {
       </div>
       {bins.length === 0 ? <div className="mon-empty">Sem leituras ainda…</div> : (
         <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={bins} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <BarChart data={bins} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-            <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 10 }} tickLine={false} />
-            <YAxis allowDecimals={false} tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} />
+            <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 10 }} tickLine={false} />
+            <YAxis allowDecimals={false} tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} axisLine={false} />
             <Tooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }}
               labelStyle={{ color: '#8aa0b6' }}
               contentStyle={{ background: '#0D141F', color: '#e6f0fa', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 }}
