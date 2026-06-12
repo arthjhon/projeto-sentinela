@@ -3,6 +3,7 @@ import { Wifi, WifiOff, Thermometer, Droplet, Activity, MapPin } from 'lucide-re
 import { useMqtt } from '../../hooks/useMqtt';
 import { FLEET, getMqttTopics } from '../../config/fleet';
 import { WATER_PARAMS, classifyParam } from '../../config/waterQuality';
+import { useMockMode, getMockMode, makeMockReading, makeMockStatus } from '../../config/mockData';
 import InteractiveMap from '../../components/public/InteractiveMap';
 import WaterQualityIndex from '../../components/monitoring/WaterQualityIndex';
 import SemaphoreCards from '../../components/monitoring/SemaphoreCards';
@@ -20,12 +21,40 @@ const BUOY = FLEET.find(b => b.deviceId) || FLEET[0];
 const MonitoringPage = () => {
   const [history, setHistory] = useState([]);
   const [paused, setPaused] = useState(false);
+  const [mockEnabled] = useMockMode();
+  // Seed inicial imediato quando o mock já está ligado no carregamento.
+  const [mockData, setMockData] = useState(() => (getMockMode() ? makeMockReading(null) : null));
+  const [mockStatus, setMockStatus] = useState(() => (getMockMode() ? makeMockStatus(2 * 86400) : null));
 
   const { messages, connected } = useMqtt(getMqttTopics(['sensores', 'status']));
   const sensorTopic = BUOY.deviceId ? `${BUOY.deviceId}/sensores` : null;
   const statusTopic = BUOY.deviceId ? `${BUOY.deviceId}/status` : null;
-  const latestData = sensorTopic ? messages[sensorTopic] : null;
-  const latestStatus = statusTopic ? messages[statusTopic] : null;
+  const mqttData = sensorTopic ? messages[sensorTopic] : null;
+  const mqttStatus = statusTopic ? messages[statusTopic] : null;
+
+  // Atualiza os dados simulados a cada 3s (setState só no callback do timer).
+  useEffect(() => {
+    if (!mockEnabled) return undefined;
+    let prev = makeMockReading(null);
+    let uptime = 2 * 86400;
+    const id = setInterval(() => {
+      prev = makeMockReading(prev);
+      uptime += 3;
+      setMockData(prev);
+      setMockStatus(makeMockStatus(uptime));
+    }, 3000);
+    return () => clearInterval(id);
+  }, [mockEnabled]);
+
+  // Fonte efetiva: mock quando ligado, senão MQTT real.
+  const latestData = mockEnabled ? mockData : mqttData;
+  const latestStatus = mockEnabled ? mockStatus : mqttStatus;
+
+  // Limpa o histórico ao alternar a fonte (remove os dados simulados).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHistory([]);
+  }, [mockEnabled]);
 
   useEffect(() => {
     if (!latestData || paused) return;
@@ -35,12 +64,12 @@ const MonitoringPage = () => {
       ph: latestData.ph ?? null,
       turbidez: latestData.turbidez ?? null,
     };
-    // Acumula histórico a cada nova leitura MQTT (stream append-only).
+    // Acumula histórico a cada nova leitura (stream append-only).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setHistory(prev => [...prev, point].slice(-MAX_HISTORY));
   }, [latestData, paused]);
 
-  const isLive = connected && !!BUOY.deviceId;
+  const isLive = mockEnabled || (connected && !!BUOY.deviceId);
   const activeArea = BUOY.location.includes('Mundaú') ? 'mundau' : 'manguaba';
 
   return (
@@ -50,7 +79,7 @@ const MonitoringPage = () => {
         <div className="mon-title-group">
           <div className={`live-badge ${isLive ? 'live' : 'offline'}`}>
             <span className="live-dot" />
-            {isLive ? 'AO VIVO' : BUOY.deviceId ? 'SEM SINAL' : 'SEM HARDWARE'}
+            {mockEnabled ? 'SIMULADO' : isLive ? 'AO VIVO' : BUOY.deviceId ? 'SEM SINAL' : 'SEM HARDWARE'}
           </div>
           <h1 className="mon-title">Monitoramento Estuarino</h1>
           <p className="mon-subtitle">{BUOY.id} · {BUOY.name} — {BUOY.location}</p>
