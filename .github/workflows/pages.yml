@@ -1,0 +1,47 @@
+name: Deploy to GitHub Pages (failover)
+
+# Publica o build estático no GitHub Pages para servir de failover
+# (via Cloudflare Worker) quando a VM de produção estiver indisponível.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Build (env de produção, baked no bundle)
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_MQTT_BROKER_URL: ${{ secrets.VITE_MQTT_BROKER_URL }}
+          VITE_MQTT_USER: ${{ secrets.VITE_MQTT_USER }}
+          VITE_MQTT_PASS: ${{ secrets.VITE_MQTT_PASS }}
+      - name: SPA fallback (404 -> index.html)
+        run: cp dist/index.html dist/404.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deploy
+        uses: actions/deploy-pages@v4
