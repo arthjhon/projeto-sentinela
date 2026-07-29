@@ -1,0 +1,292 @@
+/* ChangelogPage - CSS totalmente autocontido (nao reusa as classes de modal
+   de UsersPage.css/SensorsPage.css): essas classes ja divergiram entre os
+   dois arquivos (cores, padding, z-index diferentes) e nenhum dos dois
+   chunks e garantido de estar carregado nesta pagina - cada pagina admin e
+   lazy-loaded independentemente (ver styles/shared.css para o historico
+   desse problema, corrigido nesta sessao para .btn-primary/.btn-table).
+   Prefixo changelog- evita colisao e mantem este chunk autossuficiente,
+   independente da ordem de navegacao do admin. */
+
+.changelog-config-card {
+  padding: 1.5rem;
+}
+
+.changelog-config-card h3 {
+  font-size: 1.05rem;
+  margin-bottom: 0.4rem;
+}
+
+.changelog-config-card > p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.changelog-config-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.changelog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 180px;
+}
+
+.changelog-field-grow { flex: 1; }
+
+.changelog-field span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.changelog-field input {
+  padding: 0.55rem 0.8rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.changelog-field input:focus { border-color: rgba(0, 240, 255, 0.35); }
+.changelog-field input:disabled { opacity: 0.5; }
+
+.changelog-list-wrapper {
+  padding: 1.5rem;
+  overflow-x: auto;
+}
+
+.changelog-empty {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.changelog-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 0.5rem;
+}
+
+.changelog-table th {
+  text-align: left;
+  padding: 0 1rem 0.75rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.changelog-table td {
+  padding: 0.85rem 1rem;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.changelog-table td:first-child { border-radius: 8px 0 0 8px; }
+.changelog-table td:last-child { border-radius: 0 8px 8px 0; }
+
+.changelog-cell-data {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.changelog-badge {
+  display: inline-block;
+  padding: 0.25rem 0.65rem;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--c, var(--primary));
+  background: color-mix(in srgb, var(--c, var(--primary)) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c, var(--primary)) 35%, transparent);
+}
+
+.changelog-status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.changelog-status-btn.publicado { color: var(--success); border-color: rgba(16, 185, 129, 0.3); }
+.changelog-status-btn.rascunho { color: var(--text-muted); }
+.changelog-status-btn:hover { background: rgba(255, 255, 255, 0.05); }
+
+/* ── Modal (autocontido — ver nota no topo do arquivo) ─────── */
+.changelog-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+}
+
+.changelog-modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  background: #0d1624;
+  border: 1px solid rgba(0, 240, 255, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.changelog-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.changelog-modal-header h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+.changelog-btn-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.changelog-btn-close:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--danger);
+}
+
+.changelog-modal-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow-y: auto;
+}
+
+.changelog-form-row {
+  display: flex;
+  gap: 1rem;
+}
+
+.changelog-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.changelog-form-group label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.changelog-form-group input,
+.changelog-form-group select,
+.changelog-form-group textarea {
+  padding: 0.6rem 0.9rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+}
+
+.changelog-form-group input:focus,
+.changelog-form-group select:focus,
+.changelog-form-group textarea:focus {
+  border-color: rgba(0, 240, 255, 0.35);
+  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.06);
+}
+
+.changelog-form-group select option { background: #0d1624; }
+
+.changelog-input-error {
+  border-color: var(--danger) !important;
+  background: rgba(239, 68, 68, 0.05) !important;
+}
+
+.changelog-image-upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.changelog-image-upload:hover { border-color: rgba(0, 240, 255, 0.35); }
+
+.changelog-image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  padding: 1.5rem;
+}
+
+.changelog-image-preview {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  display: block;
+}
+
+.changelog-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
