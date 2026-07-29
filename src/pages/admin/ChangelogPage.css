@@ -7,6 +7,17 @@
    Prefixo changelog- evita colisao e mantem este chunk autossuficiente,
    independente da ordem de navegacao do admin. */
 
+/* Header da página (título+ação) — não reusa .d-flex-between de
+   UsersPage.css/SensorsPage.css (mesmo motivo do comentário acima: chunks
+   lazy-loaded independentes, e as duas cópias já divergiram entre si). */
+.changelog-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
 .changelog-config-card {
   padding: 1.5rem;
 }
