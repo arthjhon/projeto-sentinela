@@ -153,7 +153,11 @@ O app estará disponível em `http://localhost:5173`.
    VITE_SUPABASE_ANON_KEY="sua_chave_publica_jwt"
    ```
 4. **Desabilite confirmação por e-mail:** *Authentication → Providers → Email* → desligue `Confirm email` e `Secure email change`.
-5. **Esquema de dados:** No *SQL Editor* do Supabase, execute o arquivo `supabase_schema.sql` da raiz do projeto.
+5. **Esquema de dados:** No *SQL Editor* do Supabase, execute os arquivos abaixo, na ordem (todos são idempotentes — podem ser re-executados sem erro):
+   1. `supabase_schema.sql` — esquema base (perfis, papéis, RLS inicial).
+   2. `supabase_ota_schema.sql` — histórico de deploys de firmware OTA.
+   3. `supabase_backlog_schema.sql` — manutenção, calibração de sensores, log de auditoria e `app_settings` (configurações genéricas usadas por outras features, incluindo a data oficial do changelog abaixo).
+   4. `supabase_changelog_schema.sql` — tabela e bucket de Storage do changelog público (`/evolucao`). Depende de `app_settings` (arquivo 3) já existir para o contador de dias funcionar — ver nota no cabeçalho do próprio arquivo.
 6. **Primeiro acesso:** Crie seu usuário administrador em *Authentication → Add User*. O trigger do schema assinará automaticamente o papel `admin`.
 
 <br/>
