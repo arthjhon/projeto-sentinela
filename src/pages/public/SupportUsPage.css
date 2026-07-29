@@ -43,11 +43,14 @@
 }
 
 .impact-stats {
-  display: flex;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
   margin-top: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .impact-stats { grid-template-columns: repeat(4, 1fr); }
 }
 
 .impact-stat {
