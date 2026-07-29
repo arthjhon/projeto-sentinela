@@ -195,7 +195,7 @@ Expected: `changelog|t`.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela
+cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela-changelog
 git add supabase_changelog_schema.sql
 git commit -m "feat(changelog): migration — tabela changelog_entries, RLS e bucket de storage"
 ```
@@ -281,7 +281,7 @@ describe('marcosDeDias', () => {
 - [ ] **Step 2: Rodar os testes e confirmar que falham**
 
 ```bash
-cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela
+cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela-changelog
 npx vitest run src/utils/milestones.test.js
 ```
 
@@ -629,7 +629,7 @@ export const CATEGORIA_COLORS = {
 - [ ] **Step 4: Build e lint (sem UI ainda para clicar — a verificação comportamental completa acontece nas Tasks 5/6)**
 
 ```bash
-cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela
+cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela-changelog
 npx vite build 2>&1 | tail -5
 npm run lint 2>&1 | grep -E "✖|changelog|auditLog|settings.js"
 ```
@@ -775,7 +775,7 @@ Em `src/components/public/Footer.jsx`, no bloco `footer-nav-group` (linhas 22-28
 - [ ] **Step 5: Commit (build só vai passar depois das Tasks 5 e 6 — não rodar build/lint isolado aqui; é esperado que este commit intermediário não compile sozinho)**
 
 ```bash
-cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela
+cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela-changelog
 git add src/App.jsx src/pages/admin/AdminLayout.jsx src/components/public/PublicNavbar.jsx src/components/public/Footer.jsx
 git commit -m "feat(changelog): registra rotas /admin/changelog e /evolucao + navegacao
 
@@ -1478,7 +1478,7 @@ export default ChangelogPage;
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela
+cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela-changelog
 git add src/pages/admin/ChangelogPage.jsx src/pages/admin/ChangelogPage.css
 git commit -m "feat(changelog): pagina admin /admin/changelog — lista, CRUD com foto e data oficial"
 ```
@@ -1762,7 +1762,7 @@ export default EvolucaoPage;
 - [ ] **Step 3: Build e lint — agora o app inteiro deve compilar**
 
 ```bash
-cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela
+cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela-changelog
 npx vite build 2>&1 | tail -5
 npm run lint 2>&1 | grep -E "✖"
 ```
@@ -1799,7 +1799,7 @@ git commit -m "feat(changelog): pagina publica /evolucao — hero de dias + time
 - [ ] **Step 1: Subir o dev server (se não estiver rodando)**
 
 ```bash
-cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela
+cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela-changelog
 pgrep -f "vite --host" >/dev/null && echo "já rodando" || (npx vite --host 0.0.0.0 --port 5173 &)
 sleep 3
 curl -s -o /dev/null -w "%{http_code}\n" http://172.16.200.22:5173/
@@ -1906,7 +1906,7 @@ Em `projeto-sentinela/README.md`, na seção `### Concluído` do Roadmap, adicio
 **Atenção:** `implementados.md` fica em `/home/arthjhon/workspace/projects/IoT/` (raiz do projeto), que **não é um repositório git** (só `projeto-sentinela/` tem `.git`). Não rodar `git add`/`git commit` nele — é só um arquivo de texto editado normalmente, sem controle de versão (mesma situação de `docker-compose.yml`/`telegraf.conf` nesta árvore). O commit abaixo cobre só os arquivos dentro de `projeto-sentinela/`.
 
 ```bash
-cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela
+cd /home/arthjhon/workspace/projects/IoT/projeto-sentinela-changelog
 git add docs/superpowers/plans/2026-07-20-changelog-publico.md README.md
 git commit -m "docs(changelog): atualiza README (roadmap) apos a feature de changelog publico"
 ```
