@@ -10,88 +10,97 @@
   }
 }
 
-/* ── UMJ card ───────────────────────────── */
-.umj-card {
+/* ── Supporters Grid & Cards ───────────────────────────── */
+.supporters-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 3rem;
+}
+
+@media (max-width: 900px) {
+  .supporters-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .supporters-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.supporter-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 2rem;
-  padding: 2rem 2.5rem;
+  text-align: center;
+  padding: 2rem;
   border-radius: 16px;
   border: 1px solid rgba(0, 240, 255, 0.2);
   background: linear-gradient(135deg, rgba(0, 240, 255, 0.05) 0%, transparent 100%);
-  margin-bottom: 2rem;
+  gap: 1.25rem;
 }
 
-.umj-logo {
-  flex-shrink: 0;
-  width: 96px;
-  height: 96px;
+.supporter-logo-wrapper {
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.supporter-logo {
+  max-width: 180px;
+  max-height: 140px;
   object-fit: contain;
   border-radius: 12px;
 }
 
-.umj-info h2 {
-  font-size: 1.3rem;
-  font-weight: 700;
-  margin-bottom: 0.5rem;
-  color: #fff;
-}
-
-.umj-info p {
-  color: var(--text-muted);
-  font-size: 0.95rem;
-  line-height: 1.6;
+.umj-logo {
+  width: 140px;
+  height: 140px;
 }
 
 .teranex-logo {
-  background: rgba(255, 255, 255, 0.06);
-  padding: 0.5rem;
-  border-radius: 10px;
+  padding: 0.75rem;
 }
 
 .kodelab-logo-wrap {
-  flex-shrink: 0;
-  width: 96px;
-  height: 96px;
+  width: 160px;
+  height: 160px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 0.75rem;
-  border-radius: 12px;
+  gap: 0.5rem;
+  padding: 1rem;
   box-sizing: border-box;
 }
 
 .kodelab-icon-img {
-  width: 56px;
-  height: 56px;
+  width: 86px;
+  height: 86px;
   object-fit: contain;
 }
 
 .kodelab-text-img {
-  width: 80px;
+  width: 120px;
   height: auto;
   object-fit: contain;
 }
 
-@media (max-width: 600px) {
-  .umj-card {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 1.5rem;
-    gap: 1.25rem;
-  }
+.supporter-info h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  color: #fff;
+}
 
-  .umj-logo {
-    width: 72px;
-    height: 72px;
-  }
-
-  .umj-info h2 {
-    font-size: 1.1rem;
-  }
+.supporter-info p {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 /* ── Sections ───────────────────────────── */

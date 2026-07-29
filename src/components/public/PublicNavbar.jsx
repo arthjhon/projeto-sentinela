@@ -25,7 +25,10 @@ const PublicNavbar = () => {
       <div className="navbar-container">
         {/* LOGO */}
         <Link to="/" className="navbar-brand">
-          <img src="/Sentinela%20LOGO.svg" alt="Projeto Sentinela" className="navbar-logo" />
+          <img src="/Sentinela%20LOGO.svg" alt="" className="navbar-logo" />
+          <span className="navbar-wordmark">
+            Projeto <strong>Sentinela</strong>
+          </span>
         </Link>
 
         {/* DESKTOP MENU */}

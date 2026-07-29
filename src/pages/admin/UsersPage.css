@@ -99,15 +99,8 @@
 
 .font-medium { font-weight: 500; }
 .monospace { font-family: monospace; color: var(--text-muted); }
-.text-danger { color: var(--danger); }
-.text-right { text-align: right; }
-.text-center { text-align: center; }
-.w-100 { width: 100%; }
-.mt-4 { margin-top: 1.5rem; }
-.mt-3 { margin-top: 1rem; }
-.mt-2 { margin-top: 0.5rem; }
-.mb-2 { margin-bottom: 0.5rem; }
-.mb-3 { margin-bottom: 1rem; }
+/* Utilitarios de texto e .w-100 vivem em styles/shared.css;
+   alinhamento e margens (text-center, mt-N, mb-N) ja existem em index.css. */
 .d-flex { display: flex; }
 .rounded { border-radius: 8px; }
 
@@ -189,36 +182,7 @@
 .search-bar input::placeholder { color: #475569; }
 
 /* ── Table action buttons ────────────────────────────── */
-.btn-table {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0.65rem;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  color: #94a3b8;
-  cursor: pointer;
-  font-size: 0.82rem;
-  font-family: inherit;
-  white-space: nowrap;
-  transition: all 0.15s;
-}
-
-.btn-table:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
-.btn-table:disabled { opacity: 0.35; cursor: not-allowed; }
-
-.danger-btn:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.12);
-  color: var(--danger);
-  border-color: rgba(239, 68, 68, 0.3);
-}
+/* .btn-table e .danger-btn vivem em shared.css (usados por sensors, ota e ConfirmModal). */
 
 /* ── Modal overlay ───────────────────────────────────── */
 .crud-modal-overlay {
@@ -336,4 +300,36 @@
   padding-top: 1rem;
   margin-top: 0.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Abas Operadores / Log de Auditoria (6.1) */
+.users-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.users-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.6rem 0.9rem;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.users-tab:hover { color: #e2e8f0; }
+
+.users-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.users-tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }

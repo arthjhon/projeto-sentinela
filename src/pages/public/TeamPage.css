@@ -4,14 +4,7 @@
   padding: 2rem 1rem;
 }
 
-.gradient-text {
-  background: linear-gradient(135deg, #fff, var(--primary));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  font-family: 'Outfit', sans-serif;
-  font-size: 2.5rem;
-}
+/* .gradient-text vive em shared.css (usado por apoiadores e apoie). */
 
 .team-grid {
   display: grid;

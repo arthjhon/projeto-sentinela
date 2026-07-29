@@ -6,6 +6,11 @@ import { useToast } from './../../contexts/ToastContext';
 import ConfirmModal from './../../components/ConfirmModal';
 import { Wifi, WifiOff, MapPin, Search, ChevronDown, ChevronUp, Activity, Droplet, Thermometer, Wrench, FileText, CheckCircle2, RotateCw, History, Plus, Edit2, Trash2, X } from 'lucide-react';
 import { FLEET, getMqttTopics } from '../../config/fleet';
+import {
+  iniciarManutencao, finalizarManutencao, listarManutencoes, manutencaoAberta,
+  registrarCalibracao, ultimasCalibracoes,
+} from '../../services/maintenance';
+import { logAcao, AUDIT } from '../../services/auditLog';
 import './SensorsPage.css';
 
 // Mapa de ícones por nome de sensor — usado para reidratar dados do localStorage
@@ -69,6 +74,13 @@ const SensorsPage = () => {
 
   // Maintenance & History
   const [activeMaintenanceId, setActiveMaintenanceId] = useState(null);
+  // 3.1/3.2 — dados persistidos, carregados por bóia ao expandir
+  const [motivoPrompt, setMotivoPrompt]   = useState(null);   // {buoyId} enquanto pede o motivo
+  const [motivoTexto, setMotivoTexto]     = useState('');
+  const [timeline, setTimeline]           = useState({});     // boiaId -> manutenções
+  const [abertaPorBoia, setAbertaPorBoia] = useState({});     // boiaId -> manutenção aberta
+  const [calibracoes, setCalibracoes]     = useState({});     // boiaId -> {sensorKey: registro}
+  const [salvando, setSalvando]           = useState(false);
   const [activeHistoryId, setActiveHistoryId] = useState(null);
   const [testStatuses, setTestStatuses] = useState({});
   const [maintenanceNotes, setMaintenanceNotes] = useState('');
@@ -169,9 +181,12 @@ const SensorsPage = () => {
   };
 
   const confirmDeleteAction = () => {
+    // captura antes de remover da lista, senão o nome já não existe no log
+    const alvo = buoys.find(b => b.id === buoyToDelete);
     setBuoys(buoys.filter(b => b.id !== buoyToDelete));
     if(expandedId === buoyToDelete) setExpandedId(null);
     addToast("Bóia desconectada e deletada permanentemente da nuvem.", "success");
+    logAcao(AUDIT.BOIA_REMOVER, buoyToDelete, { nome: alvo?.name, deviceId: alvo?.deviceId });
     setConfirmDeleteOpen(false);
     setBuoyToDelete(null);
   };
@@ -214,6 +229,9 @@ const SensorsPage = () => {
         return b;
       }));
       addToast("Parâmetros operacionais da bóia alterados.", "success");
+      logAcao(AUDIT.BOIA_EDITAR, formData.id, {
+        nome: formData.name, deviceId: newDeviceId, status: formData.status,
+      });
     } else {
       // Create
       const newDeviceId = formData.deviceId.trim();
@@ -242,6 +260,7 @@ const SensorsPage = () => {
       };
       setBuoys([...buoys, newBuoy]);
       addToast("Bóia de Sensoriamento registrada e conectada na rede.", "success");
+      logAcao(AUDIT.BOIA_CRIAR, formData.id, { nome: formData.name, deviceId: newDeviceId });
     }
     
     setIsModalOpen(false);
@@ -256,6 +275,9 @@ const SensorsPage = () => {
       setExpandedId(id);
       setActiveMaintenanceId(null);
       setActiveHistoryId(null);
+      // 3.1/3.2 — busca timeline e calibrações só ao abrir a linha, e não no
+      // mount: são 3 queries por bóia e a maioria nunca é expandida.
+      carregarDadosBoia(id);
     }
   };
 
@@ -269,13 +291,70 @@ const SensorsPage = () => {
     sensors.forEach(s => startTest(buoyId, s.name));
   };
 
-  const handleSaveMaintenance = (buoyId) => {
-    addToast(`Log salvo! A bóia ${buoyId} voltou a operar em modo normal.`, "success");
-    setActiveMaintenanceId(null);
-    setMaintenanceNotes('');
-    const newStatuses = { ...testStatuses };
-    Object.keys(newStatuses).forEach(k => { if (k.startsWith(buoyId)) delete newStatuses[k]; });
-    setTestStatuses(newStatuses);
+  // 3.1 — carrega o que está persistido para a bóia (timeline, manutenção
+  // aberta e calibrações). Chamado ao expandir a linha.
+  const carregarDadosBoia = async (buoyId) => {
+    try {
+      const [logs, aberta, calibs] = await Promise.all([
+        listarManutencoes(buoyId),
+        manutencaoAberta(buoyId),
+        ultimasCalibracoes(buoyId),
+      ]);
+      setTimeline(prev => ({ ...prev, [buoyId]: logs }));
+      setAbertaPorBoia(prev => ({ ...prev, [buoyId]: aberta }));
+      setCalibracoes(prev => ({ ...prev, [buoyId]: calibs }));
+    } catch (err) {
+      addToast(`Não foi possível carregar o histórico: ${err.message}`, "error");
+    }
+  };
+
+  // 3.1 — abrir manutenção exige motivo; por isso o prompt vem antes do painel
+  const confirmarInicioManutencao = async () => {
+    const buoyId = motivoPrompt?.buoyId;
+    if (!buoyId || !motivoTexto.trim()) return;
+    setSalvando(true);
+    try {
+      await iniciarManutencao(buoyId, motivoTexto);
+      setMotivoPrompt(null);
+      setMotivoTexto('');
+      setActiveMaintenanceId(buoyId);
+      await carregarDadosBoia(buoyId);
+      addToast(`Bóia ${buoyId} entrou em modo manutenção.`, "success");
+    } catch (err) {
+      addToast(err.message, "error");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const handleSaveMaintenance = async (buoyId) => {
+    setSalvando(true);
+    try {
+      await finalizarManutencao(buoyId, maintenanceNotes);
+      addToast(`Log salvo! A bóia ${buoyId} voltou a operar em modo normal.`, "success");
+      setActiveMaintenanceId(null);
+      setMaintenanceNotes('');
+      const newStatuses = { ...testStatuses };
+      Object.keys(newStatuses).forEach(k => { if (k.startsWith(buoyId)) delete newStatuses[k]; });
+      setTestStatuses(newStatuses);
+      await carregarDadosBoia(buoyId);
+    } catch (err) {
+      addToast(`Não foi possível fechar a manutenção: ${err.message}`, "error");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  // 3.2 — calibração de um sensor
+  const handleRecalibrar = async (buoyId, sensorKey) => {
+    try {
+      await registrarCalibracao(buoyId, sensorKey, null);
+      const calibs = await ultimasCalibracoes(buoyId);
+      setCalibracoes(prev => ({ ...prev, [buoyId]: calibs }));
+      addToast(`Sensor ${sensorKey} recalibrado.`, "success");
+    } catch (err) {
+      addToast(`Falha ao registrar calibração: ${err.message}`, "error");
+    }
   };
 
   const generateMockHistory = (buoy) => {
@@ -332,6 +411,48 @@ const SensorsPage = () => {
           )}
         </div>
       </div>
+
+      {/* 3.1 — motivo é obrigatório para abrir a manutenção; sem ele o registro
+          no Supabase não faz sentido ("o quê" sem "por quê"). Portal pelo mesmo
+          motivo do modal de CRUD: escapar do stacking context da tabela. */}
+      {motivoPrompt && createPortal(
+        <div className="crud-modal-overlay" onClick={() => setMotivoPrompt(null)}>
+          <div className="crud-modal animate-fade-in" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+            <div className="crud-modal-header">
+              <h3>Entrar em Modo Manutenção — {motivoPrompt.buoyId}</h3>
+              <button className="btn-close" onClick={() => setMotivoPrompt(null)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="crud-modal-body">
+              <div className="form-group">
+                <label>Motivo da intervenção</label>
+                <input
+                  type="text"
+                  className="w-100"
+                  autoFocus
+                  maxLength={120}
+                  value={motivoTexto}
+                  onChange={e => setMotivoTexto(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && motivoTexto.trim()) confirmarInicioManutencao(); }}
+                  placeholder="Ex: troca do sensor de pH"
+                />
+              </div>
+            </div>
+            <div className="crud-modal-footer">
+              <button className="btn-table" onClick={() => setMotivoPrompt(null)}>Cancelar</button>
+              <button
+                className="btn-primary"
+                disabled={!motivoTexto.trim() || salvando}
+                onClick={confirmarInicioManutencao}
+              >
+                {salvando ? 'Registrando...' : 'Iniciar Manutenção'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* CRUD Modal rendered via Portal to escape CSS stacking contexts */}
       {isModalOpen && createPortal(
@@ -469,8 +590,24 @@ const SensorsPage = () => {
                             <span className="info-value">{buoy.details.installedAt}</span>
                           </div>
                           <div className="info-block">
-                            <span className="info-label">Última Manutenção</span>
-                            <span className="info-value">{buoy.details.lastMaintenance}</span>
+                            <span className="info-label">Manutenções</span>
+                            {/* 3.1 — timeline persistida no lugar do campo estático */}
+                            {(timeline[buoy.id]?.length ?? 0) === 0 ? (
+                              <span className="info-value maint-vazio">nenhum registro</span>
+                            ) : (
+                              <ul className="maint-timeline">
+                                {timeline[buoy.id].slice(0, 4).map(m => (
+                                  <li key={m.id} className={m.timestamp_fim ? '' : 'aberta'}>
+                                    <span className="maint-quando">
+                                      {new Date(m.timestamp_inicio).toLocaleDateString('pt-BR')}
+                                      {!m.timestamp_fim && ' · em andamento'}
+                                    </span>
+                                    <span className="maint-motivo" title={m.motivo}>{m.motivo}</span>
+                                    <span className="maint-quem">{m.operador_nome}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
                           </div>
                           {buoy.details.rssi && (
                             <div className="info-block">
@@ -603,6 +740,18 @@ const SensorsPage = () => {
                                     <div className="sub-sensor-body">
                                       <span className="sub-sensor-name">{sensor.name}</span>
                                       <span className={`sub-sensor-val ${sensor.status === 'offline' ? 'text-muted' : ''}`}>{sensor.value}</span>
+                                      {/* 3.2 — calibração por sensor */}
+                                      <span className="calib-info">
+                                        Calibrado: {calibracoes[buoy.id]?.[sensor.name]
+                                          ? new Date(calibracoes[buoy.id][sensor.name].calibrated_at).toLocaleDateString('pt-BR')
+                                          : 'nunca'}
+                                      </span>
+                                      <button
+                                        className="btn-table action-btn btn-sm calib-btn"
+                                        onClick={(e) => { e.stopPropagation(); handleRecalibrar(buoy.id, sensor.name); }}
+                                      >
+                                        Recalibrar
+                                      </button>
                                     </div>
                                   </div>
                                 ))}
@@ -624,8 +773,22 @@ const SensorsPage = () => {
                               </button>
                               
                               {currentUser?.role !== 'visualizador' && (
-                                <button className="btn-table action-btn maintenance-trigger-btn" onClick={() => setActiveMaintenanceId(buoy.id)}>
-                                  <Wrench size={16} /> Entrar em Modo Manutenção
+                                <button
+                                  className="btn-table action-btn maintenance-trigger-btn"
+                                  onClick={() => {
+                                    // Já há manutenção aberta (talvez de outro operador): abre o
+                                    // painel direto. Pedir motivo de novo criaria um segundo
+                                    // registro, que o índice único do schema rejeitaria.
+                                    if (abertaPorBoia[buoy.id]) {
+                                      setActiveMaintenanceId(buoy.id);
+                                      return;
+                                    }
+                                    setMotivoTexto('');
+                                    setMotivoPrompt({ buoyId: buoy.id });
+                                  }}
+                                >
+                                  <Wrench size={16} />
+                                  {abertaPorBoia[buoy.id] ? 'Continuar Manutenção' : 'Entrar em Modo Manutenção'}
                                 </button>
                               )}
                             </div>

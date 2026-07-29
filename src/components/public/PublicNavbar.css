@@ -25,8 +25,31 @@
 .navbar-brand {
   display: flex;
   align-items: center;
+  gap: 0.65rem;
   text-decoration: none;
   flex-shrink: 0;
+}
+
+/* Wordmark: da peso ao lado esquerdo, que antes tinha so a logo (44px)
+   contra o bloco de links + acoes (872px) do lado direito. */
+.navbar-wordmark {
+  font-size: 1.05rem;
+  font-weight: 400;
+  color: var(--text);
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: none;
+  transition: opacity 0.25s ease;
+}
+
+.navbar-wordmark strong {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.navbar-brand:hover .navbar-wordmark {
+  opacity: 0.85;
 }
 
 .navbar-logo {

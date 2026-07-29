@@ -372,8 +372,7 @@
   font-weight: 700;
 }
 
-.text-success { color: var(--success); }
-.text-primary { color: var(--primary); }
+/* .text-* vivem em styles/shared.css. */
 
 @media (max-width: 768px) {
   .dashboard-body {

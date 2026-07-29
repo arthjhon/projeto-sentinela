@@ -33,6 +33,9 @@ O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve 
 
 - **Autenticação** com controle de acesso por papel (admin / operador) via Supabase
 - **Dashboard** com métricas gerais do sistema e integridade dos dispositivos
+- **Histórico persistido** — gráfico por janela de tempo (1h / 24h / 7d / 30d) lido do
+  InfluxDB, somado às leituras que continuam chegando por MQTT em tempo real
+- **Exportação CSV** das leituras do período selecionado, pronta para abrir no Excel
 - **Gerenciador de Bóias** — CRUD completo: cadastro, edição, remoção e histórico de leituras
 - **Gestão de Operadores** — criação e remoção de usuários (exclusivo para admins)
 - **OTA Firmware** — envio de atualização de firmware para o ESP32 via MQTT, sem acesso físico ao hardware
@@ -59,6 +62,7 @@ O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve 
 | **ESP32** | Microcontrolador embarcado nas bóias — coleta sensorial e transmissão MQTT |
 | **HiveMQ (Broker MQTT)** | Mensageria pub/sub para telemetria contínua e comandos OTA |
 | **Supabase (PostgreSQL)** | Autenticação, RBAC, perfis de usuário e storage de firmware (.bin) |
+| **Telegraf** | Ingestão MQTT → InfluxDB: assina os tópicos e grava cada leitura, de forma declarativa (`telegraf/telegraf.conf`) |
 | **InfluxDB** | Banco de dados time-series para histórico massivo de leituras |
 
 <br/>
@@ -154,6 +158,45 @@ O app estará disponível em `http://localhost:5173`.
 
 <br/>
 
+## Configurando o Histórico (InfluxDB)
+
+O gráfico de histórico e a exportação CSV leem do InfluxDB. A ingestão é feita
+pelo **Telegraf**, que assina os tópicos MQTT e grava cada leitura — não há
+backend próprio no caminho.
+
+1. Suba a stack de dados (na raiz do repositório, não neste diretório):
+   ```bash
+   docker compose up -d influxdb telegraf
+   ```
+2. Crie um token **somente-leitura** com escopo no bucket, e não use o token de
+   admin (ele permite escrita e exclusão):
+   ```bash
+   docker exec <container-influx> influx auth create \
+     --org "$INFLUXDB_ORG" --read-bucket "<id-do-bucket>" \
+     --description "sentinela-frontend-read"
+   ```
+3. Acrescente ao `.env.local`:
+   ```env
+   # Identificadores públicos: o cliente precisa deles para montar a query Flux
+   VITE_INFLUX_ORG="sentinela"
+   VITE_INFLUX_BUCKET="iot"
+
+   # SEM prefixo VITE_ de propósito — ver aviso abaixo
+   INFLUXDB_URL="http://<host-do-influx>:8086"
+   INFLUXDB_READ_TOKEN="token_somente_leitura"
+   ```
+
+> **Por que `INFLUXDB_READ_TOKEN` não tem prefixo `VITE_`**
+> O Vite injeta *apenas* variáveis `VITE_*` no bundle — e esse bundle é servido
+> a qualquer visitante, inclusive no site público. Um token com prefixo `VITE_`
+> viraria credencial pública.
+> O navegador chama `/influx/...` e quem anexa o token é o proxy, no servidor:
+> `server.proxy` do `vite.config.js` em desenvolvimento, `location /influx/` do
+> `nginx.conf` em produção (preenchido por `envsubst` no boot do container).
+> **Renomear essa variável para `VITE_INFLUX_READ_TOKEN` vaza o token.**
+
+<br/>
+
 ## Roadmap
 
 ### Concluído
@@ -165,13 +208,26 @@ O app estará disponível em `http://localhost:5173`.
 - [x] OTA firmware via MQTT + Supabase Storage
 - [x] Design responsivo (mobile-first)
 - [x] Ilustração SVG animada do ecossistema estuarino
+- [x] **Persistência histórica no InfluxDB** — toda leitura publicada no MQTT é
+      gravada via Telegraf, então o histórico sobrevive a reinício da stack e
+      deixa de depender do buffer em memória da sessão
+- [x] **Seletor de período no histórico** (1h / 24h / 7d / 30d) — consulta o
+      InfluxDB pela janela escolhida, somando as leituras que continuam
+      chegando por MQTT em tempo real
+- [x] **Exportação CSV do histórico** — respeita o período selecionado e sai
+      com dados brutos (sem a agregação usada no gráfico), no formato pt-BR
+      (`;` e decimal com vírgula) que o Excel abre com duplo clique
 
 ### Próximos passos
+- [ ] Faixas de referência por parâmetro nos cards (verde / amarelo / vermelho),
+      com valores confirmados em fonte técnica para ambiente estuarino
+- [ ] Alertas automáticos por parâmetros fora do padrão (webhook + cooldown)
+- [ ] Índice de Qualidade da Água (WQI) na página pública
+- [ ] Log de auditoria das ações do painel
 - [ ] Módulo 4G/LTE (SIM7600) — conectividade direta em campo, sem dependência de Wi-Fi
 - [ ] Sensores EZO-DO (oxigênio dissolvido) e EZO-EC (salinidade/condutividade)
 - [ ] Modelagem e impressão 3D da case IP67 das bóias
 - [ ] Suporte completo a ambientes de aquicultura (tanques de tilápia, camarão, etc.)
-- [ ] Alertas automáticos por parâmetros fora do padrão
 - [ ] Módulo de coletas de campo assistidas por GPS
 
 <br/>
