@@ -24,6 +24,9 @@ export const AUDIT = {
   USUARIO_CRIAR:     'usuario.criar',
   USUARIO_EDITAR:    'usuario.editar',
   USUARIO_REMOVER:   'usuario.remover',
+  CHANGELOG_CRIAR:   'changelog.criar',
+  CHANGELOG_EDITAR:  'changelog.editar',
+  CHANGELOG_REMOVER: 'changelog.remover',
 };
 
 /** Rótulos legíveis para a UI de filtro. */
@@ -39,6 +42,9 @@ export const AUDIT_LABELS = {
   [AUDIT.USUARIO_CRIAR]:     'Usuário criado',
   [AUDIT.USUARIO_EDITAR]:    'Usuário editado',
   [AUDIT.USUARIO_REMOVER]:   'Usuário removido',
+  [AUDIT.CHANGELOG_CRIAR]:   'Entrada de changelog criada',
+  [AUDIT.CHANGELOG_EDITAR]:  'Entrada de changelog editada',
+  [AUDIT.CHANGELOG_REMOVER]: 'Entrada de changelog removida',
 };
 
 /**

@@ -41,3 +41,9 @@ export async function saveSetting(key, value) {
 // Chave da meta de financiamento (5.4). Constante para não divergir entre
 // quem grava (admin) e quem lê (página de apoio).
 export const FUNDING_GOAL_KEY = 'funding_goal';
+
+// Chave da data oficial de início do monitoramento (changelog público). Ancora
+// o contador "N dias monitorando" e os marcos automáticos — ver
+// src/utils/milestones.js e
+// docs/superpowers/specs/2026-07-20-changelog-publico-design.md.
+export const MONITORAMENTO_INICIO_KEY = 'monitoramento_inicio';
