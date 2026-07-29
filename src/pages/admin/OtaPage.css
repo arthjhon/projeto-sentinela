@@ -347,3 +347,16 @@
   justify-content: center;
   margin-top: 0.5rem;
 }
+
+/* Hash do .bin (4.1): monospace e quebra em qualquer ponto — são 64 caracteres
+   sem espaço, que estourariam a caixa do upload. */
+.file-hash {
+  display: block;
+  margin-top: 0.4rem;
+  font-family: monospace;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  word-break: break-all;
+  max-width: 100%;
+}

@@ -191,6 +191,28 @@
   z-index: 5;
 }
 
+/* ── SHELL DAS PAGINAS ────────────────────────────────
+   Compartilhado por Dashboard, Boias, Operadores, Firmware e Configuracoes.
+   Mora aqui, e nao no CSS de uma pagina, porque cada pagina e um chunk lazy:
+   regra em AdminDashboard.css so existe depois de visitar o Dashboard. */
+.dashboard-content-area {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-header h1 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.page-header p {
+  color: var(--text-muted);
+}
+
 @keyframes pulse-dot {
   0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
   70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }

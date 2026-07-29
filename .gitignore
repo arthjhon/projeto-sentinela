@@ -8,9 +8,13 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.creds/
 dist
 dist-ssr
 *.local
+
+# Mockups do brainstorming (companion visual)
+.superpowers/
 
 # Editor directories and files
 .vscode/*

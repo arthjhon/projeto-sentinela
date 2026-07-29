@@ -3,27 +3,8 @@
   z-index: 10;
 }
 
-.section-header {
-  text-align: center;
-  margin-bottom: 4rem;
-}
-
-.section-title {
-  font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 700;
-  margin-bottom: 1rem;
-  background: linear-gradient(90deg, #fff 0%, #e2e8f0 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.section-subtitle {
-  font-size: 1.125rem;
-  color: var(--text-muted);
-  max-width: 600px;
-  margin: 0 auto;
-}
+/* .section-header/.section-title/.section-subtitle vivem em shared.css
+   (usados por WaterQuality, MarineLife e DashboardPreview). */
 
 .about-grid {
   display: grid;

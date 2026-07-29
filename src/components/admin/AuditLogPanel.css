@@ -1,0 +1,121 @@
+/* Log de auditoria (6.1) */
+
+.audit-panel {
+  padding: 1.5rem;
+}
+
+.audit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.audit-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.audit-title h3 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.audit-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.audit-select {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.audit-select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* Tabela larga rola dentro do próprio container — a página nunca rola lateral */
+.audit-table-wrap {
+  overflow-x: auto;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 0.4rem;
+}
+
+.audit-table th {
+  text-align: left;
+  padding: 0 0.75rem 0.75rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+}
+
+.audit-table td {
+  padding: 0.7rem 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 0.85rem;
+  vertical-align: top;
+}
+
+.audit-table td:first-child { border-radius: 8px 0 0 8px; }
+.audit-table td:last-child  { border-radius: 0 8px 8px 0; }
+
+.audit-when {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.audit-who { font-weight: 600; }
+
+.audit-acao {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--primary);
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  white-space: nowrap;
+}
+
+.audit-alvo {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.audit-detalhes {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  max-width: 380px;
+}
+
+.audit-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 2rem 0;
+  margin: 0;
+}

@@ -43,10 +43,7 @@
 }
 
 .toast-icon { width: 22px; height: 22px; }
-.text-success { color: var(--success); }
-.text-danger { color: var(--danger); }
-.text-primary { color: var(--primary); }
-.text-warning { color: var(--warning); }
+/* .text-* vivem em styles/shared.css. */
 
 .toast-content {
   flex: 1;

@@ -223,18 +223,20 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
           />
 
           {visibleBuoys.map(buoy => {
-            const d          = currentData[buoy.id];
+            // Boia sem hardware = ponto de expansão planejado (sem leitura real).
+            const isPlanned  = !buoy.deviceId;
+            const d          = isPlanned ? null : currentData[buoy.id];
             const paramVal   = d?.[selectedParam];
             const heatColor  = qualityColor(selectedParam, paramVal);
-            const dotColor   = statusColor(d?.status ?? 'online');
+            const dotColor   = isPlanned ? '#64748b' : statusColor(d?.status ?? 'online');
             const isLive     = liveMode && !!buoy.deviceId && connected;
             const param      = PARAMS.find(p => p.key === selectedParam);
 
             return (
               <React.Fragment key={buoy.id}>
 
-                {/* Heatmap: 3 círculos concêntricos com gradiente de opacidade */}
-                {showHeatmap && (
+                {/* Heatmap: só para boias com hardware (sem inventar qualidade em pontos planejados) */}
+                {showHeatmap && !isPlanned && (
                   <>
                     <Circle
                       center={buoy.coords}
@@ -273,12 +275,13 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
                 {/* Marcador principal da bóia */}
                 <CircleMarker
                   center={buoy.coords}
-                  radius={9}
+                  radius={isPlanned ? 8 : 9}
                   pathOptions={{
-                    color: '#0B111A',
+                    color: isPlanned ? '#94a3b8' : '#0B111A',
                     fillColor: dotColor,
-                    fillOpacity: 1,
+                    fillOpacity: isPlanned ? 0.3 : 1,
                     weight: 2,
+                    dashArray: isPlanned ? '3 3' : undefined,
                   }}
                 >
                   {/* Tooltip hover */}
@@ -290,9 +293,15 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
                         {isLive && <span className="imap-live-dot" />}
                       </div>
                       <div className="imap-tooltip-readings">
-                        <span><Thermometer size={12} /> {d?.temperatura ?? '--'} °C</span>
-                        <span><Droplet size={12} /> pH {d?.ph ?? '--'}</span>
-                        <span><Activity size={12} /> {d?.turbidez ?? '--'} NTU</span>
+                        {isPlanned ? (
+                          <span>Ponto de expansão · planejado (sem hardware)</span>
+                        ) : (
+                          <>
+                            <span><Thermometer size={12} /> {d?.temperatura ?? '--'} °C</span>
+                            <span><Droplet size={12} /> pH {d?.ph ?? '--'}</span>
+                            <span><Activity size={12} /> {d?.turbidez ?? '--'} NTU</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </Tooltip>
@@ -306,10 +315,16 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
                           className="imap-popup-status"
                           style={{ color: dotColor }}
                         >
-                          ● {d?.status ?? 'online'}
+                          ● {isPlanned ? 'planejado' : (d?.status ?? 'online')}
                         </span>
                       </div>
                       <p className="imap-popup-name">{buoy.name}</p>
+                      {isPlanned && (
+                        <p className="imap-popup-name" style={{ opacity: 0.7, fontStyle: 'italic' }}>
+                          Ponto de expansão georreferenciado — hardware não instalado.
+                        </p>
+                      )}
+                      {!isPlanned && (
                       <table className="imap-popup-table">
                         <tbody>
                           <tr>
@@ -332,8 +347,11 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
                           </tr>
                         </tbody>
                       </table>
+                      )}
                       <div className="imap-popup-source">
-                        {isLive ? '🔴 Dados em tempo real (MQTT)' : `📅 ${fmtTimestamp(currentTs)}`}
+                        {isPlanned
+                          ? '📍 Expansão planejada'
+                          : isLive ? '🔴 Dados em tempo real (MQTT)' : `📅 ${fmtTimestamp(currentTs)}`}
                       </div>
                     </div>
                   </Popup>
@@ -361,7 +379,7 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
             <span><span className="imap-legend-dot" style={{ background: '#22c55e' }} /> Ótima</span>
             <span><span className="imap-legend-dot" style={{ background: '#eab308' }} /> Atenção</span>
             <span><span className="imap-legend-dot" style={{ background: '#ef4444' }} /> Crítica</span>
-            <span><span className="imap-legend-dot" style={{ background: '#475569' }} /> Sem dados</span>
+            <span><span className="imap-legend-dot" style={{ background: '#64748b', border: '1px dashed #94a3b8' }} /> Expansão (planejada)</span>
           </div>
         </div>
       </div>

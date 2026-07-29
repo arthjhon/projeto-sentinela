@@ -5,10 +5,15 @@ import {
 } from 'recharts';
 import {
   PieChart, Thermometer, Droplet, Activity,
-  Wifi, WifiOff, Radio,
+  Wifi, WifiOff, Radio, Download,
 } from 'lucide-react';
 import { useMqtt } from '../../hooks/useMqtt';
+import { useInfluxHistory, PERIODS } from '../../hooks/useInfluxHistory';
+import { fetchHistoryCsv, downloadCsv } from '../../utils/exportHistoryCsv';
 import { FLEET, getMqttTopics } from '../../config/fleet';
+// 2.1 — reusa a classificação da página pública: as faixas (CONAMA 357) já
+// vivem em config/waterQuality.js. Duplicá-las aqui criaria duas verdades.
+import { classifyParam } from '../../config/waterQuality';
 import './AdminDashboard.css';
 
 // Mantém os últimos 120 pontos (≈ 10 min com leituras a cada 5 s)
@@ -36,25 +41,44 @@ const ChartTooltip = ({ active, payload, label, unit }) => {
 // SM-01 é a bóia de referência do dashboard (única com hardware ativo)
 const SM01 = FLEET.find(b => b.id === 'SM-01');
 
+// Janelas curtas mostram hora; janelas longas precisam da data para o eixo
+// fazer sentido (30d de "14:32" seria ilegível).
+function formatTick(date, period) {
+  const opts = (period === '1h' || period === '24h')
+    ? { hour: '2-digit', minute: '2-digit' }
+    : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' };
+  return date.toLocaleString('pt-BR', opts);
+}
+
 const AdminDashboard = () => {
   const { messages, connected } = useMqtt(getMqttTopics());
 
   // ── Buffer circular de leituras ───────────────────────────────────────────────
   const [buffer, setBuffer]         = useState([]);
   const [activeParam, setActiveParam] = useState('temperatura');
+  const [period, setPeriod]           = useState('1h');
+
+  // Histórico persistido (InfluxDB). Não substitui o MQTT: o buffer acima
+  // continua alimentando cards e estatísticas em tempo real.
+  const { data: history, loading: historyLoading, error: historyError } =
+    useInfluxHistory(activeParam, period, SM01?.deviceId);
 
   const sensorMsg = SM01?.deviceId ? messages[`${SM01.deviceId}/sensores`] : null;
 
   useEffect(() => {
     if (!sensorMsg) return;
 
-    const ts = new Date().toLocaleTimeString('pt-BR', {
+    const now = new Date();
+    const ts = now.toLocaleTimeString('pt-BR', {
       hour: '2-digit', minute: '2-digit', second: '2-digit',
     });
 
     setBuffer(prev => {
       const entry = {
         time:        ts,
+        // timestamp bruto: o gráfico precisa comparar com o último ponto do
+        // Influx, e `time` já vem formatado para exibição
+        ts:          now.getTime(),
         temperatura: sensorMsg.temperatura != null ? +sensorMsg.temperatura.toFixed(2) : null,
         ph:          sensorMsg.ph          != null ? +sensorMsg.ph.toFixed(3)          : null,
         turbidez:    sensorMsg.turbidez    != null ? +sensorMsg.turbidez.toFixed(1)    : null,
@@ -63,6 +87,43 @@ const AdminDashboard = () => {
       return next.length > MAX_BUFFER ? next.slice(-MAX_BUFFER) : next;
     });
   }, [sensorMsg]);
+
+  // ── Export CSV do período selecionado ────────────────────────────────────────
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
+
+  async function handleExport() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const { csv, rows } = await fetchHistoryCsv(period, SM01?.deviceId, SM01?.id);
+      if (rows === 0) {
+        setExportError(`Sem leituras em ${PERIODS[period].label} para exportar.`);
+        return;
+      }
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadCsv(csv, `sentinela_${SM01?.id ?? 'frota'}_${period}_${stamp}.csv`);
+    } catch (err) {
+      setExportError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // Série do gráfico: histórico gravado + leituras que chegaram via MQTT depois
+  // do último ponto do Influx (o Telegraf só faz flush a cada 10s, então sem
+  // isso o gráfico pareceria travado entre uma gravação e outra).
+  const series = useMemo(() => {
+    const points = history.map(d => ({
+      time:  formatTick(d.time, period),
+      value: +d.value.toFixed(3),
+    }));
+    const lastTs = history.at(-1)?.time.getTime() ?? 0;
+    const live = buffer
+      .filter(e => e.ts > lastTs && e[activeParam] != null)
+      .map(e => ({ time: formatTick(new Date(e.ts), period), value: e[activeParam] }));
+    return [...points, ...live];
+  }, [history, buffer, activeParam, period]);
 
   // ── Última leitura + status do hardware ──────────────────────────────────────
   const latest     = buffer.at(-1) ?? {};
@@ -111,6 +172,7 @@ const AdminDashboard = () => {
       desc:  stats.temperatura
         ? `Sessão: ${stats.temperatura.min} – ${stats.temperatura.max} °C`
         : 'Aguardando dados...',
+      classificacao: classifyParam('temperatura', latest.temperatura),
     },
     {
       title: 'pH (SM-01)',
@@ -120,6 +182,7 @@ const AdminDashboard = () => {
       desc:  stats.ph
         ? `Sessão: ${stats.ph.min} – ${stats.ph.max}`
         : 'Aguardando dados...',
+      classificacao: classifyParam('ph', latest.ph),
     },
     {
       title: 'Turbidez (SM-01)',
@@ -129,6 +192,7 @@ const AdminDashboard = () => {
       desc:  stats.turbidez
         ? `Sessão: ${stats.turbidez.min} – ${stats.turbidez.max} NTU`
         : 'Aguardando dados...',
+      classificacao: classifyParam('turbidez', latest.turbidez),
     },
   ];
 
@@ -143,16 +207,31 @@ const AdminDashboard = () => {
 
       {/* ── Metric Cards ── */}
       <div className="metrics-grid">
-        {metricCards.map((m) => (
-          <div key={m.title} className="metric-card glass" style={m.style}>
-            <div className="metric-header">
-              <h4>{m.title}</h4>
-              <m.icon className={`text-${m.color}`} size={22} />
+        {metricCards.map((m) => {
+          // 2.1 — sem leitura não há classificação: melhor cinza do que fingir
+          // que "sem dado" é "saudável".
+          const c = m.classificacao;
+          const estilo = c
+            ? { ...m.style, borderColor: `${c.color}55`, background: `${c.color}0d` }
+            : m.style;
+          return (
+            <div key={m.title} className="metric-card glass" style={estilo}>
+              <div className="metric-header">
+                <h4>{m.title}</h4>
+                <m.icon
+                  className={c ? undefined : `text-${m.color}`}
+                  style={c ? { color: c.color } : undefined}
+                  size={22}
+                />
+              </div>
+              <div className="metric-value" style={c ? { color: c.color } : undefined}>{m.value}</div>
+              <p className="metric-trend" style={{ color: 'var(--text-muted)' }}>
+                {c && <span className="metric-faixa" style={{ color: c.color }}>{c.text} · </span>}
+                {m.desc}
+              </p>
             </div>
-            <div className="metric-value">{m.value}</div>
-            <p className="metric-trend" style={{ color: 'var(--text-muted)' }}>{m.desc}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ── Avg Cards ── */}
@@ -216,19 +295,59 @@ const AdminDashboard = () => {
                 {cfg.label}
               </button>
             ))}
+
+            {/* Seletor de período (histórico do InfluxDB) */}
+            <div className="chart-period-tabs">
+              {Object.entries(PERIODS).map(([key, cfg]) => (
+                <button
+                  key={key}
+                  className={`chart-period-tab ${period === key ? 'active' : ''}`}
+                  onClick={() => setPeriod(key)}
+                  aria-pressed={period === key}
+                >
+                  {cfg.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Export do período selecionado */}
+            <button
+              className="btn-table action-btn chart-export-btn"
+              onClick={handleExport}
+              disabled={exporting}
+              title={`Exportar as leituras de ${PERIODS[period].label} em CSV`}
+            >
+              <Download size={14} />
+              {exporting ? 'Gerando...' : 'Exportar CSV'}
+            </button>
           </div>
+
+          {exportError && (
+            <p className="chart-export-error" role="status">{exportError}</p>
+          )}
 
           {/* Área do gráfico */}
           <div className="chart-body">
-            {buffer.length === 0 ? (
+            {historyError ? (
               <div className="chart-empty">
                 <Radio size={32} />
-                <span>Aguardando dados do broker MQTT...</span>
-                <small>Certifique-se que o ESP32 está ligado e conectado.</small>
+                <span>Não foi possível carregar o histórico.</span>
+                <small>{historyError}</small>
+              </div>
+            ) : historyLoading && series.length === 0 ? (
+              <div className="chart-empty">
+                <Radio size={32} />
+                <span>Carregando histórico...</span>
+              </div>
+            ) : series.length === 0 ? (
+              <div className="chart-empty">
+                <Radio size={32} />
+                <span>Sem leituras registradas em {PERIODS[period].label}.</span>
+                <small>Escolha um período maior ou verifique se o ESP32 está publicando.</small>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={buffer} margin={{ top: 5, right: 16, left: -10, bottom: 5 }}>
+                <LineChart data={series} margin={{ top: 5, right: 16, left: -10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                   <XAxis
                     dataKey="time"
@@ -247,7 +366,7 @@ const AdminDashboard = () => {
                   <Tooltip content={<ChartTooltip unit={param.unit} />} />
                   <Line
                     type="monotone"
-                    dataKey={activeParam}
+                    dataKey="value"
                     stroke={param.color}
                     strokeWidth={2}
                     dot={false}

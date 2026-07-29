@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Heart, Mail, TrendingUp, Cpu, Cloud, Wrench, Copy, CheckCircle2, Waves, Wifi, Building2, ArrowRight } from 'lucide-react';
+import { getSetting, FUNDING_GOAL_KEY } from '../../services/settings';
+import { useDiasMonitorados } from '../../hooks/useDiasMonitorados';
 import './SupportUsPage.css';
 
 const IMPACT_STATS = [
@@ -7,6 +9,8 @@ const IMPACT_STATS = [
   { value: '1',    label: 'Bóia Protótipo' },
   { value: '5',    label: 'Parâmetros Planejados' },
 ];
+
+const brl = (n) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 
 const FUNDING_ITEMS = [
   {
@@ -39,6 +43,38 @@ const SupportUsPage = () => {
   const [copied, setCopied] = useState(false);
   const pixKey = 'apoio@projetosentinela.com.br';
 
+  // 5.3 — dias monitorados (mock persistente ou dado real do Influx)
+  const { dias, fonte } = useDiasMonitorados();
+
+  // 5.4 — meta de financiamento, configurada no painel admin
+  const [funding, setFunding] = useState(null);
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      try {
+        const v = await getSetting(FUNDING_GOAL_KEY, null);
+        if (ativo) setFunding(v);
+      } catch {
+        // meta é opcional: se falhar, a página segue sem a barra
+        if (ativo) setFunding(null);
+      }
+    })();
+    return () => { ativo = false; };
+  }, []);
+
+  const metaPct = funding?.meta > 0
+    ? Math.min(100, Math.round((funding.arrecadado / funding.meta) * 100))
+    : 0;
+
+  // dias entra como stat dinâmica junto das fixas
+  const stats = [
+    ...IMPACT_STATS,
+    {
+      value: dias == null ? '—' : dias.toLocaleString('pt-BR'),
+      label: fonte === 'real' ? 'Dias Monitorados' : 'Dias de Monitoramento',
+    },
+  ];
+
   const handleCopy = () => {
     navigator.clipboard.writeText(pixKey);
     setCopied(true);
@@ -60,13 +96,27 @@ const SupportUsPage = () => {
         </p>
 
         <div className="impact-stats">
-          {IMPACT_STATS.map((s, i) => (
+          {stats.map((s, i) => (
             <div key={i} className="impact-stat glass">
               <span className="impact-value">{s.value}</span>
               <span className="impact-label">{s.label}</span>
             </div>
           ))}
         </div>
+
+        {/* 5.4 — barra de meta; só aparece quando o admin definiu uma meta > 0 */}
+        {funding?.meta > 0 && (
+          <div className="funding-goal glass">
+            <div className="funding-goal-head">
+              <span className="funding-goal-raised">{brl(funding.arrecadado)}</span>
+              <span className="funding-goal-target">de {brl(funding.meta)}</span>
+            </div>
+            <div className="funding-goal-bar">
+              <div className="funding-goal-fill" style={{ width: `${metaPct}%` }} />
+            </div>
+            <span className="funding-goal-pct">{metaPct}% da meta alcançada</span>
+          </div>
+        )}
       </div>
 
       {/* ── O que financia ───────────────────── */}

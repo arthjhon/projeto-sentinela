@@ -13,33 +13,39 @@ const SupportersPage = () => {
         </p>
       </div>
 
-      {/* UMJ — apoio primário */}
-      <div className="umj-card glass animate-fade-in">
-        <img src="/UMJ.png" alt="Logotipo do Centro Universitário Mário Pontes Jucá" className="umj-logo" />
-        <div className="umj-info">
-          <h2>Centro Universitário Mário Pontes Jucá (UMJ)</h2>
-          <p>Apoio Acadêmico Primário e base de desenvolvimento da Engenharia da Computação. A UMJ fornece a infraestrutura laboratorial, mentoria técnica e fomento à pesquisa aplicada que tornam o projeto viável.</p>
+      <div className="supporters-grid">
+        {/* UMJ — apoio primário */}
+        <div className="supporter-card glass animate-fade-in">
+          <div className="supporter-logo-wrapper">
+            <img src="/UMJ.png" alt="Logotipo do Centro Universitário Mário Pontes Jucá" className="supporter-logo umj-logo" />
+          </div>
+          <div className="supporter-info">
+            <h2>Centro Universitário Mário Pontes Jucá (UMJ)</h2>
+            <p>Apoio Acadêmico Primário e base de desenvolvimento da Engenharia da Computação. A UMJ fornece a infraestrutura laboratorial, mentoria técnica e fomento à pesquisa aplicada que tornam o projeto viável.</p>
+          </div>
         </div>
-      </div>
 
-      {/* Teranex — parceiro tecnológico */}
-      <div className="umj-card glass animate-fade-in" style={{ animationDelay: '0.15s' }}>
-        <img src="/teranex.svg" alt="Logotipo da Teranex" className="umj-logo teranex-logo" />
-        <div className="umj-info">
-          <h2>Teranex</h2>
-          <p>Parceira tecnológica no fornecimento de infraestrutura, soluções de conectividade e suporte ao desenvolvimento de hardware embarcado para as bóias de monitoramento.</p>
+        {/* Teranex — parceiro tecnológico */}
+        <div className="supporter-card glass animate-fade-in" style={{ animationDelay: '0.15s' }}>
+          <div className="supporter-logo-wrapper teranex-logo">
+            <img src="/teranex.svg" alt="Logotipo da Teranex" className="supporter-logo" />
+          </div>
+          <div className="supporter-info">
+            <h2>TeraNex Tecnologia</h2>
+            <p>Parceira tecnológica no fornecimento de infraestrutura, soluções de conectividade e suporte ao desenvolvimento de hardware embarcado para as bóias de monitoramento.</p>
+          </div>
         </div>
-      </div>
 
-      {/* KodeLab UMJ — laboratório de desenvolvimento */}
-      <div className="umj-card glass animate-fade-in" style={{ animationDelay: '0.3s' }}>
-        <div className="kodelab-logo-wrap">
-          <img src="/kodelab-white.png" alt="Ícone do KodeLab UMJ" className="kodelab-icon-img" />
-          <img src="/kodelab-text-white.png" alt="Nome do KodeLab UMJ" className="kodelab-text-img" />
-        </div>
-        <div className="umj-info">
-          <h2>Kode.Lab UMJ</h2>
-          <p>Laboratório de pesquisa e desenvolvimento da UMJ, responsável pelo suporte técnico no desenvolvimento da plataforma web e integração dos sistemas embarcados do Projeto Sentinela.</p>
+        {/* KodeLab UMJ — laboratório de desenvolvimento */}
+        <div className="supporter-card glass animate-fade-in" style={{ animationDelay: '0.3s' }}>
+          <div className="supporter-logo-wrapper kodelab-logo-wrap">
+            <img src="/kodelab-white.png" alt="Ícone do KodeLab UMJ" className="kodelab-icon-img" />
+            <img src="/kodelab-text-white.png" alt="Nome do KodeLab UMJ" className="kodelab-text-img" />
+          </div>
+          <div className="supporter-info">
+            <h2>Kode.Lab UMJ</h2>
+            <p>Laboratório de pesquisa e desenvolvimento da UMJ, responsável pelo suporte técnico no desenvolvimento da plataforma web e integração dos sistemas embarcados do Projeto Sentinela.</p>
+          </div>
         </div>
       </div>
 

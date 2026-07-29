@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMqtt } from '../../hooks/useMqtt';
 import { FLEET, getMqttTopics } from '../../config/fleet';
+import { logAcao, AUDIT } from '../../services/auditLog';
+import { sha256Hex } from '../../utils/sha256';
 import {
   UploadCloud, Cpu, Wifi, WifiOff, CheckCircle2,
   AlertTriangle, RotateCw, Radio, FileCode2, Trash2,
@@ -19,12 +21,17 @@ const OtaPage = () => {
   const [firmwareVersion, setFirmwareVersion] = useState('');
   const [targetBuoyId, setTargetBuoyId]       = useState('SM-01');
   const [releaseNotes, setReleaseNotes]       = useState('');
+  // 4.1 — hash do .bin, calculado no navegador ao selecionar o arquivo
+  const [sha256, setSha256]                   = useState(null);
+  const [hashing, setHashing]                 = useState(false);
 
   // ── Deploy state ──
   const [phase, setPhase]               = useState('idle'); // idle | uploading | sending | waiting | success | error
   const [uploadProgress, setUploadProgress] = useState(0);
   const [deployLog, setDeployLog]       = useState([]);
   const [confirmOpen, setConfirmOpen]   = useState(false);
+  // id da linha em firmware_deploys, para fechar o status quando a bóia responder
+  const [deployId, setDeployId]         = useState(null);
 
   const logEndRef = useRef(null);
 
@@ -43,8 +50,24 @@ const OtaPage = () => {
       if (status === 'success') setPhase('success');
       if (status === 'error')   setPhase('error');
       if (status === 'flashing' || status === 'downloading') setPhase('waiting');
+
+      // 4.2 — fecha o registro do deploy conforme a bóia reporta o desfecho.
+      // Sem isso a linha ficaria 'pendente' para sempre e o histórico mentiria.
+      if (deployId && (status === 'success' || status === 'error')) {
+        supabase
+          .from('firmware_deploys')
+          .update({
+            status: status === 'success' ? 'sucesso' : 'falha',
+            confirmado_em: new Date().toISOString(),
+          })
+          .eq('id', deployId)
+          .then(({ error }) => {
+            if (error) appendLog(`AVISO: não foi possível atualizar o histórico (${error.message}).`);
+          });
+        setDeployId(null);
+      }
     });
-  }, [messages]);
+  }, [messages, deployId]);
 
   // ─── Helpers ──
   const appendLog = (msg) => {
@@ -52,7 +75,7 @@ const OtaPage = () => {
     setDeployLog(prev => [...prev, `[${ts}] ${msg}`]);
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.name.endsWith('.bin')) {
@@ -61,6 +84,20 @@ const OtaPage = () => {
     }
     setFirmwareFile(file);
     appendLog(`Arquivo selecionado: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+
+    // Hash calculado aqui, e não no deploy: o operador precisa ver e poder
+    // conferir o SHA-256 ANTES de confirmar (backlog 4.1).
+    setSha256(null);
+    setHashing(true);
+    try {
+      const hex = await sha256Hex(file);
+      setSha256(hex);
+      appendLog(`SHA-256: ${hex}`);
+    } catch (err) {
+      appendLog(`ERRO ao calcular SHA-256: ${err.message}`);
+    } finally {
+      setHashing(false);
+    }
   };
 
   const handleDeploy = async () => {
@@ -102,13 +139,40 @@ const OtaPage = () => {
       // ─── 3. Envia comando OTA via MQTT ────────────────────────────────────
       setPhase('sending');
       const cmdTopic = `${target.deviceId}/ota/command`;
-      const cmd = { url: publicUrl, version: firmwareVersion };
+      // sha256 vai junto para o firmware validar o binário antes de gravar a
+      // flash. A validação em si é do lado do ESP32 — ver implementados.md.
+      const cmd = { url: publicUrl, version: firmwareVersion, sha256 };
       const sent = publish(cmdTopic, cmd);
 
       if (!sent) throw new Error('MQTT desconectado — comando não enviado. Tente novamente.');
       appendLog(`Comando OTA enviado → ${cmdTopic}`);
       appendLog(`Versão alvo: ${firmwareVersion}`);
       appendLog(`Aguardando resposta do dispositivo...`);
+
+      // 4.2 — registra o deploy. status='pendente' até a bóia confirmar via
+      // MQTT (o useEffect de ota/status fecha o ciclo).
+      const { data: deployRow, error: deployErr } = await supabase
+        .from('firmware_deploys')
+        .insert({
+          boia_id: target.id,
+          versao: firmwareVersion,
+          sha256,
+          notas_release: releaseNotes || null,
+          status: 'pendente',
+        })
+        .select('id')
+        .single();
+      if (deployErr) {
+        // não aborta o deploy: o comando já foi para o dispositivo, e falhar
+        // aqui só nos deixa sem histórico — pior seria fingir que não enviamos
+        appendLog(`AVISO: deploy enviado, mas não foi possível registrar no histórico (${deployErr.message}).`);
+      } else {
+        setDeployId(deployRow.id);
+      }
+
+      logAcao(AUDIT.FIRMWARE_DEPLOY, target.id, {
+        versao: firmwareVersion, sha256, arquivo: firmwareFile.name,
+      });
 
       setPhase('waiting');
 
@@ -259,6 +323,13 @@ const OtaPage = () => {
                     <CheckCircle2 size={24} className="text-success" />
                     <span className="file-name">{firmwareFile.name}</span>
                     <span className="file-size">({(firmwareFile.size / 1024).toFixed(1)} KB)</span>
+                    {/* 4.1 — o operador precisa conferir o hash ANTES de confirmar */}
+                    {hashing && <span className="file-hash">calculando SHA-256…</span>}
+                    {sha256 && (
+                      <span className="file-hash" title="SHA-256 do binário — enviado junto ao comando OTA para o firmware validar">
+                        SHA-256 {sha256}
+                      </span>
+                    )}
                   </>
                 ) : (
                   <>
