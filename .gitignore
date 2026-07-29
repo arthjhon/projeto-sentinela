@@ -9,9 +9,13 @@ lerna-debug.log*
 
 .claude/*
 node_modules
+.creds/
 dist
 dist-ssr
 *.local
+
+# Mockups do brainstorming (companion visual)
+.superpowers/
 
 # Editor directories and files
 .vscode/*

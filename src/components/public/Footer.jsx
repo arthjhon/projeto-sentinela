@@ -24,6 +24,7 @@ const Footer = () => {
             <li><Link to="/monitoramento">Monitoramento</Link></li>
             <li><Link to="/equipe">Equipe</Link></li>
             <li><Link to="/apoiadores">Apoiadores</Link></li>
+            <li><Link to="/evolucao">Evolução</Link></li>
             <li><Link to="/apoie">Apoie o Projeto</Link></li>
           </ul>
         </div>

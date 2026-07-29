@@ -33,6 +33,9 @@ O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve 
 
 - **Autenticação** com controle de acesso por papel (admin / operador) via Supabase
 - **Dashboard** com métricas gerais do sistema e integridade dos dispositivos
+- **Histórico persistido** — gráfico por janela de tempo (1h / 24h / 7d / 30d) lido do
+  InfluxDB, somado às leituras que continuam chegando por MQTT em tempo real
+- **Exportação CSV** das leituras do período selecionado, pronta para abrir no Excel
 - **Gerenciador de Bóias** — CRUD completo: cadastro, edição, remoção e histórico de leituras
 - **Gestão de Operadores** — criação e remoção de usuários (exclusivo para admins)
 - **OTA Firmware** — envio de atualização de firmware para o ESP32 via MQTT, sem acesso físico ao hardware
@@ -59,6 +62,7 @@ O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve 
 | **ESP32** | Microcontrolador embarcado nas bóias — coleta sensorial e transmissão MQTT |
 | **HiveMQ (Broker MQTT)** | Mensageria pub/sub para telemetria contínua e comandos OTA |
 | **Supabase (PostgreSQL)** | Autenticação, RBAC, perfis de usuário e storage de firmware (.bin) |
+| **Telegraf** | Ingestão MQTT → InfluxDB: assina os tópicos e grava cada leitura, de forma declarativa (`telegraf/telegraf.conf`) |
 | **InfluxDB** | Banco de dados time-series para histórico massivo de leituras |
 
 <br/>
@@ -149,8 +153,51 @@ O app estará disponível em `http://localhost:5173`.
    VITE_SUPABASE_ANON_KEY="sua_chave_publica_jwt"
    ```
 4. **Desabilite confirmação por e-mail:** *Authentication → Providers → Email* → desligue `Confirm email` e `Secure email change`.
-5. **Esquema de dados:** No *SQL Editor* do Supabase, execute o arquivo `supabase_schema.sql` da raiz do projeto.
+5. **Esquema de dados:** No *SQL Editor* do Supabase, execute os arquivos abaixo, na ordem (todos são idempotentes — podem ser re-executados sem erro):
+   1. `supabase_schema.sql` — esquema base (perfis, papéis, RLS inicial).
+   2. `supabase_ota_schema.sql` — histórico de deploys de firmware OTA.
+   3. `supabase_backlog_schema.sql` — manutenção, calibração de sensores, log de auditoria e `app_settings` (configurações genéricas usadas por outras features, incluindo a data oficial do changelog abaixo).
+   4. `supabase_changelog_schema.sql` — tabela e bucket de Storage do changelog público (`/evolucao`). Depende de `app_settings` (arquivo 3) já existir para o contador de dias funcionar — ver nota no cabeçalho do próprio arquivo.
 6. **Primeiro acesso:** Crie seu usuário administrador em *Authentication → Add User*. O trigger do schema assinará automaticamente o papel `admin`.
+
+<br/>
+
+## Configurando o Histórico (InfluxDB)
+
+O gráfico de histórico e a exportação CSV leem do InfluxDB. A ingestão é feita
+pelo **Telegraf**, que assina os tópicos MQTT e grava cada leitura — não há
+backend próprio no caminho.
+
+1. Suba a stack de dados (na raiz do repositório, não neste diretório):
+   ```bash
+   docker compose up -d influxdb telegraf
+   ```
+2. Crie um token **somente-leitura** com escopo no bucket, e não use o token de
+   admin (ele permite escrita e exclusão):
+   ```bash
+   docker exec <container-influx> influx auth create \
+     --org "$INFLUXDB_ORG" --read-bucket "<id-do-bucket>" \
+     --description "sentinela-frontend-read"
+   ```
+3. Acrescente ao `.env.local`:
+   ```env
+   # Identificadores públicos: o cliente precisa deles para montar a query Flux
+   VITE_INFLUX_ORG="sentinela"
+   VITE_INFLUX_BUCKET="iot"
+
+   # SEM prefixo VITE_ de propósito — ver aviso abaixo
+   INFLUXDB_URL="http://<host-do-influx>:8086"
+   INFLUXDB_READ_TOKEN="token_somente_leitura"
+   ```
+
+> **Por que `INFLUXDB_READ_TOKEN` não tem prefixo `VITE_`**
+> O Vite injeta *apenas* variáveis `VITE_*` no bundle — e esse bundle é servido
+> a qualquer visitante, inclusive no site público. Um token com prefixo `VITE_`
+> viraria credencial pública.
+> O navegador chama `/influx/...` e quem anexa o token é o proxy, no servidor:
+> `server.proxy` do `vite.config.js` em desenvolvimento, `location /influx/` do
+> `nginx.conf` em produção (preenchido por `envsubst` no boot do container).
+> **Renomear essa variável para `VITE_INFLUX_READ_TOKEN` vaza o token.**
 
 <br/>
 
@@ -169,22 +216,37 @@ O app estará disponível em `http://localhost:5173`.
 - [x] Página de Apoiadores do projeto
 - [x] Pipeline de deploy automatizado (GitHub Actions + cloudflared)
 - [x] Versionamento de firmware (v0 original → v1 bugfix → v2 OTA)
+- [x] **Persistência histórica no InfluxDB** — toda leitura publicada no MQTT é
+      gravada via Telegraf, então o histórico sobrevive a reinício da stack e
+      deixa de depender do buffer em memória da sessão
+- [x] **Seletor de período no histórico** (1h / 24h / 7d / 30d) — consulta o
+      InfluxDB pela janela escolhida, somando as leituras que continuam
+      chegando por MQTT em tempo real
+- [x] **Exportação CSV do histórico** — respeita o período selecionado e sai
+      com dados brutos (sem a agregação usada no gráfico), no formato pt-BR
+      (`;` e decimal com vírgula) que o Excel abre com duplo clique
+- [x] **Changelog público** (`/evolucao`) — timeline de marcos e novidades
+      curados pelo admin, com marcos automáticos de "dias monitorando"
+      calculados a partir de uma data oficial definida no painel
+- [x] **Faixas de referência por parâmetro nos cards** (verde / amarelo / vermelho)
+      no dashboard admin, com selo Saudável/Atenção/Crítico
+- [x] **Log de auditoria das ações do painel** — aba em `/admin/operadores`,
+      append-only (sem policy de update/delete, nem para admin)
 
 ### Próximos passos
 
 #### Observabilidade
-- [ ] Stack Grafana + InfluxDB + Telegraf para histórico de leituras e dashboards avançados
 - [ ] Dashboard Grafana público para transparência dos dados sem necessidade de login
 - [ ] Retenção e downsampling configurável no InfluxDB
 
 #### Alertas
-- [ ] Alertas automáticos quando parâmetros saírem do padrão (temperatura, pH, turbidez)
+- [ ] Alertas automáticos por parâmetros fora do padrão (webhook + cooldown)
 - [ ] Notificações por e-mail e/ou WhatsApp para a equipe em casos críticos
 - [ ] Calibração remota de sensores via MQTT
 
 #### Dados e Relatórios
-- [ ] Exportação de dados em CSV e PDF para relatórios acadêmicos
-- [ ] Histórico detalhado de leituras por bóia com filtros por período
+- [ ] Índice de Qualidade da Água (WQI) na página pública
+- [ ] Exportação de dados em PDF para relatórios acadêmicos
 
 #### Hardware e Campo
 - [ ] Módulo 4G/LTE (SIM7600) — conectividade direta em campo, sem dependência de Wi-Fi

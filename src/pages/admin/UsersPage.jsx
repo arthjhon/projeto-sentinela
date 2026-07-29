@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from './../../contexts/AuthContext';
 import { useToast } from './../../contexts/ToastContext';
+import { logAcao, AUDIT } from './../../services/auditLog';
 import ConfirmModal from './../../components/ConfirmModal';
+import AuditLogPanel from './../../components/admin/AuditLogPanel';
 import { Search, Plus, Edit2, Trash2, Shield, User, Eye, KeyRound, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import './UsersPage.css';
@@ -20,6 +22,8 @@ const UsersPage = () => {
 
   // Confirmation state
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  // 6.1 — auditoria entra como aba aqui, não como rota nova
+  const [aba, setAba] = useState('operadores');
   const [userToDelete, setUserToDelete] = useState(null);
 
   // Validation State
@@ -92,9 +96,14 @@ const UsersPage = () => {
   };
 
   const confirmDeleteAction = async () => {
+    // captura antes de deletar: depois o registro some da lista
+    const alvo = users.find(u => u.id === userToDelete);
     const res = await deleteAdminUser(userToDelete);
     if(res.success) {
       addToast("Operador permanentemente excluído da Nuvem.", "success");
+      logAcao(AUDIT.USUARIO_REMOVER, alvo?.username ?? userToDelete, {
+        nome: alvo?.name, role: alvo?.role,
+      });
     } else {
       addToast("Falha ao excluir: " + res.error, "error");
     }
@@ -137,6 +146,9 @@ const UsersPage = () => {
       
       if(res.success) {
         addToast("Operador atualizado com sucesso na Nuvem.", "success");
+        logAcao(AUDIT.USUARIO_EDITAR, formData.username, {
+          nome: formData.name, role: formData.role,
+        });
       } else {
         addToast("Erro na Nuvem: " + res.error, "error");
       }
@@ -151,6 +163,10 @@ const UsersPage = () => {
       const res = await createAdminUser(formData, passToSave);
       
       if(res.success) {
+        // detalhes NUNCA levam a senha — o log é lido por qualquer autenticado
+        logAcao(AUDIT.USUARIO_CRIAR, formData.username, {
+          nome: formData.name, role: formData.role,
+        });
         if (passwordType === 'random' || generatedPassword) {
             addToast("Conta Criada na Nuvem! Copie a senha provisória e repasse.", "password", passToSave, 30000);
         } else {
@@ -177,22 +193,45 @@ const UsersPage = () => {
           <p>Supervisão segura das contas com acesso local à Plataforma Sentinela.</p>
         </div>
         
-        <div className="header-actions">
-          <div className="search-bar glass">
-            <Search size={18} className="text-muted" />
-            <input 
-              type="text" 
-              placeholder="Buscar operador..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+        {aba === 'operadores' && (
+          <div className="header-actions">
+            <div className="search-bar glass">
+              <Search size={18} className="text-muted" />
+              <input 
+                type="text" 
+                placeholder="Buscar operador..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <button className="btn-primary" onClick={handleOpenCreate}>
+              <Plus size={18} /> Novo Usuário
+            </button>
           </div>
-          <button className="btn-primary" onClick={handleOpenCreate}>
-            <Plus size={18} /> Novo Usuário
-          </button>
-        </div>
+        )}
       </div>
 
+      {/* Abas: contas x histórico de ações */}
+      <div className="users-tabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={aba === 'operadores'}
+          className={`users-tab ${aba === 'operadores' ? 'active' : ''}`}
+          onClick={() => setAba('operadores')}
+        >
+          Operadores
+        </button>
+        <button
+          role="tab"
+          aria-selected={aba === 'auditoria'}
+          className={`users-tab ${aba === 'auditoria' ? 'active' : ''}`}
+          onClick={() => setAba('auditoria')}
+        >
+          Log de Auditoria
+        </button>
+      </div>
+
+      {aba === 'operadores' && (
       <div className="users-list-wrapper glass mt-4">
         <table className="users-table">
           <thead>
@@ -241,6 +280,9 @@ const UsersPage = () => {
           </tbody>
         </table>
       </div>
+      )}
+
+      {aba === 'auditoria' && <AuditLogPanel operadores={users} />}
 
       {isModalOpen && createPortal(
         <div className="crud-modal-overlay">
