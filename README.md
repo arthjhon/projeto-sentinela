@@ -217,6 +217,9 @@ backend próprio no caminho.
 - [x] **Exportação CSV do histórico** — respeita o período selecionado e sai
       com dados brutos (sem a agregação usada no gráfico), no formato pt-BR
       (`;` e decimal com vírgula) que o Excel abre com duplo clique
+- [x] **Changelog público** (`/evolucao`) — timeline de marcos e novidades
+      curados pelo admin, com marcos automáticos de "dias monitorando"
+      calculados a partir de uma data oficial definida no painel
 
 ### Próximos passos
 - [ ] Faixas de referência por parâmetro nos cards (verde / amarelo / vermelho),
