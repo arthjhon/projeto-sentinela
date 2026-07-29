@@ -1,0 +1,197 @@
+/* ═══════════════════════════════════════════════════════════════
+   CLASSES COMPARTILHADAS ENTRE PAGINAS
+
+   Importado por main.jsx -> sempre carregado, antes de qualquer chunk.
+
+   Por que existe: cada pagina e um chunk lazy com seu proprio CSS. Uma
+   classe usada por varias paginas mas definida no CSS de UMA delas so
+   aparece se aquela pagina ja tiver sido visitada — o estilo passa a
+   depender do caminho de navegacao. Era o caso de .btn-primary (definida
+   em SensorsPage.css, usada no login): F5 no /login = botao sem estilo.
+
+   Regra: classe usada por mais de uma pagina mora aqui, nunca no CSS de
+   uma pagina especifica.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── SISTEMA DE BOTOES ─────────────────────────────────────────
+   Dois modos, de proposito:
+   .btn + .btn-primary  -> composicional (publico/login): .btn da a base
+   .btn-primary sozinho -> autossuficiente (admin)
+   O seletor composto .btn.btn-primary tem especificidade maior, entao
+   vence sempre — sem depender da ordem das regras. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.875rem 2rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--primary);
+  color: #000;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+}
+
+.btn-primary:disabled {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.3);
+  cursor: not-allowed;
+}
+
+/* Variante composta (Hero, login, paginas publicas) */
+.btn.btn-primary {
+  padding: 0.875rem 2rem;
+  border-radius: 8px;
+  color: #020815;
+  box-shadow: 0 4px 14px rgba(0, 240, 255, 0.4);
+}
+
+.btn.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 240, 255, 0.6);
+  text-shadow: none;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+  text-shadow: none;
+}
+
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+/* Botao de tabela (admin) + seus modificadores */
+.btn-table {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.btn-table:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.btn-table:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.action-btn {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.danger-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* ── BADGES ──────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badge-online { background: rgba(16, 185, 129, 0.1); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.2); }
+.badge-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.2); }
+.badge-offline { background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); }
+
+/* ── TIPOGRAFIA DE SECAO (paginas publicas) ──────────────────── */
+.section-header {
+  text-align: center;
+  margin-bottom: 4rem;
+}
+
+.section-title {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  margin-bottom: 1rem;
+  background: linear-gradient(90deg, #fff 0%, #e2e8f0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.section-subtitle {
+  font-size: 1.125rem;
+  color: var(--text-muted);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Titulo <h1> das paginas publicas (equipe, apoiadores, apoie) */
+.gradient-text {
+  background: linear-gradient(135deg, #fff, var(--primary));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-family: 'Outfit', sans-serif;
+  font-size: 2.5rem;
+}
+
+/* ── UTILITARIOS ─────────────────────────────────────────────── */
+/* .text-center, .mt-* e .mb-* ja vivem em index.css (global) — nao repetir.
+   .text-muted e usada em varios lugares mas nunca foi definida; adicionar
+   aqui mudaria a aparencia de quem a usa hoje, entao fica de fora. */
+.text-primary { color: var(--primary); }
+.text-success { color: var(--success); }
+.text-danger { color: var(--danger); }
+.text-warning { color: var(--warning); }
+
+.bg-success { background: var(--success); }
+.bg-warning { background: var(--warning); }
+.bg-danger { background: var(--danger); }
+
+.text-right { text-align: right; }
+.w-100 { width: 100%; }

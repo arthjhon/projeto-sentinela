@@ -1,0 +1,83 @@
+.mon-widget { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px; padding: 16px; }
+.mon-widget-title { font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+  color: #8aa0b6; margin-bottom: 12px; display:flex; align-items:center; gap:8px; }
+.mon-grid { display: grid; gap: 14px; }
+.mon-empty { color:#64748b; font-size:13px; text-align:center; padding:24px 0; }
+
+/* Card do WQI: centraliza o gauge no espaço que sobrar quando a linha for mais
+   alta que ele (ver .mon-top-grid). O gauge é menor que os cards de métrica de
+   propósito — é ele que dita a altura mínima da coluna. */
+.wqi-widget { display: flex; flex-direction: column; }
+.wqi-body { flex: 1; display: flex; align-items: center; justify-content: center; }
+.wqi-gauge { width: 132px; height: 88px; max-width: 100%; }
+@media (max-width: 720px){ .mon-grid { grid-template-columns: 1fr !important; } }
+
+/* Layout da MonitoringPage */
+.monitoring-page > * { margin-bottom: 18px; }
+/* stretch (e não align-items:start): com start cada coluna assume a altura do
+   próprio conteúdo, e o card do WQI ficava mais alto que os de métrica. Com
+   stretch as duas colunas assumem a altura da linha, então ficam alinhadas
+   mesmo que o conteúdo mude. Depende do card do WQI ser naturalmente mais
+   baixo que os de métrica — ver .wqi-gauge em WaterQualityIndex. */
+.mon-top-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; align-items: stretch; }
+.mon-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 860px) {
+  .mon-top-grid, .mon-two-col { grid-template-columns: 1fr; }
+}
+
+/* 5.5 — snapshot compartilhável */
+.mon-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.mon-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  background: rgba(0, 240, 255, 0.08);
+  color: var(--primary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.mon-share-btn:hover {
+  background: rgba(0, 240, 255, 0.16);
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.2);
+}
+
+.mon-share-btn .spin { animation: mon-spin 0.8s linear infinite; }
+@keyframes mon-spin { to { transform: rotate(360deg); } }
+
+/* padding extra na área quando vira imagem, para os cards não colarem na borda */
+.mon-snapshot-area { border-radius: 16px; }
+
+/* carimbo: só renderiza durante a captura */
+.mon-snapshot-stamp {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.mon-snapshot-stamp span:first-child { color: var(--primary); font-weight: 600; }
+
+.mon-share-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--warning);
+}

@@ -123,7 +123,7 @@ const LoginPage = () => {
 
               <button type="submit" className="btn btn-primary login-btn">
                 <LogIn size={18} />
-                <span>Entrar no Sistema</span>
+                <span>Acessar Painel Admin</span>
               </button>
             </form>
             

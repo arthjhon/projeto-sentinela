@@ -18,23 +18,7 @@
   gap: 1rem;
 }
 
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: var(--primary);
-  color: #000;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary:hover:not(:disabled) {
-  box-shadow: 0 0 15px rgba(0,240,255,0.4);
-}
+/* .btn-primary vive em styles/shared.css (usado por login, users e ota). */
 
 .search-bar input {
   background: transparent;
@@ -170,19 +154,7 @@
   color: var(--text-muted);
 }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0.75rem;
-  border-radius: 99px;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.badge-online { background: rgba(16, 185, 129, 0.1); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.2); }
-.badge-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.2); }
-.badge-offline { background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); }
+/* .badge e variantes vivem em styles/shared.css (usados pelo Dashboard). */
 
 .battery-bar-container {
   width: 100px;
@@ -199,9 +171,7 @@
   height: 100%;
 }
 
-.bg-success { background: var(--success); }
-.bg-warning { background: var(--warning); }
-.bg-danger { background: var(--danger); }
+/* .bg-* vivem em styles/shared.css (usados pelo Dashboard). */
 
 .battery-text {
   font-family: monospace;
@@ -213,29 +183,11 @@
   font-size: 0.9rem;
 }
 
-.btn-table {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #fff;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
+/* 2a definicao de .btn-table removida: divergiu da de UsersPage.css (mesmo
+   nome, mesmo uso "btn-table action-btn", designs diferentes) e a aparencia
+   dependia de qual chunk carregava por ultimo. Canonica em shared.css. */
 
-.btn-table:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.btn-sm {
-  padding: 0.35rem 0.75rem;
-  font-size: 0.8rem;
-}
+/* .btn-sm vive em styles/shared.css. */
 
 /* Expanded Details Row */
 .details-row td {
@@ -357,13 +309,7 @@
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.action-btn {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.action-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
+/* .action-btn (modificador de .btn-table) vive em styles/shared.css. */
 
 .maintenance-trigger-btn {
   color: var(--warning);
@@ -507,26 +453,9 @@
   justify-content: flex-end;
 }
 
-.btn-primary {
-  background: var(--primary);
-  color: #000;
-  border: none;
-  padding: 0.6rem 1.2rem;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary:hover:not(:disabled) {
-  box-shadow: 0 0 15px rgba(0,240,255,0.4);
-}
-
-.btn-primary:disabled {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.3);
-  cursor: not-allowed;
-}
+/* 2a definicao de .btn-primary removida: ela sobrescrevia a primeira deste
+   mesmo arquivo (padding 0.6rem 1.2rem vencia 0.75rem 1.5rem). O valor
+   efetivo foi preservado em styles/shared.css. */
 
 /* History Panel */
 .history-panel {
@@ -602,9 +531,7 @@
   font-weight: 700;
 }
 
-.text-danger { color: var(--danger); }
-.text-right { text-align: right; }
-.mt-3 { margin-top: 1rem; }
+/* .text-danger/.text-right vivem em shared.css; .mt-3 ja existe em index.css. */
 
 @keyframes rotate {
   from { transform: rotate(0deg); }
@@ -732,3 +659,48 @@
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
   outline: none !important;
 }
+
+/* ── 3.1 Timeline de manutenções ───────────────────────────── */
+.maint-timeline {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.maint-timeline li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.78rem;
+}
+
+/* manutenção ainda aberta: âmbar, o mesmo código de cor do modo manutenção */
+.maint-timeline li.aberta { border-left-color: var(--warning); }
+
+.maint-quando { color: var(--text-muted); font-size: 0.72rem; }
+
+.maint-motivo {
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.maint-quem { color: #64748b; font-size: 0.7rem; }
+.maint-vazio { color: #64748b; font-style: italic; }
+
+/* ── 3.2 Calibração por sensor ─────────────────────────────── */
+.calib-info {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.calib-btn { margin-top: 0.4rem; }

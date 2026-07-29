@@ -9,6 +9,7 @@ const TeamPage = lazy(() => import('./pages/public/TeamPage'));
 const SupportersPage = lazy(() => import('./pages/public/SupportersPage'));
 const SupportUsPage = lazy(() => import('./pages/public/SupportUsPage'));
 const MonitoringPage = lazy(() => import('./pages/public/MonitoringPage'));
+const EvolucaoPage = lazy(() => import('./pages/public/EvolucaoPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 
 const AdminProviders = lazy(() => import('./components/AdminProviders'));
@@ -18,6 +19,8 @@ const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const SensorsPage = lazy(() => import('./pages/admin/SensorsPage'));
 const UsersPage = lazy(() => import('./pages/admin/UsersPage'));
 const OtaPage = lazy(() => import('./pages/admin/OtaPage'));
+const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
+const ChangelogPage = lazy(() => import('./pages/admin/ChangelogPage'));
 
 const RouteLoader = () => (
   <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
@@ -42,6 +45,7 @@ function App() {
           <Route path="/equipe" element={lazyElement(TeamPage)} />
           <Route path="/apoiadores" element={lazyElement(SupportersPage)} />
           <Route path="/apoie" element={lazyElement(SupportUsPage)} />
+          <Route path="/evolucao" element={lazyElement(EvolucaoPage)} />
         </Route>
 
         {/* Auth and Admin Routes */}
@@ -54,6 +58,8 @@ function App() {
               <Route path="sensors" element={lazyElement(SensorsPage)} />
               <Route path="users" element={lazyElement(UsersPage)} />
               <Route path="ota" element={lazyElement(OtaPage)} />
+              <Route path="settings" element={lazyElement(SettingsPage)} />
+              <Route path="changelog" element={lazyElement(ChangelogPage)} />
             </Route>
           </Route>
         </Route>

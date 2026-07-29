@@ -43,11 +43,14 @@
 }
 
 .impact-stats {
-  display: flex;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
   margin-top: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .impact-stats { grid-template-columns: repeat(4, 1fr); }
 }
 
 .impact-stat {
@@ -78,11 +81,16 @@
 }
 
 /* ── What it funds ────────────────────────── */
-.section-subtitle {
+/* Esta pagina usa .section-subtitle num <h2>, com design proprio — diferente
+   do .section-subtitle global (subtitulo <p> das secoes da landing).
+   Escopado em .support-page para vencer por especificidade em vez de depender
+   de qual CSS carregou por ultimo. */
+.support-page .section-subtitle {
   font-size: 1.3rem;
   font-weight: 600;
   margin-bottom: 1.5rem;
   color: #fff;
+  max-width: none;
 }
 
 .funding-grid {
@@ -326,4 +334,53 @@
   background: rgba(0, 240, 255, 0.12);
   box-shadow: 0 0 16px rgba(0, 240, 255, 0.15);
   text-shadow: none;
+}
+
+/* 5.4 — barra de meta de financiamento */
+.funding-goal {
+  max-width: 460px;
+  margin: 1.75rem auto 0;
+  padding: 1.25rem 1.5rem;
+  border-radius: 14px;
+}
+
+.funding-goal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.funding-goal-raised {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--primary);
+  font-family: 'Outfit', sans-serif;
+}
+
+.funding-goal-target { color: var(--text-muted); font-size: 0.95rem; }
+
+.funding-goal-bar {
+  height: 10px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.funding-goal-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--secondary), var(--primary));
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
+  transition: width 0.4s ease;
+}
+
+.funding-goal-pct {
+  display: block;
+  margin-top: 0.6rem;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
 }
