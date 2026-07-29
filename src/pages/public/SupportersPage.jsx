@@ -2,6 +2,11 @@ import React from 'react';
 import { ArrowRight, FlaskConical, Cpu, Wifi, Leaf, Laptop, DollarSign, Building2, GraduationCap } from 'lucide-react';
 import './SupportersPage.css';
 
+// Parceria com o Kode.Lab UMJ ainda não foi fechada oficialmente — card fica
+// fora da página pública até a confirmação. Card já implementado abaixo, só
+// aguardando: trocar para `true` quando a parceria for fechada.
+const SHOW_KODELAB = false;
+
 const SupportersPage = () => {
   return (
     <div className="supporters-page">
@@ -36,17 +41,19 @@ const SupportersPage = () => {
           </div>
         </div>
 
-        {/* KodeLab UMJ — laboratório de desenvolvimento */}
-        <div className="supporter-card glass animate-fade-in" style={{ animationDelay: '0.3s' }}>
-          <div className="supporter-logo-wrapper kodelab-logo-wrap">
-            <img src="/kodelab-white.png" alt="Ícone do KodeLab UMJ" className="kodelab-icon-img" />
-            <img src="/kodelab-text-white.png" alt="Nome do KodeLab UMJ" className="kodelab-text-img" />
+        {/* KodeLab UMJ — laboratório de desenvolvimento (oculto: parceria em fechamento, ver SHOW_KODELAB) */}
+        {SHOW_KODELAB && (
+          <div className="supporter-card glass animate-fade-in" style={{ animationDelay: '0.3s' }}>
+            <div className="supporter-logo-wrapper kodelab-logo-wrap">
+              <img src="/kodelab-white.png" alt="Ícone do KodeLab UMJ" className="kodelab-icon-img" />
+              <img src="/kodelab-text-white.png" alt="Nome do KodeLab UMJ" className="kodelab-text-img" />
+            </div>
+            <div className="supporter-info">
+              <h2>Kode.Lab UMJ</h2>
+              <p>Laboratório de pesquisa e desenvolvimento da UMJ, responsável pelo suporte técnico no desenvolvimento da plataforma web e integração dos sistemas embarcados do Projeto Sentinela.</p>
+            </div>
           </div>
-          <div className="supporter-info">
-            <h2>Kode.Lab UMJ</h2>
-            <p>Laboratório de pesquisa e desenvolvimento da UMJ, responsável pelo suporte técnico no desenvolvimento da plataforma web e integração dos sistemas embarcados do Projeto Sentinela.</p>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Impacto dos Apoiadores */}
