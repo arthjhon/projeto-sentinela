@@ -192,7 +192,7 @@ const ChangelogPage = () => {
 
   return (
     <div className="dashboard-content-area">
-      <div className="page-header d-flex-between">
+      <div className="page-header changelog-page-header">
         <div>
           <h1>Changelog Público</h1>
           <p>Marcos e novidades exibidos na página pública "Evolução".</p>

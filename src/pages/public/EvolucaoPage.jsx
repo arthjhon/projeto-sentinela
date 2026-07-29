@@ -20,11 +20,22 @@ const EvolucaoPage = () => {
     let ativo = true;
     (async () => {
       try {
-        const [cfg, entradas] = await Promise.all([
+        // allSettled (não all): uma falha em getSetting (app_settings ausente/
+        // mal configurada — ver nota de dependência em supabase_changelog_schema.sql)
+        // não pode derrubar a página inteira se listarPublicadas() funcionou.
+        // Nesse caso degradamos para "timeline sem contador de dias" em vez de
+        // mostrar o estado de erro — só a falha da entradas é fatal.
+        const [cfgResult, entradasResult] = await Promise.allSettled([
           getSetting(MONITORAMENTO_INICIO_KEY, null),
           listarPublicadas(),
         ]);
         if (!ativo) return;
+
+        if (entradasResult.status === 'rejected') {
+          throw entradasResult.reason;
+        }
+        const cfg = cfgResult.status === 'fulfilled' ? cfgResult.value : null;
+        const entradas = entradasResult.value;
 
         const marcos = cfg?.data ? marcosDeDias(cfg.data) : [];
         const itens = [
