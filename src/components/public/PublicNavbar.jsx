@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Shield, Users, HeartHandshake, Rocket, Activity } from 'lucide-react';
+import { Menu, X, Shield, Users, HeartHandshake, Rocket, Activity, Rss } from 'lucide-react';
 import './PublicNavbar.css';
 
 const PublicNavbar = () => {
@@ -18,6 +18,7 @@ const PublicNavbar = () => {
     { name: 'Analytics', path: '/monitoramento', icon: <Activity size={18} /> },
     { name: 'A Equipe', path: '/equipe', icon: <Users size={18} /> },
     { name: 'Apoiadores', path: '/apoiadores', icon: <HeartHandshake size={18} /> },
+    { name: 'Evolução', path: '/evolucao', icon: <Rss size={18} /> },
   ];
 
   return (
