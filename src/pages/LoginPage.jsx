@@ -72,8 +72,8 @@ const LoginPage = () => {
 
   return (
     <div className="login-container">
-      <div className="bg-gradient-main"></div>
-      
+      <div className="login-bg-image"></div>
+
       <div className={`login-card glass ${isResetting ? 'reset-mode' : ''} animate-fade-in`}>
         
         {!isResetting ? (
@@ -98,7 +98,7 @@ const LoginPage = () => {
                   id="username"
                   name="username"
                   autoComplete="username"
-                  placeholder="Usuário (Ex: admin)"
+                  placeholder="Usuário"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
@@ -152,7 +152,7 @@ const LoginPage = () => {
                 </div>
                 <input 
                   type="password" 
-                  placeholder="Nova Senha Profissional" 
+                  placeholder="Nova Senha" 
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
@@ -173,7 +173,7 @@ const LoginPage = () => {
               </div>
 
               <button type="submit" className="btn btn-warning login-btn">
-                <span>Gravar Definitivo e Acessar</span>
+                <span>Salvar e Acessar</span>
               </button>
             </form>
           </div>
