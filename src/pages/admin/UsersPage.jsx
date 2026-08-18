@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom';
 import './UsersPage.css';
 
 const UsersPage = () => {
-  const { users, currentUser, createAdminUser, deleteAdminUser, editAdminUser } = useAuth();
+  const { users, currentUser, createAdminUser, deleteAdminUser, editAdminUser, resetUserPassword } = useAuth();
   const { addToast } = useToast();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -143,14 +143,29 @@ const UsersPage = () => {
         name: formData.name,
         role: formData.role
       });
-      
-      if(res.success) {
-        addToast("Operador atualizado com sucesso na Nuvem.", "success");
-        logAcao(AUDIT.USUARIO_EDITAR, formData.username, {
-          nome: formData.name, role: formData.role,
-        });
-      } else {
+
+      if(!res.success) {
         addToast("Erro na Nuvem: " + res.error, "error");
+        setIsModalOpen(false);
+        return;
+      }
+
+      logAcao(AUDIT.USUARIO_EDITAR, formData.username, {
+        nome: formData.name, role: formData.role,
+      });
+
+      // Senha só é trocada se o admin de fato preencheu/gerou uma — campo em
+      // branco significa "só mudar nome/nível", como o hint da tela avisa.
+      if (passToSave) {
+        const pwRes = await resetUserPassword(editingUser.id, passToSave);
+        if (pwRes.success) {
+          logAcao(AUDIT.USUARIO_RESET_SENHA, formData.username, {});
+          addToast("Operador atualizado! Copie a nova senha provisória e repasse.", "password", passToSave, 30000);
+        } else {
+          addToast("Operador atualizado, mas a senha NÃO foi trocada: " + pwRes.error, "error");
+        }
+      } else {
+        addToast("Operador atualizado com sucesso na Nuvem.", "success");
       }
 
     } else {

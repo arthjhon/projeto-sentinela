@@ -171,6 +171,27 @@ export const AuthProvider = ({ children }) => {
     return { success: false, error: error.message };
   };
 
+  // Reset de senha de OUTRO usuário — chamado pelo admin em /admin/operadores.
+  // Roda via Edge Function (admin-reset-password): a API Admin do Auth exige a
+  // service_role key, que nunca pode chegar ao bundle do navegador.
+  const resetUserPassword = async (userId, newPassword) => {
+    const { data, error } = await supabase.functions.invoke('admin-reset-password', {
+      body: { userId, newPassword },
+    });
+    if (error) {
+      // FunctionsHttpError traz a Response original em `context` — é onde está
+      // a mensagem de erro real (ex: "senha muito curta", "não é admin").
+      let serverMsg = null;
+      try {
+        serverMsg = (await error.context?.json())?.error;
+      } catch {
+        // corpo não era JSON (ex: timeout, function não encontrada) — usa error.message mesmo
+      }
+      return { success: false, error: serverMsg || error.message };
+    }
+    return { success: true, ...data };
+  };
+
   const updatePassword = async (userId, newPassword) => {
     const { error: authError } = await supabase.auth.updateUser({ password: newPassword });
     if (authError) return false;
@@ -201,6 +222,7 @@ export const AuthProvider = ({ children }) => {
       users,
       setUsers,
       updatePassword,
+      resetUserPassword,
       fetchAdminUsersList,
       createAdminUser,
       deleteAdminUser,
