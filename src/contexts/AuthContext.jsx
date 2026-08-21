@@ -49,7 +49,7 @@ export const AuthProvider = ({ children }) => {
         setCurrentUser(profile);
         setIsAuthenticated(true);
         setAuthError(null);
-        if (profile.role === 'admin') fetchAdminUsersList();
+        if (profile.role === 'admin' || profile.role === 'visualizador') fetchAdminUsersList();
       } else if (!error && attempt < 4) {
         // Profile ainda não foi criado pela trigger — aguarda e tenta novamente
         setTimeout(() => fetchUserProfile(authUser, attempt + 1), 500);
@@ -114,7 +114,7 @@ export const AuthProvider = ({ children }) => {
       setCurrentUser(profile);
       setIsAuthenticated(true);
       setAuthError(null);
-      if (profile.role === 'admin') fetchAdminUsersList();
+      if (profile.role === 'admin' || profile.role === 'visualizador') fetchAdminUsersList();
     }
 
     setIsLoading(false);
