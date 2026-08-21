@@ -42,3 +42,9 @@ CREATE POLICY fw_update ON public.firmware_deploys
   FOR UPDATE USING (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin', 'operador'))
   );
+
+DROP POLICY IF EXISTS audit_insert ON public.audit_logs;
+CREATE POLICY audit_insert ON public.audit_logs
+  FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin', 'operador'))
+  );
