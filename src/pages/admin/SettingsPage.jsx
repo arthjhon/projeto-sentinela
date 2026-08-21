@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { SlidersHorizontal, FlaskConical, Radio, Target } from 'lucide-react';
 import { useMockMode } from '../../config/mockData';
 import { useToast } from '../../contexts/ToastContext';
+import { useReadOnly } from '../../hooks/useReadOnly';
 import { getSetting, saveSetting, FUNDING_GOAL_KEY } from '../../services/settings';
 import './SettingsPage.css';
 
 const SettingsPage = () => {
   const [mockEnabled, setMockEnabled] = useMockMode();
   const { addToast } = useToast();
+  const readOnly = useReadOnly();
 
   // 5.4 — meta de financiamento, editável aqui e exibida na página de apoio
   const [meta, setMeta] = useState('');
@@ -137,7 +139,7 @@ const SettingsPage = () => {
             <span className="settings-meta-pct">{pct}%</span>
           </div>
 
-          <button className="btn-primary settings-save-btn" onClick={handleSalvarMeta} disabled={salvando || carregando}>
+          <button className="btn-primary settings-save-btn" onClick={handleSalvarMeta} disabled={salvando || carregando || readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
             {salvando ? 'Salvando...' : 'Salvar Meta'}
           </button>
         </div>

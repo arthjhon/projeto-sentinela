@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Edit2, Trash2, X, Image as ImageIcon, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import { useReadOnly } from '../../hooks/useReadOnly';
 import ConfirmModal from '../../components/ConfirmModal';
 import {
   listarTodas, criarEntrada, atualizarEntrada, removerEntrada, uploadImagem,
@@ -14,6 +15,7 @@ const initialFormData = { titulo: '', descricao: '', categoria: 'Hardware', data
 
 const ChangelogPage = () => {
   const { addToast } = useToast();
+  const readOnly = useReadOnly();
 
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -197,9 +199,11 @@ const ChangelogPage = () => {
           <h1>Changelog Público</h1>
           <p>Marcos e novidades exibidos na página pública "Evolução".</p>
         </div>
-        <button className="btn-primary" onClick={handleOpenCreate}>
-          <Plus size={18} /> Nova Entrada
-        </button>
+        {!readOnly && (
+          <button className="btn-primary" onClick={handleOpenCreate}>
+            <Plus size={18} /> Nova Entrada
+          </button>
+        )}
       </div>
 
       {/* Data oficial — ancora o contador e os marcos automáticos de dias */}
@@ -227,7 +231,7 @@ const ChangelogPage = () => {
             />
           </label>
         </div>
-        <button className="btn-primary" onClick={handleSalvarConfig} disabled={configSaving || configLoading}>
+        <button className="btn-primary" onClick={handleSalvarConfig} disabled={configSaving || configLoading || readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
           {configSaving ? 'Salvando...' : 'Salvar Data Oficial'}
         </button>
       </div>
@@ -265,17 +269,18 @@ const ChangelogPage = () => {
                     <button
                       className={`changelog-status-btn ${entry.publicado ? 'publicado' : 'rascunho'}`}
                       onClick={() => handleTogglePublicado(entry)}
-                      title={entry.publicado ? 'Clique para despublicar (vira rascunho)' : 'Clique para publicar'}
+                      disabled={readOnly}
+                      title={readOnly ? 'Indisponível no modo demonstração' : (entry.publicado ? 'Clique para despublicar (vira rascunho)' : 'Clique para publicar')}
                     >
                       {entry.publicado ? <Eye size={14} /> : <EyeOff size={14} />}
                       {entry.publicado ? 'Publicado' : 'Rascunho'}
                     </button>
                   </td>
                   <td className="text-right">
-                    <button className="btn-table action-btn" onClick={() => handleOpenEdit(entry)}>
+                    <button className="btn-table action-btn" onClick={() => handleOpenEdit(entry)} disabled={readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
                       <Edit2 size={16} />
                     </button>
-                    <button className="btn-table action-btn danger-btn" onClick={() => requestDelete(entry)}>
+                    <button className="btn-table action-btn danger-btn" onClick={() => requestDelete(entry)} disabled={readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
                       <Trash2 size={16} />
                     </button>
                   </td>

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useMqtt } from '../../hooks/useMqtt';
 import { useAuth } from './../../contexts/AuthContext';
 import { useToast } from './../../contexts/ToastContext';
+import { useReadOnly } from '../../hooks/useReadOnly';
 import ConfirmModal from './../../components/ConfirmModal';
 import { Wifi, WifiOff, MapPin, Search, ChevronDown, ChevronUp, Activity, Droplet, Thermometer, Wrench, FileText, CheckCircle2, RotateCw, History, Plus, Edit2, Trash2, X } from 'lucide-react';
 import { FLEET, getMqttTopics } from '../../config/fleet';
@@ -87,6 +88,7 @@ const SensorsPage = () => {
 
   // Access Auth Profile & Contexts
   const { currentUser } = useAuth();
+  const readOnly = useReadOnly();
   const { addToast } = useToast();
 
   const { messages, connected, addTopics } = useMqtt(getMqttTopics());
@@ -749,6 +751,8 @@ const SensorsPage = () => {
                                       <button
                                         className="btn-table action-btn btn-sm calib-btn"
                                         onClick={(e) => { e.stopPropagation(); handleRecalibrar(buoy.id, sensor.name); }}
+                                        disabled={readOnly}
+                                        title={readOnly ? 'Indisponível no modo demonstração' : undefined}
                                       >
                                         Recalibrar
                                       </button>
