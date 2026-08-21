@@ -158,7 +158,9 @@ O app estará disponível em `http://localhost:5173`.
    2. `supabase_ota_schema.sql` — histórico de deploys de firmware OTA.
    3. `supabase_backlog_schema.sql` — manutenção, calibração de sensores, log de auditoria e `app_settings` (configurações genéricas usadas por outras features, incluindo a data oficial do changelog abaixo).
    4. `supabase_changelog_schema.sql` — tabela e bucket de Storage do changelog público (`/evolucao`). Depende de `app_settings` (arquivo 3) já existir para o contador de dias funcionar — ver nota no cabeçalho do próprio arquivo.
-6. **Primeiro acesso:** Crie seu usuário administrador em *Authentication → Add User*. O trigger do schema assinará automaticamente o papel `admin`.
+   5. `supabase_profiles_rls_fix.sql` — trava a auto-escalada de role e habilita edição de operador por um admin. Sem este arquivo, qualquer usuário autenticado pode se promover a admin via API direta.
+   6. `supabase_visualizador_rls_fix.sql` — restringe escrita em `maintenance_logs`, `sensor_calibrations`, `firmware_deploys` e `audit_logs` a `role IN ('admin', 'operador')`. Sem este arquivo, qualquer usuário autenticado (inclusive `visualizador`) pode escrever nessas tabelas.
+6. **Primeiro acesso:** Crie seu usuário administrador em *Authentication → Add User*, depois rode no SQL Editor: `UPDATE public.profiles SET role = 'admin' WHERE id = '<uuid-do-usuario-criado>';` (o trigger do schema sempre cria o perfil como `visualizador` por padrão — nunca confia em metadata do cliente para decidir role, por segurança).
 
 <br/>
 

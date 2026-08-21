@@ -1,10 +1,10 @@
 -- ================================================
 -- Fecha o buraco de RLS que a conta demo (role visualizador) expõe:
--- maintenance_logs, sensor_calibrations e firmware_deploys aceitavam
--- escrita de QUALQUER autenticado (auth.role() = 'authenticated'), não só
--- admin/operador. Nunca foi problema na prática porque só admins tinham
--- conta — passa a ser um buraco real assim que uma conta visualizador
--- existir.
+-- maintenance_logs, sensor_calibrations, firmware_deploys e audit_logs
+-- aceitavam escrita de QUALQUER autenticado (auth.role() = 'authenticated'),
+-- não só admin/operador. Nunca foi problema na prática porque só admins
+-- tinham conta — passa a ser um buraco real assim que uma conta
+-- visualizador existir.
 --
 -- changelog_entries, app_settings e os buckets de Storage (changelog,
 -- firmware) já exigem profiles.role = 'admin' nas policies de escrita —
