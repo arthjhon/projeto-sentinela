@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from './../../contexts/AuthContext';
 import { useToast } from './../../contexts/ToastContext';
+import { useReadOnly } from '../../hooks/useReadOnly';
 import { logAcao, AUDIT } from './../../services/auditLog';
 import ConfirmModal from './../../components/ConfirmModal';
 import AuditLogPanel from './../../components/admin/AuditLogPanel';
@@ -11,6 +12,7 @@ import './UsersPage.css';
 const UsersPage = () => {
   const { users, currentUser, createAdminUser, deleteAdminUser, editAdminUser, resetUserPassword } = useAuth();
   const { addToast } = useToast();
+  const readOnly = useReadOnly();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -37,7 +39,7 @@ const UsersPage = () => {
   };
   const [formData, setFormData] = useState(initialFormData);
 
-  if (currentUser?.role !== 'admin') {
+  if (currentUser?.role !== 'admin' && currentUser?.role !== 'visualizador') {
     return (
       <div className="dashboard-content-area">
         <div className="alert-permission glass mt-4">
@@ -212,16 +214,18 @@ const UsersPage = () => {
           <div className="header-actions">
             <div className="search-bar glass">
               <Search size={18} className="text-muted" />
-              <input 
-                type="text" 
-                placeholder="Buscar operador..." 
+              <input
+                type="text"
+                placeholder="Buscar operador..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <button className="btn-primary" onClick={handleOpenCreate}>
-              <Plus size={18} /> Novo Usuário
-            </button>
+            {!readOnly && (
+              <button className="btn-primary" onClick={handleOpenCreate}>
+                <Plus size={18} /> Novo Usuário
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -283,10 +287,10 @@ const UsersPage = () => {
                   )}
                 </td>
                 <td className="actions-cell">
-                  <button className="btn-table action-btn" onClick={() => handleOpenEdit(user)}>
+                  <button className="btn-table action-btn" onClick={() => handleOpenEdit(user)} disabled={readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
                     <Edit2 size={16} />
                   </button>
-                  <button className="btn-table action-btn danger-btn" onClick={() => requestDelete(user.id)} disabled={user.id === currentUser.id} title={user.id === currentUser.id ? 'Você não pode apagar sua própria conta' : 'Apagar'}>
+                  <button className="btn-table action-btn danger-btn" onClick={() => requestDelete(user.id)} disabled={readOnly || user.id === currentUser.id} title={readOnly ? 'Indisponível no modo demonstração' : (user.id === currentUser.id ? 'Você não pode apagar sua própria conta' : 'Apagar')}>
                     <Trash2 size={16} />
                   </button>
                 </td>
