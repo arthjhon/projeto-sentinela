@@ -100,7 +100,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     if (signInError || !authData) {
-      return { success: false, error: 'Credenciais inválidas no servidor NUVEM.' };
+      return { success: false, error: 'ERRO: Credenciais inválidas.' };
     }
 
     // Fetch do profile feito aqui — onAuthStateChange está bloqueado pelo pendingLoginRef
@@ -163,7 +163,10 @@ export const AuthProvider = ({ children }) => {
 
   const editAdminUser = async (userId, payload) => {
     const updateData = { role: payload.role, name: payload.name };
-    const { error } = await supabase.from('profiles').update(updateData).eq('id', userId);
+    // .select().single() é proposital: sem isso, RLS bloqueando a escrita
+    // retorna 200 com 0 linhas e nenhum erro — parecia "sucesso" sem gravar
+    // nada. .single() força um erro real quando nenhuma linha volta.
+    const { error } = await supabase.from('profiles').update(updateData).eq('id', userId).select().single();
     if (!error) {
       fetchAdminUsersList();
       return { success: true };
