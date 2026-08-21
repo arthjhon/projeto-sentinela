@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase, supabaseCreateUser } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 
@@ -126,23 +126,29 @@ export const AuthProvider = ({ children }) => {
     return { success: true, mustChangePassword: false };
   };
 
-  // Criação exclusiva por Administradores logados usando o cliente paralelo
+  // Criação de usuário — via Edge Function (admin-create-user): o role nunca
+  // pode ser decidido a partir de metadata que um signup público aceitaria de
+  // qualquer chamador. A function confirma server-side que quem chama é admin
+  // antes de criar a conta e promover o role pedido.
   const createAdminUser = async (formData, tempPassword) => {
-    const email = formData.username.includes('@') ? formData.username : `${formData.username}@sentinela.app`;
-
-    const { data, error } = await supabaseCreateUser.auth.signUp({
-      email,
-      password: tempPassword,
-      options: {
-        data: {
-          name: formData.name,
-          username: formData.username,
-          role: formData.role
-        }
-      }
+    const { data, error } = await supabase.functions.invoke('admin-create-user', {
+      body: {
+        name: formData.name,
+        username: formData.username,
+        password: tempPassword,
+        role: formData.role,
+      },
     });
-
-    if (error) return { success: false, error: error.message };
+    if (error) {
+      let serverMsg = null;
+      try {
+        serverMsg = (await error.context?.json())?.error;
+      } catch {
+        // corpo não era JSON (ex: timeout, function não encontrada) — usa error.message mesmo
+      }
+      return { success: false, error: serverMsg || error.message };
+    }
+    if (!data?.success) return { success: false, error: 'Falha ao criar usuário.' };
 
     fetchAdminUsersList();
     return { success: true };
