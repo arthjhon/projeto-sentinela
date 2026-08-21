@@ -1,7 +1,7 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users, Cpu, SlidersHorizontal, Rss } from 'lucide-react';
+import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users, Cpu, SlidersHorizontal, Rss, Eye } from 'lucide-react';
 import './AdminLayout.css';
 
 const AdminLayout = () => {
@@ -45,7 +45,7 @@ const AdminLayout = () => {
             <span>Bóias</span>
           </NavLink>
 
-          {currentUser?.role === 'admin' && (
+          {(currentUser?.role === 'admin' || currentUser?.role === 'visualizador') && (
             <NavLink
               to="/admin/users"
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -55,7 +55,7 @@ const AdminLayout = () => {
             </NavLink>
           )}
 
-          {currentUser?.role === 'admin' && (
+          {(currentUser?.role === 'admin' || currentUser?.role === 'visualizador') && (
             <NavLink
               to="/admin/ota"
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -65,7 +65,7 @@ const AdminLayout = () => {
             </NavLink>
           )}
 
-          {currentUser?.role === 'admin' && (
+          {(currentUser?.role === 'admin' || currentUser?.role === 'visualizador') && (
             <NavLink
               to="/admin/settings"
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -75,7 +75,7 @@ const AdminLayout = () => {
             </NavLink>
           )}
 
-          {currentUser?.role === 'admin' && (
+          {(currentUser?.role === 'admin' || currentUser?.role === 'visualizador') && (
             <NavLink
               to="/admin/changelog"
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -104,9 +104,16 @@ const AdminLayout = () => {
       <main className="admin-main">
         <header className="admin-header glass">
           <h2>Centro de Comando</h2>
-          <div className="header-status">
-            <span className="status-dot green"></span>
-            Sistema Operacional
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            {currentUser?.role === 'visualizador' && (
+              <span className="badge badge-warning">
+                <Eye size={14} /> Modo Demonstração — Somente Leitura
+              </span>
+            )}
+            <div className="header-status">
+              <span className="status-dot green"></span>
+              Sistema Operacional
+            </div>
           </div>
         </header>
 
