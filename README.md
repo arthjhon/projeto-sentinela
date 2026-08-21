@@ -232,6 +232,8 @@ backend próprio no caminho.
       no dashboard admin, com selo Saudável/Atenção/Crítico
 - [x] **Log de auditoria das ações do painel** — aba em `/admin/operadores`,
       append-only (sem policy de update/delete, nem para admin)
+- [x] **Conta demo somente leitura** (role `visualizador`) — navega o painel
+      admin completo sem conseguir alterar nada, protegido por RLS
 
 ### Próximos passos
 
