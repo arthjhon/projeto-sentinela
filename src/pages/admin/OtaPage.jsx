@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMqtt } from '../../hooks/useMqtt';
+import { useReadOnly } from '../../hooks/useReadOnly';
 import { FLEET, getMqttTopics } from '../../config/fleet';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { sha256Hex } from '../../utils/sha256';
@@ -15,6 +16,7 @@ const ALL_TOPICS = getMqttTopics(['status', 'ota/status']);
 // ─── Componente ───────────────────────────────────────────────────────────────
 const OtaPage = () => {
   const { messages, connected, publish } = useMqtt(ALL_TOPICS);
+  const readOnly = useReadOnly();
 
   // ── Form state ──
   const [firmwareFile, setFirmwareFile]       = useState(null);
@@ -366,7 +368,8 @@ const OtaPage = () => {
                   <button
                     className="btn-primary"
                     onClick={() => setConfirmOpen(true)}
-                    disabled={!canDeploy}
+                    disabled={!canDeploy || readOnly}
+                    title={readOnly ? 'Indisponível no modo demonstração' : undefined}
                   >
                     <Cpu size={15} /> Implantar Firmware
                   </button>
