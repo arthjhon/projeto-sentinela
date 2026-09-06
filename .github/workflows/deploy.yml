@@ -18,15 +18,18 @@ jobs:
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           cat >> ~/.ssh/config <<EOF
-          Host ssh.teranex.inf.br
+          Host ssh-teranex-01.arthlabs.dev
             ProxyCommand cloudflared access ssh --hostname %h
             StrictHostKeyChecking no
             IdentityFile ~/.ssh/id_ed25519
           EOF
 
       - name: Deploy via SSH
+        env:
+          TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
-          ssh teranex-sentinela@ssh.teranex.inf.br "
+          ssh teranex-sentinela@ssh-teranex-01.arthlabs.dev "
             export NVM_DIR=\"\$HOME/.nvm\"
             [ -s \"\$NVM_DIR/nvm.sh\" ] && \. \"\$NVM_DIR/nvm.sh\"
             export PATH=\$PATH:/usr/bin:/usr/local/bin
