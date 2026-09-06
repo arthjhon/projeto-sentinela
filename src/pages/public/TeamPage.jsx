@@ -8,42 +8,42 @@ const TeamPage = () => {
       name: 'Arthur Jhonathas',
       role: 'Engenheiro de Infraestrutura & IoT',
       bio: 'Responsável pela hospedagem e manutenção da plataforma web, administração do banco de dados em nuvem e pela camada de comunicação MQTT das bóias de monitoramento.',
-      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Arthur&backgroundColor=00f0ff',
+      image: '/team/arthur-jhonathas.jpg',
       tag: 'Infraestrutura'
     },
     {
       name: 'Maycon Vinicius',
       role: 'Desenvolvedor de Firmware',
       bio: 'Responsável pela programação do microcontrolador ESP32 embarcado nas bóias, incluindo leitura de sensores, transmissão de dados e atualizações OTA.',
-      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Maycon&backgroundColor=ffaa00',
+      image: '/team/maycon-fidelis.jpg',
       tag: 'Firmware'
     },
     {
       name: 'Anwar Quirino',
       role: 'Desenvolvedor de Firmware',
       bio: 'Atua no desenvolvimento e testes do firmware embarcado no ESP32, garantindo a confiabilidade da coleta e envio dos dados dos sensores.',
-      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Anwar&backgroundColor=00f0ff',
+      image: '/team/anwar-quirino.jpg',
       tag: 'Firmware'
     },
     {
       name: 'Luiz Henrique',
       role: 'Engenheiro de Hardware',
       bio: 'Responsável pela montagem e integração dos sensores nas bóias, garantindo a correta instalação dos componentes físicos do sistema de monitoramento.',
-      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Luiz&backgroundColor=ff3b3b',
+      image: '/team/luiz-henrique.jpg',
       tag: 'Hardware'
     },
     {
       name: 'Pedro Henrique',
       role: 'Engenheiro de Hardware',
       bio: 'Atua na montagem dos sensores e na validação física dos componentes eletrônicos das bóias de monitoramento estuarino.',
-      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Pedro&backgroundColor=8800ff',
+      image: '/team/pedro-henrique.jpg',
       tag: 'Hardware'
     },
     {
       name: 'Marcos Paulo',
       role: 'Analista de Documentação Técnica',
       bio: 'Responsável pelo registro e organização de toda a documentação técnica do projeto, desde especificações de hardware até fluxos de software e relatórios acadêmicos.',
-      image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Marcos&backgroundColor=00ff88',
+      image: '/team/marcos-paulo.jpg',
       tag: 'Documentação'
     },
   ];
