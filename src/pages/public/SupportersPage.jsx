@@ -2,10 +2,7 @@ import React from 'react';
 import { ArrowRight, FlaskConical, Cpu, Wifi, Leaf, Laptop, DollarSign, Building2, GraduationCap } from 'lucide-react';
 import './SupportersPage.css';
 
-// Parceria com o Kode.Lab UMJ ainda não foi fechada oficialmente — card fica
-// fora da página pública até a confirmação. Card já implementado abaixo, só
-// aguardando: trocar para `true` quando a parceria for fechada.
-const SHOW_KODELAB = false;
+const SHOW_KODELAB = true;
 
 const SupportersPage = () => {
   return (
@@ -22,7 +19,7 @@ const SupportersPage = () => {
         {/* UMJ — apoio primário */}
         <div className="supporter-card glass animate-fade-in">
           <div className="supporter-logo-wrapper">
-            <img src="/UMJ.png" alt="Logotipo do Centro Universitário Mário Pontes Jucá" className="supporter-logo umj-logo" />
+            <img src="/UMJ.svg" alt="Logotipo do Centro Universitário Mário Pontes Jucá" className="supporter-logo umj-logo" />
           </div>
           <div className="supporter-info">
             <h2>Centro Universitário Mário Pontes Jucá (UMJ)</h2>
@@ -41,7 +38,7 @@ const SupportersPage = () => {
           </div>
         </div>
 
-        {/* KodeLab UMJ — laboratório de desenvolvimento (oculto: parceria em fechamento, ver SHOW_KODELAB) */}
+        {/* KodeLab UMJ — laboratório de desenvolvimento */}
         {SHOW_KODELAB && (
           <div className="supporter-card glass animate-fade-in" style={{ animationDelay: '0.3s' }}>
             <div className="supporter-logo-wrapper kodelab-logo-wrap">

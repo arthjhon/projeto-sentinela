@@ -103,7 +103,7 @@ const TeamPage = () => {
       </div>
 
       <div className="umj-banner glass mt-5 text-center animate-fade-in">
-        <img src="/UMJ.png" alt="Logo UMJ" className="umj-banner-logo" />
+        <img src="/UMJ.svg" alt="Logo UMJ" className="umj-banner-logo" />
         <h2>Um projeto nascido na Academia</h2>
         <p className="text-muted mt-2">
           Orgulhosamente desenvolvido pelos laboratórios do Centro Universitário Mário Pontes Jucá (UMJ).

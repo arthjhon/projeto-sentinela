@@ -33,7 +33,7 @@ const Footer = () => {
         <div className="footer-credit-col">
           <h5>Instituição</h5>
           <div className="footer-umj-row">
-            <img src="/UMJ.png" alt="UMJ" className="footer-umj-logo" />
+            <img src="/UMJ.svg" alt="UMJ" className="footer-umj-logo" />
             <div className="footer-umj-info">
               <strong>UMJ</strong>
               <span>Engenharia da Computação</span>
