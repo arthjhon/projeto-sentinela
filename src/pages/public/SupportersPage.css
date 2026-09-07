@@ -43,7 +43,7 @@
 }
 
 .supporter-logo-wrapper {
-  height: 140px;
+  height: 160px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -68,7 +68,6 @@
 
 .kodelab-logo-wrap {
   width: 160px;
-  height: 160px;
   display: flex;
   flex-direction: column;
   align-items: center;
