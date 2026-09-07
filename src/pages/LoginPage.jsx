@@ -17,7 +17,19 @@ const LoginPage = () => {
   const [successMsg, setSuccessMsg] = useState('');
 
   const navigate = useNavigate();
-  const { login, updatePassword, isAuthenticated } = useAuth();
+  const { login, updatePassword, isAuthenticated, isLoading } = useAuth();
+
+  // AuthProvider só existe neste subtree de rotas (login/admin) — toda vez
+  // que se entra vindo de uma página pública ele remonta e reconfirma a
+  // sessão via rede. Sem esse guard, quem já está logado via aqui um flash
+  // do formulário de login antes do redirect pro dashboard.
+  if (isLoading) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '1rem', color: '#94a3b8' }}>
+        <span>Carregando sessão...</span>
+      </div>
+    );
+  }
 
   if (isAuthenticated && !isResetting) {
     return <Navigate to="/admin/dashboard" replace />;
