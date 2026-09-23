@@ -1,5 +1,5 @@
 import React from 'react';
-import { Linkedin, Github, Mail, GraduationCap, Code } from 'lucide-react';
+import { Linkedin, Github, Mail, Code } from 'lucide-react';
 import './TeamPage.css';
 
 const TeamPage = () => {
@@ -79,27 +79,6 @@ const TeamPage = () => {
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Orientador */}
-      <div className="advisor-card glass animate-fade-in mt-5">
-        <div className="advisor-avatar">
-          <img
-            src="https://api.dicebear.com/7.x/notionists/svg?seed=PedroLopes&backgroundColor=0a498a"
-            alt="Prof. Pedro Henrique Lopes"
-          />
-        </div>
-        <div className="advisor-info">
-          <span className="member-tag" style={{ marginBottom: '0.5rem', display: 'inline-block' }}>Orientador Acadêmico</span>
-          <h3>Prof. Pedro Henrique de Meneses Bittencourt Lopes</h3>
-          <p className="member-role text-primary" style={{ margin: '0.4rem 0 0.75rem' }}>
-            <GraduationCap size={14} style={{ marginRight: '0.3rem' }} />
-            Engenharia Mecatrônica & Matemática
-          </p>
-          <p className="text-muted" style={{ fontSize: '0.92rem', lineHeight: '1.6' }}>
-            Responsável pela orientação acadêmica e direcionamento científico do Projeto Sentinela, assegurando o rigor técnico e a relevância ambiental da pesquisa aplicada.
-          </p>
-        </div>
       </div>
 
       <div className="umj-banner glass mt-5 text-center animate-fade-in">
