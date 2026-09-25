@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import mqtt from 'mqtt';
+import { parseMqttPayload } from '../utils/mqttPayload';
 
 // Configurações do broker HiveMQ Cloud.
 // Todas as três variáveis são obrigatórias em .env.local:
@@ -53,12 +54,7 @@ export function useMqtt(topics = []) {
     });
 
     client.on('message', (topic, payload) => {
-      try {
-        const data = JSON.parse(payload.toString());
-        setMessages(prev => ({ ...prev, [topic]: data }));
-      } catch {
-        console.warn(`MQTT: payload não-JSON recebido no tópico "${topic}"`);
-      }
+      setMessages(prev => ({ ...prev, [topic]: parseMqttPayload(payload.toString()) }));
     });
 
     client.on('offline',      ()    => setConnected(false));
