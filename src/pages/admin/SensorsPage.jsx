@@ -13,7 +13,10 @@ import {
 } from '../../services/maintenance';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
-import { getBuoyRegistry, saveBuoyRegistry, topicsForRegistry } from '../../services/buoyRegistry';
+import {
+  getBuoyRegistry, saveBuoyRegistry, topicsForRegistry,
+  codigoEmUso, upsertRegistryEntry, mergeRegistryIntoRows, LAGOA_LABEL,
+} from '../../services/buoyRegistry';
 import './SensorsPage.css';
 
 // Mapa de ícones por nome de sensor — usado para reidratar dados do localStorage
@@ -71,6 +74,35 @@ const getInitialBuoys = () => {
   return INITIAL_BUOYS;
 };
 
+// Sensores mock de uma bóia que não está em FLEET.
+const sensoresPadrao = () => [
+  { name: 'Sensor de OD', icon: Activity,    status: 'online', value: '--' },
+  { name: 'Sensor de pH', icon: Droplet,     status: 'online', value: '--' },
+  { name: 'Termômetro',   icon: Thermometer, status: 'online', value: '--' },
+];
+
+// Linha local de uma bóia que está no registro mas não neste navegador
+// (cadastrada em outra sessão, ou localStorage limpo): a de FLEET se o código
+// existir lá, como getInitialBuoys faria; senão status/bateria default do
+// formulário de cadastro, sem histórico local. id/name/deviceId vêm do registro
+// (mergeRegistryIntoRows).
+const linhaDoRegistro = (entry) => INITIAL_BUOYS.find(b => b.id === entry.codigo) ?? {
+  id: entry.codigo,
+  deviceId: entry.deviceId ?? '',
+  name: entry.nome,
+  status: 'online',
+  battery: 100,
+  lastPing: '--',
+  location: LAGOA_LABEL[entry.lagoa] ?? 'Lagoa Mundaú',
+  details: {
+    coordinates: 'N/A',
+    installedAt: '--',
+    lastMaintenance: '--',
+    collectionRate: '1 leitur/min',
+  },
+  sensors: sensoresPadrao(),
+};
+
 const SensorsPage = () => {
   const [expandedId, setExpandedId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -95,7 +127,9 @@ const SensorsPage = () => {
 
   const { messages, connected, addTopics } = useMqtt(getMqttTopics());
 
-  const { buoys: registryBuoys, reload: reloadRegistry } = useBuoyRegistry();
+  const {
+    buoys: registryBuoys, loading: registryLoading, error: registryError, reload: reloadRegistry,
+  } = useBuoyRegistry();
 
   // Bóia cadastrada só no registro (deviceId novo, ainda não em FLEET) —
   // inscreve o tópico assim que o registro carrega. Ver spec: dupla
@@ -110,6 +144,7 @@ const SensorsPage = () => {
   // CRUD States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBuoy, setEditingBuoy] = useState(null);
+  const [salvandoBoia, setSalvandoBoia] = useState(false);
 
   // Confirmation state
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -130,6 +165,16 @@ const SensorsPage = () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(dehydrate(buoys)));
     } catch {}
   }, [buoys]);
+
+  // Identidade (código, nome, deviceId) e existência de cada bóia vêm do registro
+  // compartilhado, não do localStorage deste navegador: a cada leitura bem-sucedida
+  // (montagem e todo reload) as linhas locais são reconciliadas — bóia de outra
+  // sessão aparece, bóia removida lá sai. Com `registryError`, `registryBuoys` é o
+  // fallback do hook, não o registro: não reconcilia (o erro aparece na página).
+  useEffect(() => {
+    if (registryLoading || registryError) return;
+    setBuoys(prev => mergeRegistryIntoRows(prev, registryBuoys, linhaDoRegistro));
+  }, [registryBuoys, registryLoading, registryError]);
 
   // Atualiza sensores e status de todas as bóias com deviceId vinculado
   useEffect(() => {
@@ -181,20 +226,37 @@ const SensorsPage = () => {
     setIsModalOpen(true);
   };
 
-  const handleOpenEdit = (buoy) => {
-    const regEntry = registryBuoys.find(r => r.codigo === buoy.id);
+  // deviceId, nome, lagoa e posição vêm do registro FRESCO, lido ao abrir o modal:
+  // a linha local e o `registryBuoys` do mount podem estar desatualizados (outra
+  // sessão trocou o deviceId/posição depois que esta página abriu) e salvar a
+  // partir deles reverteria a mudança da outra sessão sem aviso.
+  const handleOpenEdit = async (buoy) => {
+    let regEntry;
+    try {
+      regEntry = (await getBuoyRegistry()).find(r => r.codigo === buoy.id);
+    } catch (err) {
+      addToast(`Não foi possível ler o registro de bóias: ${err.message}`, 'error');
+      return;
+    }
+    // Removida em outra sessão: recusa a edição em vez de recriar a bóia ao salvar
+    // (desfaria a remoção feita lá). A releitura tira a linha da tabela.
+    if (!regEntry) {
+      addToast(`A bóia ${buoy.id} não está mais no registro: foi removida em outra sessão.`, 'error');
+      reloadRegistry();
+      return;
+    }
     setEditingBuoy(buoy);
     setFormData({
       id: buoy.id,
-      deviceId: buoy.deviceId || '',
-      name: buoy.name,
+      deviceId: regEntry.deviceId ?? '',
+      name: regEntry.nome ?? buoy.name,
       status: buoy.status,
       location: buoy.location,
       battery: buoy.battery,
       coordinates: buoy.details.coordinates,
-      lagoa: regEntry?.lagoa ?? 'mundau',
-      lat: regEntry?.lat ?? '',
-      lng: regEntry?.lng ?? '',
+      lagoa: regEntry.lagoa ?? 'mundau',
+      lat: regEntry.lat ?? '',
+      lng: regEntry.lng ?? '',
     });
     setFormErrors({});
     setIsModalOpen(true);
@@ -224,32 +286,31 @@ const SensorsPage = () => {
     setBuoyToDelete(null);
   };
 
-  // Grava/atualiza a entrada desta bóia no registro dinâmico (map_buoys),
-  // além do estado local `buoys` que o resto da página já mantém.
-  const syncRegistryEntry = async (codigo, novoCodigo) => {
-    const entry = {
-      codigo: novoCodigo,
-      nome: formData.name,
-      lagoa: formData.lagoa,
-      lat: Number(formData.lat),
-      lng: Number(formData.lng),
-      deviceId: formData.deviceId.trim() || null,
-    };
-    // Cópia fresca do servidor, não o `registryBuoys` do closure — mesmo motivo do
-    // delete acima: o closure pode estar vazio ou stale, e `saveBuoyRegistry` faz
-    // upsert do array inteiro (sem merge no servidor).
+  // Grava a entrada desta bóia no registro dinâmico (map_buoys) a partir de uma
+  // cópia FRESCA do servidor, não do `registryBuoys` do closure: ele pode estar
+  // vazio ou stale, e `saveBuoyRegistry` substitui o array inteiro (sem merge no
+  // servidor). Edição substitui a entrada no lugar — a ordem decide a bóia em
+  // destaque da página pública. Lança erro, sem gravar, se o código novo já é de
+  // outra bóia ou se a bóia em edição foi removida em outra sessão (não a recria).
+  const syncRegistryEntry = async (codigoOriginal, entry) => {
     const fresh = await getBuoyRegistry();
-    const semEsta = fresh.filter(r => r.codigo !== codigo);
-    await saveBuoyRegistry([...semEsta, entry]);
-    await reloadRegistry();
+    if (codigoOriginal && !fresh.some(r => r.codigo === codigoOriginal)) {
+      throw new Error(`a bóia ${codigoOriginal} foi removida do registro em outra sessão`);
+    }
+    await saveBuoyRegistry(upsertRegistryEntry(fresh, codigoOriginal, entry));
   };
 
-  const handleSaveForm = (e) => {
+  const handleSaveForm = async (e) => {
     e.preventDefault();
-    
+    if (salvandoBoia) return;
+
+    // Código gravado sem espaços nas pontas: " SM-01" é SM-01.
+    const codigo = formData.id.trim();
+    const codigoAtual = editingBuoy?.id ?? null;
+
     // Custom Validation
     const errors = {};
-    if (!formData.id.trim()) errors.id = true;
+    if (!codigo) errors.id = true;
     if (!formData.name.trim()) errors.name = true;
     if (!formData.coordinates.trim()) errors.coordinates = true;
     if (formData.battery === '' || formData.battery === null) errors.battery = true;
@@ -262,19 +323,49 @@ const SensorsPage = () => {
       return;
     }
 
+    // Código único: registro e linhas desta página, exceto a própria bóia em
+    // edição. syncRegistryEntry confere de novo contra o registro fresco.
+    if (codigoEmUso([...registryBuoys.map(r => r.codigo), ...buoys.map(b => b.id)], codigo, codigoAtual)) {
+      setFormErrors({ id: true });
+      addToast(`Já existe uma bóia com o código ${codigo}.`, 'error');
+      return;
+    }
+
+    const newDeviceId = formData.deviceId.trim();
+    const nome = formData.name.trim();
+
+    // Registro primeiro: se falhar (código tomado por outra sessão, bóia removida,
+    // rede/RLS), nada muda localmente e o modal continua aberto.
+    setSalvandoBoia(true);
+    try {
+      await syncRegistryEntry(codigoAtual, {
+        codigo,
+        nome,
+        lagoa: formData.lagoa,
+        lat: Number(formData.lat),
+        lng: Number(formData.lng),
+        deviceId: newDeviceId || null,
+      });
+    } catch (err) {
+      addToast(`Bóia não salva: ${err.message}`, 'error');
+      reloadRegistry(); // mostra o estado real (bóia criada ou removida por outra sessão)
+      return;
+    } finally {
+      setSalvandoBoia(false);
+    }
+
     if(editingBuoy) {
       // Edit
-      const newDeviceId = formData.deviceId.trim();
       if (newDeviceId && newDeviceId !== editingBuoy.deviceId) {
         addTopics([`${newDeviceId}/sensores`, `${newDeviceId}/status`]);
       }
-      setBuoys(buoys.map(b => {
-        if(b.id === editingBuoy.id) {
+      setBuoys(prev => prev.map(b => {
+        if(b.id === codigoAtual) {
           return {
             ...b,
-            id: formData.id,
+            id: codigo,
             deviceId: newDeviceId,
-            name: formData.name,
+            name: nome,
             status: formData.status,
             location: formData.location,
             battery: Number(formData.battery),
@@ -284,22 +375,18 @@ const SensorsPage = () => {
         return b;
       }));
       addToast("Parâmetros operacionais da bóia alterados.", "success");
-      logAcao(AUDIT.BOIA_EDITAR, formData.id, {
-        nome: formData.name, deviceId: newDeviceId, status: formData.status,
+      logAcao(AUDIT.BOIA_EDITAR, codigo, {
+        nome, deviceId: newDeviceId, status: formData.status,
       });
-      syncRegistryEntry(editingBuoy.id, formData.id).catch(err =>
-        addToast(`Bóia atualizada localmente, mas falhou salvar posição/deviceId: ${err.message}`, 'error')
-      );
     } else {
       // Create
-      const newDeviceId = formData.deviceId.trim();
       if (newDeviceId) {
         addTopics([`${newDeviceId}/sensores`, `${newDeviceId}/status`]);
       }
       const newBuoy = {
-        id: formData.id,
+        id: codigo,
         deviceId: newDeviceId,
-        name: formData.name,
+        name: nome,
         status: formData.status,
         battery: Number(formData.battery),
         lastPing: 'Agora',
@@ -310,21 +397,17 @@ const SensorsPage = () => {
           lastMaintenance: 'Recém Instalada',
           collectionRate: '1 leitur/min'
         },
-        sensors: [
-          { name: 'Sensor de OD', icon: Activity, status: 'online', value: '--' },
-          { name: 'Sensor de pH', icon: Droplet, status: 'online', value: '--' },
-          { name: 'Termômetro', icon: Thermometer, status: 'online', value: '--' }
-        ]
+        sensors: sensoresPadrao(),
       };
-      setBuoys([...buoys, newBuoy]);
+      // filter: uma releitura do registro concluída durante o save pode já ter
+      // criado a linha padrão desta bóia.
+      setBuoys(prev => [...prev.filter(b => b.id !== codigo), newBuoy]);
       addToast("Bóia de Sensoriamento registrada e conectada na rede.", "success");
-      logAcao(AUDIT.BOIA_CRIAR, formData.id, { nome: formData.name, deviceId: newDeviceId });
-      syncRegistryEntry(formData.id, formData.id).catch(err =>
-        addToast(`Bóia criada localmente, mas falhou salvar posição/deviceId: ${err.message}`, 'error')
-      );
+      logAcao(AUDIT.BOIA_CRIAR, codigo, { nome, deviceId: newDeviceId });
     }
-    
+
     setIsModalOpen(false);
+    reloadRegistry();
   };
 
   const toggleRow = (id) => {
@@ -465,6 +548,8 @@ const SensorsPage = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {/* Cadastrar/editar/remover só para admin: a RLS de app_settings
+              (map_buoys) só aceita escrita de admin. */}
           {currentUser?.role === 'admin' && (
             <button className="btn-primary" onClick={handleOpenCreate}>
               <Plus size={18} /> Nova Bóia
@@ -472,6 +557,16 @@ const SensorsPage = () => {
           )}
         </div>
       </div>
+
+      {/* Registro ilegível: a tabela não é reconciliada a partir do fallback do
+          hook (não é o registro) e o erro fica visível. */}
+      {registryError && (
+        <div className="badge badge-offline" role="alert" style={{ display: 'flex', flexWrap: 'wrap', borderRadius: '8px', padding: '0.6rem 1rem', marginBottom: '1rem' }}>
+          <WifiOff size={14} />
+          <span>Registro de bóias indisponível ({registryError}): a lista pode estar desatualizada.</span>
+          <button type="button" className="btn-table btn-sm" onClick={reloadRegistry}>Tentar de novo</button>
+        </div>
+      )}
 
       {/* 3.1 — motivo é obrigatório para abrir a manutenção; sem ele o registro
           no Supabase não faz sentido ("o quê" sem "por quê"). Portal pelo mesmo
@@ -581,8 +676,8 @@ const SensorsPage = () => {
               </div>
               <div className="crud-modal-footer">
                 <button type="button" className="btn-table" onClick={() => setIsModalOpen(false)}>Cancelar</button>
-                <button type="submit" className="btn-primary">
-                  {editingBuoy ? 'Salvar Modificações' : 'Implantar Bóia'}
+                <button type="submit" className="btn-primary" disabled={salvandoBoia}>
+                  {salvandoBoia ? 'Salvando...' : editingBuoy ? 'Salvar Modificações' : 'Implantar Bóia'}
                 </button>
               </div>
             </form>
