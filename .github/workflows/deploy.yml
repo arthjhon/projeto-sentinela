@@ -7,40 +7,51 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Install cloudflared
-        run: |
-          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o cloudflared.deb
-          sudo dpkg -i cloudflared.deb
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          VITE_MQTT_BROKER_URL: ${{ secrets.VITE_MQTT_BROKER_URL }}
+          VITE_MQTT_USER: ${{ secrets.VITE_MQTT_USER }}
+          VITE_MQTT_PASS: ${{ secrets.VITE_MQTT_PASS }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_INFLUX_ORG: ${{ secrets.VITE_INFLUX_ORG }}
+          VITE_INFLUX_BUCKET: ${{ secrets.VITE_INFLUX_BUCKET }}
+        run: npm run build
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
+          echo "${{ secrets.SSH_KEY_UMJ_RSYNC }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           cat >> ~/.ssh/config <<EOF
-          Host ssh-teranex-01.arthlabs.dev
-            ProxyCommand cloudflared access ssh --hostname %h
-            StrictHostKeyChecking no
+          Host umj-sentinela-deploy
+            HostName 100.120.149.19
+            User sentinela
             IdentityFile ~/.ssh/id_ed25519
+            StrictHostKeyChecking no
           EOF
 
-      - name: Deploy via SSH
-        env:
-          TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-          TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Deploy via rsync
         run: |
-          ssh teranex-sentinela@ssh-teranex-01.arthlabs.dev "
-            export NVM_DIR=\"\$HOME/.nvm\"
-            [ -s \"\$NVM_DIR/nvm.sh\" ] && \. \"\$NVM_DIR/nvm.sh\"
-            export PATH=\$PATH:/usr/bin:/usr/local/bin
-            cd /home/teranex-sentinela/repo
-            git config --global --add safe.directory /home/teranex-sentinela/repo
-            git fetch origin
-            git checkout main
-            git pull origin main
-            npm install
-            npm run build
-            # docroot servido pelo vhost de sentinela.arthlabs.dev (mantém o nome legado da pasta)
-            # --delete remove assets antigos (hashes defasados) que o build não gera mais
-            rsync -a --delete dist/ /home/teranex-sentinela/htdocs/sentinela.teranex.inf.br/
-          "
+          # A chave só tem permissão de rsync -wo (forced command rrsync no
+          # servidor, destino /srv/sentinela/htdocs já fixado lá) — não é
+          # possível rodar build/git/npm no servidor (disco compartilhado com
+          # o Samba da UMJ, pouco espaço livre). --delete remove assets
+          # antigos (hashes defasados) que o build não gera mais.
+          rsync -av --delete dist/ umj-sentinela-deploy:
