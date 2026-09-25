@@ -2,20 +2,15 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { MapContainer, TileLayer, Circle, CircleMarker, Popup, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useMqtt } from '../../hooks/useMqtt';
-import { FLEET, getMqttTopics } from '../../config/fleet';
+import { getMqttTopics } from '../../config/fleet';
+import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
+import { topicsForRegistry } from '../../services/buoyRegistry';
 import {
   Thermometer, Droplet, Activity,
   Play, Pause, SkipBack,
   Wifi, WifiOff, Layers,
 } from 'lucide-react';
 import './InteractiveMap.css';
-
-// ─── Configuração das bóias para o mapa (coords reais do CEMM) ───────────────
-const BUOYS_CONFIG = [
-  { id: 'SM-01', name: 'Bóia Mundaú Centro',  coords: [-9.6559, -35.7701], lagoon: 'mundau'    },
-  { id: 'SM-02', name: 'Bóia Mundaú Sul',      coords: [-9.6862, -35.7847], lagoon: 'mundau'    },
-  { id: 'MG-01', name: 'Bóia Manguaba Norte',  coords: [-9.5873, -35.8394], lagoon: 'manguaba'  },
-].map(b => ({ ...b, deviceId: FLEET.find(f => f.id === b.id)?.deviceId ?? null }));
 
 const PARAMS = [
   { key: 'ph',          label: 'pH',         icon: Droplet,    unit: '' },
@@ -24,19 +19,21 @@ const PARAMS = [
 ];
 
 // ─── Gerador de histórico mock (7 dias × intervalo de 30 min = 336 snapshots) ─
+// Histórico usa IDs fixos da semente para dados de teste
 function buildHistory() {
   const now = Date.now();
   const INTERVAL = 30 * 60 * 1000;
   const TOTAL    = 7 * 24 * 2; // 336
+  const seedBuoyIds = ['SM-01', 'SM-02', 'MG-01'];
   const snapshots = [];
 
   for (let i = TOTAL; i >= 0; i--) {
     const snapshot = { timestamp: now - i * INTERVAL, buoys: {} };
 
-    BUOYS_CONFIG.forEach((b, bIdx) => {
+    seedBuoyIds.forEach((buoyId, bIdx) => {
       const phase = bIdx * 0.4;
       // padrão sinusoidal + ruído para simular variações naturais
-      snapshot.buoys[b.id] = {
+      snapshot.buoys[buoyId] = {
         temperatura: +(27 + Math.sin((i + phase * 10) * 0.15) * 2.5 + (Math.random() - 0.5) * 0.4).toFixed(1),
         ph:          +(7.4 + Math.sin((i + phase * 8)  * 0.08) * 0.7 + (Math.random() - 0.5) * 0.2).toFixed(2),
         turbidez:    +(15  + Math.sin((i + phase * 12) * 0.12) * 10  + Math.abs((Math.random() - 0.3) * 4)).toFixed(1),
@@ -94,8 +91,27 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
   const [liveMode, setLiveMode]           = useState(true);
   const playIntervalRef = useRef(null);
 
+  // Registro dinâmico de bóias
+  const { buoys: registryBuoys } = useBuoyRegistry();
+
+  // Transforma dados do registro para formato do mapa
+  const BUOYS_CONFIG = registryBuoys.map(b => ({
+    id: b.codigo,
+    name: b.nome,
+    coords: [b.lat, b.lng],
+    lagoon: b.lagoa,
+    deviceId: b.deviceId,
+  }));
+
   // MQTT: dados ao vivo de todas as bóias com hardware cadastrado
-  const { messages, connected } = useMqtt(getMqttTopics());
+  const { messages, connected, addTopics } = useMqtt(getMqttTopics());
+
+  // Sincroniza tópicos MQTT com registro
+  useEffect(() => {
+    if (registryBuoys.length) {
+      addTopics(topicsForRegistry(registryBuoys));
+    }
+  }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Dados "atuais" (live MQTT ou snapshot histórico) ──────────────────────
   const currentData = useMemo(() => {
@@ -120,7 +136,7 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
       }
     });
     return data;
-  }, [sliderIdx, liveMode, messages]);
+  }, [sliderIdx, liveMode, messages, BUOYS_CONFIG]);
 
   // ── Controle de playback do time slider ───────────────────────────────────
   useEffect(() => {
@@ -229,8 +245,7 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
             const paramVal   = d?.[selectedParam];
             const heatColor  = qualityColor(selectedParam, paramVal);
             const dotColor   = isPlanned ? '#64748b' : statusColor(d?.status ?? 'online');
-            const isLive     = liveMode && !!buoy.deviceId && connected;
-            const param      = PARAMS.find(p => p.key === selectedParam);
+            const isLive     = liveMode && !!buoy.deviceId && messages[`${buoy.deviceId}/availability`] === 'online';
 
             return (
               <React.Fragment key={buoy.id}>
