@@ -5,6 +5,7 @@ import { useReadOnly } from '../../hooks/useReadOnly';
 import { FLEET, getMqttTopics } from '../../config/fleet';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { sha256Hex } from '../../utils/sha256';
+import { isFreshDeployEvent, phaseFromOtaStatus } from '../../utils/otaStatus';
 import {
   UploadCloud, Cpu, Wifi, WifiOff, CheckCircle2,
   AlertTriangle, RotateCw, Radio, FileCode2, Trash2,
@@ -36,6 +37,8 @@ const OtaPage = () => {
   const [deployId, setDeployId]         = useState(null);
 
   const logEndRef = useRef(null);
+  // Último payload de ota/status já tratado, por tópico (ver utils/otaStatus.js)
+  const seenOtaRef = useRef({});
 
   // Auto-scroll do log
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [deployLog]);
@@ -43,15 +46,18 @@ const OtaPage = () => {
   // ── Recebe status OTA do device via MQTT ──
   useEffect(() => {
     FLEET.filter(b => b.deviceId).forEach(buoy => {
-      const otaData = messages[`${buoy.deviceId}/ota/status`];
-      if (!otaData) return;
+      const topic   = `${buoy.deviceId}/ota/status`;
+      const otaData = messages[topic];
+      const fresh   = isFreshDeployEvent(otaData, seenOtaRef.current[topic], phase);
+      seenOtaRef.current[topic] = otaData;
+      // Status retido de um OTA anterior aparece só no card da frota.
+      if (!fresh) return;
 
       const status = otaData.status;
       appendLog(`[${buoy.id}] OTA: ${status} — ${otaData.progress ?? 0}%${otaData.error ? ` (${otaData.error})` : ''}`);
 
-      if (status === 'success') setPhase('success');
-      if (status === 'error')   setPhase('error');
-      if (status === 'flashing' || status === 'downloading') setPhase('waiting');
+      const next = phaseFromOtaStatus(status);
+      if (next) setPhase(next);
 
       // 4.2 — fecha o registro do deploy conforme a bóia reporta o desfecho.
       // Sem isso a linha ficaria 'pendente' para sempre e o histórico mentiria.
@@ -69,7 +75,7 @@ const OtaPage = () => {
         setDeployId(null);
       }
     });
-  }, [messages, deployId]);
+  }, [messages, deployId, phase]);
 
   // ─── Helpers ──
   const appendLog = (msg) => {
@@ -138,21 +144,11 @@ const OtaPage = () => {
       const publicUrl = urlData.publicUrl;
       appendLog(`URL pública gerada.`);
 
-      // ─── 3. Envia comando OTA via MQTT ────────────────────────────────────
-      setPhase('sending');
-      const cmdTopic = `${target.deviceId}/ota/command`;
-      // sha256 vai junto para o firmware validar o binário antes de gravar a
-      // flash. A validação em si é do lado do ESP32 — ver implementados.md.
-      const cmd = { url: publicUrl, version: firmwareVersion, sha256 };
-      const sent = publish(cmdTopic, cmd);
-
-      if (!sent) throw new Error('MQTT desconectado — comando não enviado. Tente novamente.');
-      appendLog(`Comando OTA enviado → ${cmdTopic}`);
-      appendLog(`Versão alvo: ${firmwareVersion}`);
-      appendLog(`Aguardando resposta do dispositivo...`);
-
-      // 4.2 — registra o deploy. status='pendente' até a bóia confirmar via
-      // MQTT (o useEffect de ota/status fecha o ciclo).
+      // ─── 3. Registra o deploy ─────────────────────────────────────────────
+      // 4.2 — status='pendente' até a bóia confirmar via MQTT (o useEffect de
+      // ota/status fecha o ciclo). Registrado ANTES do comando: uma recusa
+      // rápida da bóia (ex.: same_version) chegaria antes do insert, e a linha
+      // ficaria 'pendente' para sempre.
       const { data: deployRow, error: deployErr } = await supabase
         .from('firmware_deploys')
         .insert({
@@ -165,12 +161,33 @@ const OtaPage = () => {
         .select('id')
         .single();
       if (deployErr) {
-        // não aborta o deploy: o comando já foi para o dispositivo, e falhar
-        // aqui só nos deixa sem histórico — pior seria fingir que não enviamos
-        appendLog(`AVISO: deploy enviado, mas não foi possível registrar no histórico (${deployErr.message}).`);
+        // não aborta o deploy: falhar aqui só nos deixa sem histórico
+        appendLog(`AVISO: não foi possível registrar o deploy no histórico (${deployErr.message}).`);
       } else {
         setDeployId(deployRow.id);
       }
+
+      // ─── 4. Envia comando OTA via MQTT ────────────────────────────────────
+      setPhase('sending');
+      const cmdTopic = `${target.deviceId}/ota/command`;
+      // sha256 vai junto para o firmware validar o binário antes de gravar a
+      // flash. A validação em si é do lado do ESP32 — ver implementados.md.
+      const cmd = { url: publicUrl, version: firmwareVersion, sha256 };
+      const sent = publish(cmdTopic, cmd);
+
+      if (!sent) {
+        if (deployRow) {
+          await supabase
+            .from('firmware_deploys')
+            .update({ status: 'falha', confirmado_em: new Date().toISOString() })
+            .eq('id', deployRow.id);
+          setDeployId(null);
+        }
+        throw new Error('MQTT desconectado — comando não enviado. Tente novamente.');
+      }
+      appendLog(`Comando OTA enviado → ${cmdTopic}`);
+      appendLog(`Versão alvo: ${firmwareVersion}`);
+      appendLog(`Aguardando resposta do dispositivo...`);
 
       logAcao(AUDIT.FIRMWARE_DEPLOY, target.id, {
         versao: firmwareVersion, sha256, arquivo: firmwareFile.name,
