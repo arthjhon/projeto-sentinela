@@ -31,11 +31,16 @@ const MonitoringPage = () => {
   const { buoys: registryBuoys } = useBuoyRegistry();
   // Mesma regra de hoje (primeira com deviceId, senão a primeira da lista) —
   // começa com o equivalente vindo de FLEET (síncrono) e é substituída pelo
-  // registro assim que ele carrega.
+  // registro assim que ele carrega. O registro só guarda codigo/nome/lagoa/
+  // deviceId (sem location/battery/coordinates) — por isso usamos o FLEET
+  // correspondente (por id === codigo) como base de exibição e sobrepomos
+  // só os campos que o registro realmente controla (id/name/deviceId).
   const fleetBuoy = FLEET.find(b => b.deviceId) || FLEET[0];
-  const BUOY = (registryBuoys.find(b => b.deviceId) || registryBuoys[0]) ?? {
-    deviceId: fleetBuoy?.deviceId ?? null,
-  };
+  const registryEntry = registryBuoys.find(b => b.deviceId) || registryBuoys[0];
+  const matchedFleet = registryEntry ? FLEET.find(f => f.id === registryEntry.codigo) : null;
+  const BUOY = registryEntry
+    ? { ...matchedFleet, id: registryEntry.codigo, name: registryEntry.nome, deviceId: registryEntry.deviceId }
+    : fleetBuoy ?? { deviceId: null };
 
   const { messages, connected, addTopics } = useMqtt(getMqttTopics(['sensores', 'status']));
 
