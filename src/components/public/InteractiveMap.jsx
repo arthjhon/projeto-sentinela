@@ -246,6 +246,7 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
             const heatColor  = qualityColor(selectedParam, paramVal);
             const dotColor   = isPlanned ? '#64748b' : statusColor(d?.status ?? 'online');
             const isLive     = liveMode && !!buoy.deviceId && messages[`${buoy.deviceId}/availability`] === 'online';
+            const param      = PARAMS.find(p => p.key === selectedParam);
 
             return (
               <React.Fragment key={buoy.id}>
