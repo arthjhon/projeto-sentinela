@@ -13,7 +13,7 @@ import {
 } from '../../services/maintenance';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
-import { saveBuoyRegistry, topicsForRegistry } from '../../services/buoyRegistry';
+import { getBuoyRegistry, saveBuoyRegistry, topicsForRegistry } from '../../services/buoyRegistry';
 import './SensorsPage.css';
 
 // Mapa de ícones por nome de sensor — usado para reidratar dados do localStorage
@@ -212,7 +212,12 @@ const SensorsPage = () => {
     if(expandedId === buoyToDelete) setExpandedId(null);
     addToast("Bóia desconectada e deletada permanentemente da nuvem.", "success");
     logAcao(AUDIT.BOIA_REMOVER, buoyToDelete, { nome: alvo?.name, deviceId: alvo?.deviceId });
-    saveBuoyRegistry(registryBuoys.filter(r => r.codigo !== buoyToDelete))
+    // Busca uma cópia fresca do registro (não o `registryBuoys` do closure, que pode
+    // estar vazio (fetch inicial ainda não resolveu) ou desatualizado (outra sessão
+    // salvou depois do último fetch desta página) — salvar a partir do closure
+    // sobrescreveria o array inteiro no Supabase com dados stale/incompletos.
+    getBuoyRegistry()
+      .then(fresh => saveBuoyRegistry(fresh.filter(r => r.codigo !== buoyToDelete)))
       .then(reloadRegistry)
       .catch(err => addToast(`Bóia removida localmente, mas falhou remover do registro: ${err.message}`, 'error'));
     setConfirmDeleteOpen(false);
@@ -230,7 +235,11 @@ const SensorsPage = () => {
       lng: Number(formData.lng),
       deviceId: formData.deviceId.trim() || null,
     };
-    const semEsta = registryBuoys.filter(r => r.codigo !== codigo);
+    // Cópia fresca do servidor, não o `registryBuoys` do closure — mesmo motivo do
+    // delete acima: o closure pode estar vazio ou stale, e `saveBuoyRegistry` faz
+    // upsert do array inteiro (sem merge no servidor).
+    const fresh = await getBuoyRegistry();
+    const semEsta = fresh.filter(r => r.codigo !== codigo);
     await saveBuoyRegistry([...semEsta, entry]);
     await reloadRegistry();
   };
