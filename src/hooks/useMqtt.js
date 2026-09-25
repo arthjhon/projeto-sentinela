@@ -47,11 +47,12 @@ export function useMqtt(topics = []) {
 
     client.on('connect', () => {
       setConnected(true);
-      // Subscreve a união dos tópicos da montagem com os adicionados via
-      // addTopics — necessário tanto na primeira conexão (quando addTopics
-      // já rodou antes do 'connect', ex. registro dinâmico do Supabase)
-      // quanto em toda reconexão (mqtt.js reemite 'connect'; sessões são
-      // limpas, então o broker esquece as subscrições anteriores).
+      // Subscreve os tópicos da montagem e os que addTopics guardou enquanto o
+      // cliente estava desconectado — addTopics só chama subscribe() com o
+      // cliente já conectado, e o registro do Supabase costuma chegar antes do
+      // 'connect'. Nas reconexões o mqtt.js 5.x já refaz sozinho as subscrições
+      // anteriores (resubscribe: true, o default) e ignora aqui os tópicos que
+      // já conhece: a união só acrescenta os guardados durante a queda.
       const allTopics = newTopicsOnly(new Set(), [...topics, ...extraTopicsRef.current]);
       if (allTopics.length > 0) {
         client.subscribe(allTopics, (err) => {
