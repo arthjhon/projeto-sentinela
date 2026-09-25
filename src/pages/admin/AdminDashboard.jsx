@@ -84,6 +84,17 @@ const AdminDashboard = () => {
 
   const sensorMsg = focusedDeviceId ? messages[`${focusedDeviceId}/sensores`] : null;
 
+  // Trocar de bóia zera o buffer. Sem isso a bóia recém-selecionada herdava a
+  // última leitura (e a classificação) da anterior, e ao voltar para uma bóia a
+  // última leitura dela era anexada DE NOVO ao buffer antigo (ponto duplicado no
+  // gráfico, contagem inflada, min/max misturando bóias). Fica ANTES do efeito
+  // abaixo: na mesma renderização zera primeiro e o efeito de `sensorMsg` semeia
+  // o buffer com a última leitura em memória da bóia nova, se houver — com o
+  // horário da troca, porque useMqtt não guarda quando a mensagem chegou.
+  useEffect(() => {
+    setBuffer([]);
+  }, [focusedDeviceId]);
+
   useEffect(() => {
     if (!sensorMsg) return;
 
