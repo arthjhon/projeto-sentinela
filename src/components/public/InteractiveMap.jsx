@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import { useMqtt } from '../../hooks/useMqtt';
 import { getMqttTopics } from '../../config/fleet';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
-import { topicsForRegistry } from '../../services/buoyRegistry';
+import { topicsForRegistry, SEED_BUOYS } from '../../services/buoyRegistry';
 import {
   Thermometer, Droplet, Activity,
   Play, Pause, SkipBack,
@@ -92,19 +92,23 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
   const playIntervalRef = useRef(null);
 
   // Registro dinâmico de bóias
-  const { buoys: registryBuoys } = useBuoyRegistry();
+  const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
 
-  // Transforma dados do registro para formato do mapa
-  const BUOYS_CONFIG = registryBuoys.map(b => ({
-    id: b.codigo,
-    name: b.nome,
-    coords: [b.lat, b.lng],
-    lagoon: b.lagoa,
-    deviceId: b.deviceId,
-  }));
+  // Transforma dados do registro para formato do mapa. Enquanto o registro
+  // carrega, parte da semente (mesmas 3 bóias de antes) — sem mapa vazio no
+  // primeiro paint. Registro vazio depois de carregado = mapa sem bóias.
+  const BUOYS_CONFIG = useMemo(() =>
+    (registryLoading && registryBuoys.length === 0 ? SEED_BUOYS : registryBuoys).map(b => ({
+      id: b.codigo,
+      name: b.nome,
+      coords: [b.lat, b.lng],
+      lagoon: b.lagoa,
+      deviceId: b.deviceId,
+    })),
+  [registryBuoys, registryLoading]);
 
   // MQTT: dados ao vivo de todas as bóias com hardware cadastrado
-  const { messages, connected, addTopics } = useMqtt(getMqttTopics());
+  const { messages, addTopics } = useMqtt(getMqttTopics());
 
   // Sincroniza tópicos MQTT com registro
   useEffect(() => {
@@ -130,7 +134,8 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
             temperatura: live.temperatura,
             ph:          live.ph,
             turbidez:    live.turbidez,
-            status:      'online',
+            // leitura em memória não prova que a bóia segue viva: o LWT manda
+            status:      messages[`${b.deviceId}/availability`] === 'offline' ? 'offline' : 'online',
           };
         }
       }
@@ -185,6 +190,12 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
 
   const currentTs = HISTORY[sliderIdx]?.timestamp;
 
+  // "Ao vivo" = alguma bóia do mapa com availability online (LWT), não a
+  // conexão deste navegador ao broker.
+  const anyBuoyOnline = BUOYS_CONFIG.some(
+    b => b.deviceId && messages[`${b.deviceId}/availability`] === 'online'
+  );
+
   return (
     <div className="imap-wrapper">
 
@@ -213,9 +224,9 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
             Heatmap
           </button>
 
-          <span className={`imap-mqtt-badge ${connected ? 'online' : 'offline'}`}>
-            {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
-            {connected ? 'Ao vivo' : 'Offline'}
+          <span className={`imap-mqtt-badge ${anyBuoyOnline ? 'online' : 'offline'}`}>
+            {anyBuoyOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
+            {anyBuoyOnline ? 'Ao vivo' : 'Sem sinal'}
           </span>
         </div>
       </div>
