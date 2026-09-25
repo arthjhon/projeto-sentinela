@@ -54,7 +54,7 @@ const AdminDashboard = () => {
   const { messages, connected, addTopics } = useMqtt(getMqttTopics());
 
   // ── Registro de bóias + seletor ───────────────────────────────────────────────
-  const { buoys: registryBuoys } = useBuoyRegistry();
+  const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
   const [selectedBuoy, setSelectedBuoy] = useState('todas'); // 'todas' | codigo da bóia
 
   useEffect(() => {
@@ -177,7 +177,10 @@ const AdminDashboard = () => {
 
   // ── Frota: contagem real a partir do registro de bóias ───────────────────────
   const fleetActive = onlineBuoys.length;
-  const fleetTotal  = registryBuoys.length || 1; // evita divisão por zero se o registro estiver vazio
+  const fleetTotal  = registryBuoys.length;
+  // Só a divisão precisa de proteção: registro vazio mostra 0%, e não um
+  // "Total: 1 bóias" que não existe.
+  const fleetPct    = fleetTotal ? (fleetActive / fleetTotal) * 100 : 0;
 
   // ── Cards paramétricos: valor único (bóia focada) ou média da frota ─────────
   const fleetValue = (param) => computeFleetAverage(
@@ -460,7 +463,9 @@ const AdminDashboard = () => {
               <PieChart size={20} className="text-success" />
               <h3>Status da Frota</h3>
             </div>
-            <span className="badge">Total: {fleetTotal} bóias</span>
+            <span className="badge">
+              {registryLoading && !fleetTotal ? 'Carregando...' : `Total: ${fleetTotal} bóias`}
+            </span>
           </div>
 
           <div className="fleet-stats-container">
@@ -472,11 +477,11 @@ const AdminDashboard = () => {
                 />
                 <path
                   className="circle active-stroke"
-                  strokeDasharray={`${(fleetActive / fleetTotal) * 100}, 100`}
+                  strokeDasharray={`${fleetPct}, 100`}
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                 />
                 <text x="18" y="16" className="percentage">
-                  {Math.round((fleetActive / fleetTotal) * 100)}%
+                  {Math.round(fleetPct)}%
                 </text>
                 <text x="18" y="22" className="percentage-sub">Online</text>
               </svg>
