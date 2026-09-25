@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMqtt } from '../../hooks/useMqtt';
 import { useReadOnly } from '../../hooks/useReadOnly';
@@ -13,12 +13,15 @@ import {
 } from 'lucide-react';
 import './OtaPage.css';
 
-const ALL_TOPICS = getMqttTopics(['status', 'ota/status']);
+// 'availability' é o LWT do firmware (retido): status real de cada bóia. O
+// mesmo conjunto vale na montagem (FLEET) e na sincronia com o registro.
+const TOPIC_SUFFIXES = ['status', 'ota/status', 'availability'];
+const ALL_TOPICS = getMqttTopics(TOPIC_SUFFIXES);
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 const OtaPage = () => {
   const { messages, connected, publish, addTopics } = useMqtt(ALL_TOPICS);
-  const { buoys: registryBuoys } = useBuoyRegistry();
+  const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
   const readOnly = useReadOnly();
 
   // ── Form state ──
@@ -40,17 +43,39 @@ const OtaPage = () => {
 
   const logEndRef = useRef(null);
 
+  // ── Bóias (registro × FLEET) ──
+  // Identidade (código, nome, deviceId) vem do registro; FLEET só completa os
+  // metadados pelo código. FLEET é o fallback síncrono apenas até a primeira
+  // leitura do registro — carregado e vazio = nenhuma bóia.
+  const buoys = useMemo(() => (
+    registryLoading && !registryBuoys.length
+      ? FLEET
+      : registryBuoys.map(r => ({
+          ...FLEET.find(f => f.id === r.codigo),
+          id: r.codigo,
+          name: r.nome,
+          deviceId: r.deviceId || null,
+        }))
+  ), [registryBuoys, registryLoading]);
+
+  // Destinos de OTA: só bóias com dispositivo (deviceId null = bóia planejada).
+  const otaTargets = useMemo(() => buoys.filter(b => b.deviceId), [buoys]);
+
+  // O padrão 'SM-01' (ou a escolha anterior) pode não estar entre os destinos:
+  // vale então a primeira opção — a mesma que o <select> exibe.
+  const targetBuoy = otaTargets.find(b => b.id === targetBuoyId) ?? otaTargets[0] ?? null;
+
   // Auto-scroll do log
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [deployLog]);
 
   // Sincronizar tópicos do registro
   useEffect(() => {
-    if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys, ['status', 'ota/status', 'availability']));
+    if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys, TOPIC_SUFFIXES));
   }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Recebe status OTA do device via MQTT ──
   useEffect(() => {
-    FLEET.filter(b => b.deviceId).forEach(buoy => {
+    otaTargets.forEach(buoy => {
       const otaData = messages[`${buoy.deviceId}/ota/status`];
       if (!otaData) return;
 
@@ -77,7 +102,7 @@ const OtaPage = () => {
         setDeployId(null);
       }
     });
-  }, [messages, deployId]);
+  }, [messages, deployId, otaTargets]);
 
   // ─── Helpers ──
   const appendLog = (msg) => {
@@ -114,7 +139,7 @@ const OtaPage = () => {
     setConfirmOpen(false);
     if (!firmwareFile || !firmwareVersion.trim()) return;
 
-    const target = otaTargets.find(b => b.id === targetBuoyId);
+    const target = targetBuoy;
     if (!target?.deviceId) {
       appendLog('ERRO: bóia selecionada não possui dispositivo MQTT associado.');
       return;
@@ -202,7 +227,7 @@ const OtaPage = () => {
   };
 
   // ─── Dados ao vivo de cada bóia ──────────────────────────────────────────
-  const fleetStatus = FLEET.map(buoy => {
+  const fleetStatus = buoys.map(buoy => {
     if (!buoy.deviceId) {
       return { ...buoy, online: false, firmware: 'N/A', rssi: null, uptime: null };
     }
@@ -210,7 +235,9 @@ const OtaPage = () => {
     const otaSt  = messages[`${buoy.deviceId}/ota/status`];
     return {
       ...buoy,
-      online:   !!status,
+      // status real: LWT (<id>/availability, retido). /status não é retido e só
+      // provava que a bóia falou em algum momento desde a montagem da página.
+      online:   messages[`${buoy.deviceId}/availability`] === 'online',
       firmware: status?.firmware ?? '---',
       rssi:     status?.rssi ?? null,
       uptime:   status?.uptime != null ? `${Math.floor(status.uptime / 60)} min` : null,
@@ -219,16 +246,7 @@ const OtaPage = () => {
     };
   });
 
-  // Combinar bóias de FLEET com bóias cadastradas só no registro
-  const otaTargets = [
-    ...FLEET,
-    ...registryBuoys
-      .filter(r => !FLEET.some(f => f.id === r.codigo))
-      .map(r => ({ id: r.codigo, name: r.nome, deviceId: r.deviceId })),
-  ].filter(b => b.deviceId);
-
-  const targetBuoy = otaTargets.find(b => b.id === targetBuoyId);
-  const targetOnline = fleetStatus.find(b => b.id === targetBuoyId)?.online ?? false;
+  const targetOnline = fleetStatus.find(b => b.id === targetBuoy?.id)?.online ?? false;
   const canDeploy = firmwareFile && firmwareVersion.trim() && targetBuoy?.deviceId && phase === 'idle';
 
   return (
@@ -296,7 +314,7 @@ const OtaPage = () => {
             <div className="ota-field">
               <label>Bóia Alvo</label>
               <select
-                value={targetBuoyId}
+                value={targetBuoy?.id ?? ''}
                 onChange={e => setTargetBuoyId(e.target.value)}
                 disabled={phase !== 'idle'}
               >
@@ -447,7 +465,7 @@ const OtaPage = () => {
             </div>
             <h3>Confirmar Deploy OTA</h3>
             <p>
-              Você está prestes a atualizar o firmware da <strong>{targetBuoyId}</strong> para a versão <strong>{firmwareVersion}</strong>.
+              Você está prestes a atualizar o firmware da <strong>{targetBuoy?.id}</strong> para a versão <strong>{firmwareVersion}</strong>.
             </p>
             <p className="ota-confirm-warning">
               <AlertTriangle size={14} /> O dispositivo irá reiniciar após a atualização. A coleta de dados será interrompida por ~30–60 segundos.
