@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Wifi, WifiOff, Thermometer, Droplet, Activity, MapPin, Share2 } from 'lucide-react';
 import { useMqtt } from '../../hooks/useMqtt';
+import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { FLEET, getMqttTopics } from '../../config/fleet';
+import { topicsForRegistry } from '../../services/buoyRegistry';
 import { WATER_PARAMS, classifyParam } from '../../config/waterQuality';
 import { useMockMode, getMockMode, makeMockReading, makeMockStatus } from '../../config/mockData';
 import InteractiveMap from '../../components/public/InteractiveMap';
@@ -17,7 +19,6 @@ import './MonitoringPage.css';
 
 const ICONS = { temperatura: Thermometer, ph: Droplet, turbidez: Activity };
 const MAX_HISTORY = 120;
-const BUOY = FLEET.find(b => b.deviceId) || FLEET[0];
 
 const MonitoringPage = () => {
   const [history, setHistory] = useState([]);
@@ -27,7 +28,21 @@ const MonitoringPage = () => {
   const [mockData, setMockData] = useState(() => (getMockMode() ? makeMockReading(null) : null));
   const [mockStatus, setMockStatus] = useState(() => (getMockMode() ? makeMockStatus(2 * 86400) : null));
 
-  const { messages, connected } = useMqtt(getMqttTopics(['sensores', 'status']));
+  const { buoys: registryBuoys } = useBuoyRegistry();
+  // Mesma regra de hoje (primeira com deviceId, senão a primeira da lista) —
+  // começa com o equivalente vindo de FLEET (síncrono) e é substituída pelo
+  // registro assim que ele carrega.
+  const fleetBuoy = FLEET.find(b => b.deviceId) || FLEET[0];
+  const BUOY = (registryBuoys.find(b => b.deviceId) || registryBuoys[0]) ?? {
+    deviceId: fleetBuoy?.deviceId ?? null,
+  };
+
+  const { messages, connected, addTopics } = useMqtt(getMqttTopics(['sensores', 'status']));
+
+  useEffect(() => {
+    if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys, ['sensores', 'status', 'availability']));
+  }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const sensorTopic = BUOY.deviceId ? `${BUOY.deviceId}/sensores` : null;
   const statusTopic = BUOY.deviceId ? `${BUOY.deviceId}/status` : null;
   const mqttData = sensorTopic ? messages[sensorTopic] : null;
@@ -68,8 +83,9 @@ const MonitoringPage = () => {
     setHistory(prev => [...prev, point].slice(-MAX_HISTORY));
   }, [latestData, paused]);
 
-  const isLive = mockEnabled || (connected && !!BUOY.deviceId);
-  const activeArea = BUOY.location.includes('Mundaú') ? 'mundau' : 'manguaba';
+  const isOnline = BUOY.deviceId && messages[`${BUOY.deviceId}/availability`] === 'online';
+  const isLive = mockEnabled || isOnline;
+  const activeArea = BUOY.location?.includes('Mundaú') ? 'mundau' : 'manguaba';
 
   // 5.5 — snapshot compartilhável dos cards principais
   const snapshotRef = useRef(null);
