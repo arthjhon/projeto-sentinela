@@ -186,6 +186,12 @@ const AdminDashboard = () => {
 
   const cardTitle = (base) => selectedBuoy === 'todas' ? `${base} (Média da Frota)` : `${base} (${focusedId ?? '—'})`;
 
+  // Classifica o MESMO valor exibido no card: a média da frota em "todas"
+  // (reusa fleetValue, sem duplicar a lógica de média), ou a leitura da bóia
+  // focada — nunca a bóia focada quando o modo exibido é a média (bug 2.1).
+  const cardClassificacao = (param) =>
+    classifyParam(param, selectedBuoy === 'todas' ? fleetValue(param) : latest[param]);
+
   // ── Metric cards (4 cards superiores) ────────────────────────────────────────
   const metricCards = [
     {
@@ -209,7 +215,7 @@ const AdminDashboard = () => {
       desc:  stats.temperatura
         ? `Sessão: ${stats.temperatura.min} – ${stats.temperatura.max} °C`
         : 'Aguardando dados...',
-      classificacao: classifyParam('temperatura', latest.temperatura),
+      classificacao: cardClassificacao('temperatura'),
     },
     {
       title: cardTitle('pH'),
@@ -219,7 +225,7 @@ const AdminDashboard = () => {
       desc:  stats.ph
         ? `Sessão: ${stats.ph.min} – ${stats.ph.max}`
         : 'Aguardando dados...',
-      classificacao: classifyParam('ph', latest.ph),
+      classificacao: cardClassificacao('ph'),
     },
     {
       title: cardTitle('Turbidez'),
@@ -229,7 +235,7 @@ const AdminDashboard = () => {
       desc:  stats.turbidez
         ? `Sessão: ${stats.turbidez.min} – ${stats.turbidez.max} NTU`
         : 'Aguardando dados...',
-      classificacao: classifyParam('turbidez', latest.turbidez),
+      classificacao: cardClassificacao('turbidez'),
     },
   ];
 
