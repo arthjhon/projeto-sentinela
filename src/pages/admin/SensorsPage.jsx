@@ -12,6 +12,8 @@ import {
   registrarCalibracao, ultimasCalibracoes,
 } from '../../services/maintenance';
 import { logAcao, AUDIT } from '../../services/auditLog';
+import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
+import { saveBuoyRegistry, topicsForRegistry } from '../../services/buoyRegistry';
 import './SensorsPage.css';
 
 // Mapa de ícones por nome de sensor — usado para reidratar dados do localStorage
@@ -93,6 +95,15 @@ const SensorsPage = () => {
 
   const { messages, connected, addTopics } = useMqtt(getMqttTopics());
 
+  const { buoys: registryBuoys, reload: reloadRegistry } = useBuoyRegistry();
+
+  // Bóia cadastrada só no registro (deviceId novo, ainda não em FLEET) —
+  // inscreve o tópico assim que o registro carrega. Ver spec: dupla
+  // inscrição temporária num deviceId trocado é aceitável.
+  useEffect(() => {
+    if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys));
+  }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps -- addTopics é estável (ref interno do hook)
+
   // Declarado antes dos useEffects que dependem de buoys
   const [buoys, setBuoys] = useState(getInitialBuoys);
 
@@ -108,7 +119,8 @@ const SensorsPage = () => {
   const [formErrors, setFormErrors] = useState({});
 
   const initialFormData = {
-    id: '', deviceId: '', name: '', status: 'online', location: 'Lagoa Mundaú', battery: 100, coordinates: ''
+    id: '', deviceId: '', name: '', status: 'online', location: 'Lagoa Mundaú', battery: 100, coordinates: '',
+    lagoa: 'mundau', lat: '', lng: ''
   };
   const [formData, setFormData] = useState(initialFormData);
 
@@ -126,22 +138,29 @@ const SensorsPage = () => {
       if (!b.deviceId) return b;
       const sData = messages[`${b.deviceId}/sensores`];
       const stData = messages[`${b.deviceId}/status`];
-      if (!sData && !stData) return b;
+      const availability = messages[`${b.deviceId}/availability`];
+      if (!sData && !stData && availability == null) return b;
+
+      const isOnline = availability === 'online';
+      const isOffline = availability === 'offline';
+
       return {
         ...b,
+        ...(isOffline ? { status: 'offline' } : {}),
         ...(sData ? {
-          status: 'online',
+          status: isOffline ? 'offline' : 'online',
           lastPing: now,
           sensors: b.sensors.map(s => {
             if (s.name === 'Termômetro')
-              return { ...s, value: sData.temperatura != null ? `${sData.temperatura.toFixed(1)} °C` : '-- °C', status: 'online' };
+              return { ...s, value: sData.temperatura != null ? `${sData.temperatura.toFixed(1)} °C` : '-- °C', status: isOffline ? 'offline' : 'online' };
             if (s.name === 'Sensor de pH')
-              return { ...s, value: sData.ph != null ? `${sData.ph.toFixed(2)}` : '--', status: 'online' };
+              return { ...s, value: sData.ph != null ? `${sData.ph.toFixed(2)}` : '--', status: isOffline ? 'offline' : 'online' };
             if (s.name === 'Turbidez')
-              return { ...s, value: sData.turbidez != null ? `${sData.turbidez.toFixed(2)} NTU` : '-- NTU', status: 'online' };
+              return { ...s, value: sData.turbidez != null ? `${sData.turbidez.toFixed(2)} NTU` : '-- NTU', status: isOffline ? 'offline' : 'online' };
             return s;
           }),
         } : {}),
+        ...(isOnline && !sData ? { status: 'online' } : {}),
         ...(stData ? {
           details: {
             ...b.details,
@@ -163,6 +182,7 @@ const SensorsPage = () => {
   };
 
   const handleOpenEdit = (buoy) => {
+    const regEntry = registryBuoys.find(r => r.codigo === buoy.id);
     setEditingBuoy(buoy);
     setFormData({
       id: buoy.id,
@@ -171,7 +191,10 @@ const SensorsPage = () => {
       status: buoy.status,
       location: buoy.location,
       battery: buoy.battery,
-      coordinates: buoy.details.coordinates
+      coordinates: buoy.details.coordinates,
+      lagoa: regEntry?.lagoa ?? 'mundau',
+      lat: regEntry?.lat ?? '',
+      lng: regEntry?.lng ?? '',
     });
     setFormErrors({});
     setIsModalOpen(true);
@@ -189,8 +212,27 @@ const SensorsPage = () => {
     if(expandedId === buoyToDelete) setExpandedId(null);
     addToast("Bóia desconectada e deletada permanentemente da nuvem.", "success");
     logAcao(AUDIT.BOIA_REMOVER, buoyToDelete, { nome: alvo?.name, deviceId: alvo?.deviceId });
+    saveBuoyRegistry(registryBuoys.filter(r => r.codigo !== buoyToDelete))
+      .then(reloadRegistry)
+      .catch(err => addToast(`Bóia removida localmente, mas falhou remover do registro: ${err.message}`, 'error'));
     setConfirmDeleteOpen(false);
     setBuoyToDelete(null);
+  };
+
+  // Grava/atualiza a entrada desta bóia no registro dinâmico (map_buoys),
+  // além do estado local `buoys` que o resto da página já mantém.
+  const syncRegistryEntry = async (codigo, novoCodigo) => {
+    const entry = {
+      codigo: novoCodigo,
+      nome: formData.name,
+      lagoa: formData.lagoa,
+      lat: Number(formData.lat),
+      lng: Number(formData.lng),
+      deviceId: formData.deviceId.trim() || null,
+    };
+    const semEsta = registryBuoys.filter(r => r.codigo !== codigo);
+    await saveBuoyRegistry([...semEsta, entry]);
+    await reloadRegistry();
   };
 
   const handleSaveForm = (e) => {
@@ -202,6 +244,8 @@ const SensorsPage = () => {
     if (!formData.name.trim()) errors.name = true;
     if (!formData.coordinates.trim()) errors.coordinates = true;
     if (formData.battery === '' || formData.battery === null) errors.battery = true;
+    if (formData.lat === '' || Number.isNaN(Number(formData.lat))) errors.lat = true;
+    if (formData.lng === '' || Number.isNaN(Number(formData.lng))) errors.lng = true;
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
@@ -234,6 +278,9 @@ const SensorsPage = () => {
       logAcao(AUDIT.BOIA_EDITAR, formData.id, {
         nome: formData.name, deviceId: newDeviceId, status: formData.status,
       });
+      syncRegistryEntry(editingBuoy.id, formData.id).catch(err =>
+        addToast(`Bóia atualizada localmente, mas falhou salvar posição/deviceId: ${err.message}`, 'error')
+      );
     } else {
       // Create
       const newDeviceId = formData.deviceId.trim();
@@ -263,6 +310,9 @@ const SensorsPage = () => {
       setBuoys([...buoys, newBuoy]);
       addToast("Bóia de Sensoriamento registrada e conectada na rede.", "success");
       logAcao(AUDIT.BOIA_CRIAR, formData.id, { nome: formData.name, deviceId: newDeviceId });
+      syncRegistryEntry(formData.id, formData.id).catch(err =>
+        addToast(`Bóia criada localmente, mas falhou salvar posição/deviceId: ${err.message}`, 'error')
+      );
     }
     
     setIsModalOpen(false);
@@ -491,6 +541,21 @@ const SensorsPage = () => {
                 <div className="form-group">
                   <label>Coordenadas (GPS)</label>
                   <input type="text" className={`w-100 ${formErrors.coordinates ? 'input-error' : ''}`} value={formData.coordinates} onChange={e => {setFormData({...formData, coordinates: e.target.value}); setFormErrors({...formErrors, coordinates: false})}} placeholder="9°XX'XX S 35°XX'XX W" />
+                </div>
+                <div className="form-group">
+                  <label>Lagoa (mapa)</label>
+                  <select value={formData.lagoa} onChange={e => setFormData({...formData, lagoa: e.target.value})}>
+                    <option value="mundau">Mundaú</option>
+                    <option value="manguaba">Manguaba</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Latitude (mapa)</label>
+                  <input type="number" step="any" className={`w-100 ${formErrors.lat ? 'input-error' : ''}`} value={formData.lat} onChange={e => {setFormData({...formData, lat: e.target.value}); setFormErrors({...formErrors, lat: false})}} placeholder="Ex: -9.6559" />
+                </div>
+                <div className="form-group">
+                  <label>Longitude (mapa)</label>
+                  <input type="number" step="any" className={`w-100 ${formErrors.lng ? 'input-error' : ''}`} value={formData.lng} onChange={e => {setFormData({...formData, lng: e.target.value}); setFormErrors({...formErrors, lng: false})}} placeholder="Ex: -35.7701" />
                 </div>
                 <div className="form-group">
                   <label>Status Operacional</label>
