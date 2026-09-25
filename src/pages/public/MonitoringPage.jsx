@@ -3,7 +3,7 @@ import { Wifi, WifiOff, Thermometer, Droplet, Activity, MapPin, Share2 } from 'l
 import { useMqtt } from '../../hooks/useMqtt';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { FLEET, getMqttTopics } from '../../config/fleet';
-import { topicsForRegistry } from '../../services/buoyRegistry';
+import { topicsForRegistry, LAGOA_LABEL } from '../../services/buoyRegistry';
 import { WATER_PARAMS, classifyParam } from '../../config/waterQuality';
 import { useMockMode, getMockMode, makeMockReading, makeMockStatus } from '../../config/mockData';
 import InteractiveMap from '../../components/public/InteractiveMap';
@@ -19,6 +19,11 @@ import './MonitoringPage.css';
 
 const ICONS = { temperatura: Thermometer, ph: Droplet, turbidez: Activity };
 const MAX_HISTORY = 120;
+// Tópicos por bóia: leituras, saúde do device e o LWT (availability) que decide
+// o status real. O mesmo array na montagem (FLEET, síncrono) e no registro —
+// sem availability na montagem, o status das bóias do FLEET esperava a leitura
+// do registro terminar (e não chegava se ela ficasse pendurada).
+const TOPIC_SUFFIXES = ['sensores', 'status', 'availability'];
 
 const MonitoringPage = () => {
   const [history, setHistory] = useState([]);
@@ -28,24 +33,33 @@ const MonitoringPage = () => {
   const [mockData, setMockData] = useState(() => (getMockMode() ? makeMockReading(null) : null));
   const [mockStatus, setMockStatus] = useState(() => (getMockMode() ? makeMockStatus(2 * 86400) : null));
 
-  const { buoys: registryBuoys } = useBuoyRegistry();
-  // Mesma regra de hoje (primeira com deviceId, senão a primeira da lista) —
-  // começa com o equivalente vindo de FLEET (síncrono) e é substituída pelo
-  // registro assim que ele carrega. O registro só guarda codigo/nome/lagoa/
-  // deviceId (sem location/battery/coordinates) — por isso usamos o FLEET
-  // correspondente (por id === codigo) como base de exibição e sobrepomos
-  // só os campos que o registro realmente controla (id/name/deviceId).
+  const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
+  // Mesma regra de hoje (primeira com deviceId, senão a primeira da lista).
+  // Enquanto o registro carrega vale o equivalente do FLEET (síncrono);
+  // carregado e vazio (admin apagou todas) = nenhuma bóia em destaque — o
+  // FLEET não volta a valer. Do registro vêm identidade (id/name/deviceId) e
+  // lagoa (rótulo via LAGOA_LABEL); o FLEET de mesmo código (id === codigo) só
+  // completa o que o registro não guarda (bateria, coordenadas GMS, datas) —
+  // bóia só do registro fica sem esses campos.
   const fleetBuoy = FLEET.find(b => b.deviceId) || FLEET[0];
   const registryEntry = registryBuoys.find(b => b.deviceId) || registryBuoys[0];
   const matchedFleet = registryEntry ? FLEET.find(f => f.id === registryEntry.codigo) : null;
   const BUOY = registryEntry
-    ? { ...matchedFleet, id: registryEntry.codigo, name: registryEntry.nome, deviceId: registryEntry.deviceId }
-    : fleetBuoy ?? { deviceId: null };
+    ? {
+        ...matchedFleet,
+        id: registryEntry.codigo,
+        name: registryEntry.nome,
+        deviceId: registryEntry.deviceId,
+        location: LAGOA_LABEL[registryEntry.lagoa],
+      }
+    : registryLoading
+      ? fleetBuoy ?? { deviceId: null }
+      : { deviceId: null };
 
-  const { messages, connected, addTopics } = useMqtt(getMqttTopics(['sensores', 'status']));
+  const { messages, connected, addTopics } = useMqtt(getMqttTopics(TOPIC_SUFFIXES));
 
   useEffect(() => {
-    if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys, ['sensores', 'status', 'availability']));
+    if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys, TOPIC_SUFFIXES));
   }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sensorTopic = BUOY.deviceId ? `${BUOY.deviceId}/sensores` : null;
@@ -90,6 +104,9 @@ const MonitoringPage = () => {
 
   const isOnline = BUOY.deviceId && messages[`${BUOY.deviceId}/availability`] === 'online';
   const isLive = mockEnabled || isOnline;
+  const subtitle = !BUOY.id
+    ? 'Nenhuma bóia cadastrada'
+    : BUOY.location ? `${BUOY.id} · ${BUOY.name} — ${BUOY.location}` : `${BUOY.id} · ${BUOY.name}`;
   const activeArea = BUOY.location?.includes('Mundaú') ? 'mundau' : 'manguaba';
 
   // 5.5 — snapshot compartilhável dos cards principais
@@ -147,7 +164,7 @@ const MonitoringPage = () => {
             {mockEnabled ? 'SIMULADO' : isLive ? 'AO VIVO' : BUOY.deviceId ? 'SEM SINAL' : 'SEM HARDWARE'}
           </div>
           <h1 className="mon-title">Monitoramento Estuarino</h1>
-          <p className="mon-subtitle">{BUOY.id} · {BUOY.name} — {BUOY.location}</p>
+          <p className="mon-subtitle">{subtitle}</p>
         </div>
         <div className="mon-header-actions">
           <div className={`mqtt-status ${connected ? 'connected' : 'disconnected'}`}>
@@ -185,7 +202,7 @@ const MonitoringPage = () => {
                   {param.unit && <span className="metric-unit">{param.unit}</span>}
                 </div>
                 <span className="metric-hint">
-                  {c ? c.text : (!BUOY.deviceId ? 'sem hardware' : !connected ? 'sem sinal' : 'aguardando…')}
+                  {c ? c.text : (!BUOY.deviceId ? 'sem hardware' : !isOnline ? 'sem sinal' : 'aguardando…')}
                 </span>
               </div>
             );
