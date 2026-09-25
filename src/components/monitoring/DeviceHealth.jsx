@@ -17,7 +17,7 @@ export default function DeviceHealth({ status, battery }) {
     { icon: BatteryCharging, label: 'Firmware', value: status?.firmware ?? '--' },
   ];
   const bat = battery ?? 0;
-  const batColor = bat > 50 ? '#22c55e' : bat > 20 ? '#eab308' : '#ef4444';
+  const batColor = battery == null ? '#8aa0b6' : bat > 50 ? '#22c55e' : bat > 20 ? '#eab308' : '#ef4444';
 
   // Anel SVG (donut) determinístico para a bateria.
   const R = 42, C = 2 * Math.PI * R;
@@ -31,7 +31,7 @@ export default function DeviceHealth({ status, battery }) {
           <circle cx="60" cy="60" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="10" />
           <circle cx="60" cy="60" r={R} fill="none" stroke={batColor} strokeWidth="10" strokeLinecap="round"
             strokeDasharray={`${filled} ${C}`} transform="rotate(-90 60 60)" />
-          <text x="60" y="58" textAnchor="middle" fontSize="22" fontWeight="800" fill={batColor}>{bat}%</text>
+          <text x="60" y="58" textAnchor="middle" fontSize="22" fontWeight="800" fill={batColor}>{battery != null ? `${bat}%` : '--'}</text>
           <text x="60" y="78" textAnchor="middle" fontSize="11" fill="#8aa0b6">Bateria</text>
         </svg>
         <div className="mon-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(120px,1fr))', flex: 1 }}>
