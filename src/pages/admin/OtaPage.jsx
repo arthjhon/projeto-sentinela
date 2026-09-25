@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMqtt } from '../../hooks/useMqtt';
 import { useReadOnly } from '../../hooks/useReadOnly';
+import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { FLEET, getMqttTopics } from '../../config/fleet';
+import { topicsForRegistry } from '../../services/buoyRegistry';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { sha256Hex } from '../../utils/sha256';
 import {
@@ -15,7 +17,8 @@ const ALL_TOPICS = getMqttTopics(['status', 'ota/status']);
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 const OtaPage = () => {
-  const { messages, connected, publish } = useMqtt(ALL_TOPICS);
+  const { messages, connected, publish, addTopics } = useMqtt(ALL_TOPICS);
+  const { buoys: registryBuoys } = useBuoyRegistry();
   const readOnly = useReadOnly();
 
   // ── Form state ──
@@ -39,6 +42,11 @@ const OtaPage = () => {
 
   // Auto-scroll do log
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [deployLog]);
+
+  // Sincronizar tópicos do registro
+  useEffect(() => {
+    if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys, ['status', 'ota/status', 'availability']));
+  }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Recebe status OTA do device via MQTT ──
   useEffect(() => {
@@ -106,7 +114,7 @@ const OtaPage = () => {
     setConfirmOpen(false);
     if (!firmwareFile || !firmwareVersion.trim()) return;
 
-    const target = FLEET.find(b => b.id === targetBuoyId);
+    const target = otaTargets.find(b => b.id === targetBuoyId);
     if (!target?.deviceId) {
       appendLog('ERRO: bóia selecionada não possui dispositivo MQTT associado.');
       return;
@@ -211,7 +219,15 @@ const OtaPage = () => {
     };
   });
 
-  const targetBuoy = FLEET.find(b => b.id === targetBuoyId);
+  // Combinar bóias de FLEET com bóias cadastradas só no registro
+  const otaTargets = [
+    ...FLEET,
+    ...registryBuoys
+      .filter(r => !FLEET.some(f => f.id === r.codigo))
+      .map(r => ({ id: r.codigo, name: r.nome, deviceId: r.deviceId })),
+  ].filter(b => b.deviceId);
+
+  const targetBuoy = otaTargets.find(b => b.id === targetBuoyId);
   const targetOnline = fleetStatus.find(b => b.id === targetBuoyId)?.online ?? false;
   const canDeploy = firmwareFile && firmwareVersion.trim() && targetBuoy?.deviceId && phase === 'idle';
 
@@ -284,9 +300,9 @@ const OtaPage = () => {
                 onChange={e => setTargetBuoyId(e.target.value)}
                 disabled={phase !== 'idle'}
               >
-                {FLEET.map(b => (
-                  <option key={b.id} value={b.id} disabled={!b.deviceId}>
-                    {b.id} — {b.name}{!b.deviceId ? ' (sem hardware)' : ''}
+                {otaTargets.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.id} — {b.name}
                   </option>
                 ))}
               </select>
