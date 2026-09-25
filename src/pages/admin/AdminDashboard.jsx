@@ -10,10 +10,13 @@ import {
 import { useMqtt } from '../../hooks/useMqtt';
 import { useInfluxHistory, PERIODS } from '../../hooks/useInfluxHistory';
 import { fetchHistoryCsv, downloadCsv } from '../../utils/exportHistoryCsv';
-import { FLEET, getMqttTopics } from '../../config/fleet';
+import { getMqttTopics } from '../../config/fleet';
 // 2.1 — reusa a classificação da página pública: as faixas (CONAMA 357) já
 // vivem em config/waterQuality.js. Duplicá-las aqui criaria duas verdades.
 import { classifyParam } from '../../config/waterQuality';
+import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
+import { topicsForRegistry } from '../../services/buoyRegistry';
+import { computeFleetAverage } from '../../utils/fleetAverage';
 import './AdminDashboard.css';
 
 // Mantém os últimos 120 pontos (≈ 10 min com leituras a cada 5 s)
@@ -38,9 +41,6 @@ const ChartTooltip = ({ active, payload, label, unit }) => {
   );
 };
 
-// SM-01 é a bóia de referência do dashboard (única com hardware ativo)
-const SM01 = FLEET.find(b => b.id === 'SM-01');
-
 // Janelas curtas mostram hora; janelas longas precisam da data para o eixo
 // fazer sentido (30d de "14:32" seria ilegível).
 function formatTick(date, period) {
@@ -51,7 +51,26 @@ function formatTick(date, period) {
 }
 
 const AdminDashboard = () => {
-  const { messages, connected } = useMqtt(getMqttTopics());
+  const { messages, connected, addTopics } = useMqtt(getMqttTopics());
+
+  // ── Registro de bóias + seletor ───────────────────────────────────────────────
+  const { buoys: registryBuoys } = useBuoyRegistry();
+  const [selectedBuoy, setSelectedBuoy] = useState('todas'); // 'todas' | codigo da bóia
+
+  useEffect(() => {
+    if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys));
+  }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const liveBuoys = registryBuoys.filter(b => b.deviceId);
+  const onlineBuoys = liveBuoys.filter(b => messages[`${b.deviceId}/availability`] === 'online');
+
+  // Bóia "focada" pro gráfico/histórico/CSV: a selecionada, ou a primeira com
+  // deviceId quando "Todas as Bóias" está ativo — ver nota de escopo do plano.
+  const focusedBuoy = selectedBuoy === 'todas'
+    ? liveBuoys[0]
+    : liveBuoys.find(b => b.codigo === selectedBuoy);
+  const focusedDeviceId = focusedBuoy?.deviceId ?? null;
+  const focusedId = focusedBuoy?.codigo ?? null;
 
   // ── Buffer circular de leituras ───────────────────────────────────────────────
   const [buffer, setBuffer]         = useState([]);
@@ -61,9 +80,9 @@ const AdminDashboard = () => {
   // Histórico persistido (InfluxDB). Não substitui o MQTT: o buffer acima
   // continua alimentando cards e estatísticas em tempo real.
   const { data: history, loading: historyLoading, error: historyError } =
-    useInfluxHistory(activeParam, period, SM01?.deviceId);
+    useInfluxHistory(activeParam, period, focusedDeviceId);
 
-  const sensorMsg = SM01?.deviceId ? messages[`${SM01.deviceId}/sensores`] : null;
+  const sensorMsg = focusedDeviceId ? messages[`${focusedDeviceId}/sensores`] : null;
 
   useEffect(() => {
     if (!sensorMsg) return;
@@ -96,13 +115,13 @@ const AdminDashboard = () => {
     setExporting(true);
     setExportError(null);
     try {
-      const { csv, rows } = await fetchHistoryCsv(period, SM01?.deviceId, SM01?.id);
+      const { csv, rows } = await fetchHistoryCsv(period, focusedDeviceId, focusedId);
       if (rows === 0) {
         setExportError(`Sem leituras em ${PERIODS[period].label} para exportar.`);
         return;
       }
       const stamp = new Date().toISOString().slice(0, 10);
-      downloadCsv(csv, `sentinela_${SM01?.id ?? 'frota'}_${period}_${stamp}.csv`);
+      downloadCsv(csv, `sentinela_${focusedId ?? 'frota'}_${period}_${stamp}.csv`);
     } catch (err) {
       setExportError(err.message);
     } finally {
@@ -126,8 +145,8 @@ const AdminDashboard = () => {
   }, [history, buffer, activeParam, period]);
 
   // ── Última leitura + status do hardware ──────────────────────────────────────
-  const latest     = buffer.at(-1) ?? {};
-  const sm01Online = SM01?.deviceId ? (!!messages[`${SM01.deviceId}/status`] && connected) : false;
+  const latest        = buffer.at(-1) ?? {};
+  const focusedOnline  = focusedDeviceId ? messages[`${focusedDeviceId}/availability`] === 'online' : false;
 
   // ── Estatísticas da sessão (avg / min / max) ──────────────────────────────────
   const stats = useMemo(() => {
@@ -145,9 +164,33 @@ const AdminDashboard = () => {
     return result;
   }, [buffer]);
 
-  // ── Frota: SM-01 real, SM-02 e MG-01 aguardando hardware ─────────────────────
-  const fleetActive = sm01Online ? 1 : 0;
-  const fleetTotal  = 3;
+  // ── Frota: contagem real a partir do registro de bóias ───────────────────────
+  const fleetActive = onlineBuoys.length;
+  const fleetTotal  = registryBuoys.length || 1; // evita divisão por zero se o registro estiver vazio
+
+  // ── Cards paramétricos: valor único (bóia focada) ou média da frota ─────────
+  const fleetValue = (param) => computeFleetAverage(
+    onlineBuoys.map(b => {
+      const msg = messages[`${b.deviceId}/sensores`];
+      return msg?.[param] ?? null;
+    })
+  );
+
+  const cardValue = (param, unit) => {
+    if (selectedBuoy === 'todas') {
+      const avg = fleetValue(param);
+      return avg != null ? `${avg}${unit}` : '---';
+    }
+    return latest[param] != null ? `${latest[param]}${unit}` : '---';
+  };
+
+  const cardTitle = (base) => selectedBuoy === 'todas' ? `${base} (Média da Frota)` : `${base} (${focusedId ?? '—'})`;
+
+  // Classifica o MESMO valor exibido no card: a média da frota em "todas"
+  // (reusa fleetValue, sem duplicar a lógica de média), ou a leitura da bóia
+  // focada — nunca a bóia focada quando o modo exibido é a média (bug 2.1).
+  const cardClassificacao = (param) =>
+    classifyParam(param, selectedBuoy === 'todas' ? fleetValue(param) : latest[param]);
 
   // ── Metric cards (4 cards superiores) ────────────────────────────────────────
   const metricCards = [
@@ -157,7 +200,7 @@ const AdminDashboard = () => {
       icon:  connected ? Wifi : WifiOff,
       color: connected ? 'success' : 'danger',
       desc:  connected
-        ? `SM-01 ${sm01Online ? 'conectada' : 'sem dados'}`
+        ? `${focusedId ?? '—'} ${focusedOnline ? 'conectada' : 'sem dados'}`
         : 'Reconectando...',
       style: {
         borderColor: connected ? 'rgba(34,197,94,0.25)'  : 'rgba(239,68,68,0.25)',
@@ -165,34 +208,34 @@ const AdminDashboard = () => {
       },
     },
     {
-      title: 'Temperatura (SM-01)',
-      value: latest.temperatura != null ? `${latest.temperatura}°C` : '---',
+      title: cardTitle('Temperatura'),
+      value: cardValue('temperatura', '°C'),
       icon:  Thermometer,
       color: 'danger',
       desc:  stats.temperatura
         ? `Sessão: ${stats.temperatura.min} – ${stats.temperatura.max} °C`
         : 'Aguardando dados...',
-      classificacao: classifyParam('temperatura', latest.temperatura),
+      classificacao: cardClassificacao('temperatura'),
     },
     {
-      title: 'pH (SM-01)',
-      value: latest.ph != null ? String(latest.ph) : '---',
+      title: cardTitle('pH'),
+      value: cardValue('ph', ''),
       icon:  Droplet,
       color: 'primary',
       desc:  stats.ph
         ? `Sessão: ${stats.ph.min} – ${stats.ph.max}`
         : 'Aguardando dados...',
-      classificacao: classifyParam('ph', latest.ph),
+      classificacao: cardClassificacao('ph'),
     },
     {
-      title: 'Turbidez (SM-01)',
-      value: latest.turbidez != null ? `${latest.turbidez} NTU` : '---',
+      title: cardTitle('Turbidez'),
+      value: cardValue('turbidez', ' NTU'),
       icon:  Activity,
       color: 'warning',
       desc:  stats.turbidez
         ? `Sessão: ${stats.turbidez.min} – ${stats.turbidez.max} NTU`
         : 'Aguardando dados...',
-      classificacao: classifyParam('turbidez', latest.turbidez),
+      classificacao: cardClassificacao('turbidez'),
     },
   ];
 
@@ -203,6 +246,16 @@ const AdminDashboard = () => {
       <div className="page-header">
         <h1>Centro de Comando | Telemetria em Tempo Real</h1>
         <p>Dados ao vivo via MQTT · Histórico da sessão · Frota de monitoramento</p>
+        <select
+          className="dashboard-buoy-select"
+          value={selectedBuoy}
+          onChange={e => setSelectedBuoy(e.target.value)}
+        >
+          <option value="todas">Todas as Bóias</option>
+          {liveBuoys.map(b => (
+            <option key={b.codigo} value={b.codigo}>{b.nome} ({b.codigo})</option>
+          ))}
+        </select>
       </div>
 
       {/* ── Metric Cards ── */}
