@@ -96,7 +96,8 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
 
   // Transforma dados do registro para formato do mapa. Enquanto o registro
   // carrega, parte da semente (mesmas 3 bóias de antes) — sem mapa vazio no
-  // primeiro paint. Registro vazio depois de carregado = mapa sem bóias.
+  // primeiro paint. Registro vazio depois de carregado = mapa sem bóias. Se a
+  // leitura falhar, o hook já devolve a última lista boa ou a semente.
   const BUOYS_CONFIG = useMemo(() =>
     (registryLoading && registryBuoys.length === 0 ? SEED_BUOYS : registryBuoys).map(b => ({
       id: b.codigo,
@@ -128,15 +129,21 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
       // sobrescreve com dado real do MQTT quando em modo ao vivo (se tiver hardware)
       if (liveMode && b.deviceId) {
         const live = messages[`${b.deviceId}/sensores`];
+        // O LWT manda no status: leitura em memória não prova que a bóia segue
+        // viva, e "offline" vale mesmo sem leitura nesta sessão — o firmware
+        // retém só o availability (não /sensores), então uma bóia caída chega
+        // só com "offline", e o snapshot mock diria "online".
+        const offline = messages[`${b.deviceId}/availability`] === 'offline';
         if (live) {
           data[b.id] = {
             ...data[b.id],
             temperatura: live.temperatura,
             ph:          live.ph,
             turbidez:    live.turbidez,
-            // leitura em memória não prova que a bóia segue viva: o LWT manda
-            status:      messages[`${b.deviceId}/availability`] === 'offline' ? 'offline' : 'online',
+            status:      offline ? 'offline' : 'online',
           };
+        } else if (offline) {
+          data[b.id] = { ...data[b.id], status: 'offline' };
         }
       }
     });
