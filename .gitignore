@@ -16,6 +16,7 @@ dist-ssr
 
 # Mockups do brainstorming (companion visual)
 .superpowers/
+.worktrees/
 
 # Editor directories and files
 .vscode/*
