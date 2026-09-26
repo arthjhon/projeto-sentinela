@@ -2,6 +2,14 @@ import React from 'react';
 import { Linkedin, Github, Mail, Code } from 'lucide-react';
 import './TeamPage.css';
 
+// Redes de cada membro. Chave ausente/vazia = botão não aparece (nada de
+// link morto). linkedin/github: URL completa; email: só o endereço.
+const SOCIAL_LINKS = [
+  { key: 'linkedin', label: 'LinkedIn', Icon: Linkedin, href: v => v },
+  { key: 'github',   label: 'GitHub',   Icon: Github,   href: v => v },
+  { key: 'email',    label: 'E-mail',   Icon: Mail,     href: v => `mailto:${v}` },
+];
+
 const TeamPage = () => {
   const teamMembers = [
     {
@@ -9,42 +17,48 @@ const TeamPage = () => {
       role: 'Engenheiro de Infraestrutura & IoT',
       bio: 'Responsável pela hospedagem e manutenção da plataforma web, administração do banco de dados em nuvem e pela camada de comunicação MQTT das bóias de monitoramento.',
       image: '/team/arthur-jhonathas.jpg',
-      tag: 'Infraestrutura'
+      tag: 'Infraestrutura',
+      socials: { linkedin: '', github: 'https://github.com/arthjhon', email: '' }
     },
     {
       name: 'Maycon Vinicius',
       role: 'Desenvolvedor de Firmware',
       bio: 'Responsável pela programação do microcontrolador ESP32 embarcado nas bóias, incluindo leitura de sensores, transmissão de dados e atualizações OTA.',
       image: '/team/maycon-fidelis.jpg',
-      tag: 'Firmware'
+      tag: 'Firmware',
+      socials: { linkedin: '', github: '', email: '' }
     },
     {
       name: 'Anwar Quirino',
       role: 'Desenvolvedor de Firmware',
       bio: 'Atua no desenvolvimento e testes do firmware embarcado no ESP32, garantindo a confiabilidade da coleta e envio dos dados dos sensores.',
       image: '/team/anwar-quirino.jpg',
-      tag: 'Firmware'
+      tag: 'Firmware',
+      socials: { linkedin: '', github: '', email: '' }
     },
     {
       name: 'Luiz Henrique',
       role: 'Engenheiro de Hardware',
       bio: 'Responsável pela montagem e integração dos sensores nas bóias, garantindo a correta instalação dos componentes físicos do sistema de monitoramento.',
       image: '/team/luiz-henrique.jpg',
-      tag: 'Hardware'
+      tag: 'Hardware',
+      socials: { linkedin: '', github: '', email: '' }
     },
     {
       name: 'Pedro Henrique',
       role: 'Engenheiro de Hardware',
       bio: 'Atua na montagem dos sensores e na validação física dos componentes eletrônicos das bóias de monitoramento estuarino.',
       image: '/team/pedro-henrique.jpg',
-      tag: 'Hardware'
+      tag: 'Hardware',
+      socials: { linkedin: '', github: '', email: '' }
     },
     {
       name: 'Marcos Paulo',
       role: 'Analista de Documentação Técnica',
       bio: 'Responsável pelo registro e organização de toda a documentação técnica do projeto, desde especificações de hardware até fluxos de software e relatórios acadêmicos.',
       image: '/team/marcos-paulo.jpg',
-      tag: 'Documentação'
+      tag: 'Documentação',
+      socials: { linkedin: '', github: '', email: '' }
     },
   ];
 
@@ -72,9 +86,21 @@ Formada por estudantes e pesquisadores de Engenharia da Computação da UMJ, nos
             <p className="member-bio text-muted">{member.bio}</p>
             
             <div className="member-socials">
-               <a href="#" className="social-btn"><Linkedin size={18}/></a>
-               <a href="#" className="social-btn"><Github size={18}/></a>
-               <a href="#" className="social-btn"><Mail size={18}/></a>
+              {SOCIAL_LINKS.filter(s => member.socials?.[s.key]).map(s => {
+                const Icon = s.Icon;
+                return (
+                  <a
+                    key={s.key}
+                    href={s.href(member.socials[s.key])}
+                    className="social-btn"
+                    aria-label={`${s.label} de ${member.name}`}
+                    title={s.label}
+                    {...(s.key !== 'email' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  >
+                    <Icon size={18} />
+                  </a>
+                );
+              })}
             </div>
           </div>
         ))}
