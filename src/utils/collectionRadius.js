@@ -27,3 +27,21 @@ export function collectionRings(outerRadiusM) {
   const outer = normalizeCollectionRadius(outerRadiusM);
   return RING_RATIOS.map(r => ({ radius: Math.round(outer * r.ratio), fillOpacity: r.fillOpacity }));
 }
+
+// Piso visual: no zoom inicial do mapa, 200 m viram ~5 px e somem atrás do
+// marcador. O anel externo nunca é desenhado com menos que este raio em
+// pixels; ao aproximar o zoom, o raio real em metros volta a mandar.
+export const MIN_OUTER_RING_PX = 28;
+
+/**
+ * Raio externo efetivo (m) para desenhar: o real, ou o piso em pixels
+ * convertido para metros no zoom atual — o que for maior.
+ * @param {number} outerRadiusM  raio configurado, em metros
+ * @param {number} metersPerPixel escala do mapa no centro da bóia
+ * @param {number} [minPx]        piso em pixels (raio)
+ */
+export function effectiveOuterRadius(outerRadiusM, metersPerPixel, minPx = MIN_OUTER_RING_PX) {
+  const outer = normalizeCollectionRadius(outerRadiusM);
+  if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return outer;
+  return Math.max(outer, Math.round(minPx * metersPerPixel));
+}
