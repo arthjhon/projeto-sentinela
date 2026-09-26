@@ -1,12 +1,36 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, AttributionControl, Circle, CircleMarker, Popup, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, AttributionControl, Circle, CircleMarker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useMqtt } from '../../hooks/useMqtt';
 import { getMqttTopics } from '../../config/fleet';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { topicsForRegistry, SEED_BUOYS } from '../../services/buoyRegistry';
 import { getSetting, MAP_COLLECTION_RADIUS_KEY } from '../../services/settings';
-import { collectionRings, normalizeCollectionRadius, DEFAULT_COLLECTION_RADIUS_M } from '../../utils/collectionRadius';
+import { collectionRings, normalizeCollectionRadius, effectiveOuterRadius, DEFAULT_COLLECTION_RADIUS_M } from '../../utils/collectionRadius';
+
+// Anéis de coleta de uma bóia. Filho do MapContainer para ler a escala do mapa
+// e reagir ao zoom: o anel externo tem um piso em pixels (effectiveOuterRadius)
+// para não sumir atrás do marcador no zoom inicial; ao aproximar, o raio real
+// em metros volta a mandar. Os internos seguem a proporção do externo efetivo.
+const CollectionRings = ({ center, outerRadiusM, color }) => {
+  const map = useMap();
+  const [zoom, setZoom] = useState(() => map.getZoom());
+  useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
+  const metersPerPixel = useMemo(() => {
+    // 1 px a leste do centro, projetado no zoom atual → metros por pixel
+    const p = map.project(center, zoom);
+    const q = map.unproject([p.x + 1, p.y], zoom);
+    return map.distance(center, q);
+  }, [map, center, zoom]);
+  return collectionRings(effectiveOuterRadius(outerRadiusM, metersPerPixel)).map(ring => (
+    <Circle
+      key={ring.radius}
+      center={center}
+      radius={ring.radius}
+      pathOptions={{ color: 'none', fillColor: color, fillOpacity: ring.fillOpacity }}
+    />
+  ));
+};
 import {
   Thermometer, Droplet, Activity,
   Play, Pause, SkipBack,
@@ -306,14 +330,9 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
               <React.Fragment key={buoy.id}>
 
                 {/* Heatmap: só para boias com hardware (sem inventar qualidade em pontos planejados) */}
-                {showHeatmap && !isPlanned && collectionRings(collectionRadius).map(ring => (
-                  <Circle
-                    key={ring.radius}
-                    center={buoy.coords}
-                    radius={ring.radius}
-                    pathOptions={{ color: 'none', fillColor: heatColor, fillOpacity: ring.fillOpacity }}
-                  />
-                ))}
+                {showHeatmap && !isPlanned && (
+                  <CollectionRings center={buoy.coords} outerRadiusM={collectionRadius} color={heatColor} />
+                )}
 
                 {/* Anel pulsante para bóias ao vivo */}
                 {isLive && (
