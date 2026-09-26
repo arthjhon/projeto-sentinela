@@ -10,13 +10,27 @@
   gap: 1.5rem;
 }
 
+/* Mesmo tratamento dos .metric-card do /monitoramento: cor do parametro em
+   --c (vinda de src/config/waterQuality.js), filete no topo e brilho radial.
+   Sem valor "medido" nem selo de status: a secao e explicativa, nao telemetria. */
 .parameter-card {
+  --c: var(--primary);
+  position: relative;
+  overflow: hidden;
   padding: 2rem;
-  border-top: 3px solid transparent;
+  border-top: 2px solid var(--c);
   transition: transform 0.3s ease, background 0.3s ease;
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+.parameter-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at top left, color-mix(in srgb, var(--c) 8%, transparent), transparent 70%);
+  pointer-events: none;
 }
 
 .parameter-card:hover {
@@ -24,45 +38,51 @@
   background: rgba(10, 25, 47, 0.9);
 }
 
-.param-normal { border-top-color: var(--success); }
-.param-warning { border-top-color: var(--warning); }
-.param-danger { border-top-color: var(--danger); }
+.param-planned { border-top-style: dashed; }
 
 .param-header {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.75rem;
   margin-bottom: 1.5rem;
 }
 
 .param-icon {
   width: 48px;
   height: 48px;
+  flex-shrink: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 12%, transparent);
 }
 
-.param-normal .param-icon { color: var(--success); background: rgba(16, 185, 129, 0.1); }
-.param-warning .param-icon { color: var(--warning); background: rgba(245, 158, 11, 0.1); }
-.param-danger .param-icon { color: var(--danger); background: rgba(239, 68, 68, 0.1); }
-
 .status-badge {
-  padding: 0.25rem 0.75rem;
+  padding: 0.3rem 0.75rem;
   border-radius: 99px;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
-.badge-normal { color: var(--success); border: 1px solid var(--success); }
-.badge-warning { color: var(--warning); border: 1px solid var(--warning); }
-.badge-danger { color: var(--danger); border: 1px solid var(--danger); }
+.badge-monitored {
+  color: var(--c);
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+  background: color-mix(in srgb, var(--c) 8%, transparent);
+}
+.badge-planned {
+  color: var(--text-muted);
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+}
 
 .param-body {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -71,37 +91,44 @@
 .param-title {
   font-size: 1.125rem;
   font-weight: 600;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
   color: #fff;
 }
 
-.param-value-container {
+.param-range {
   display: flex;
-  align-items: baseline;
-  gap: 0.25rem;
+  flex-direction: column;
+  gap: 0.15rem;
   margin-bottom: 1rem;
 }
 
-.param-value {
-  font-size: 3rem;
-  font-weight: 700;
-  line-height: 1;
-  font-family: 'Outfit', sans-serif;
-}
-
-.param-normal .param-value { color: var(--success); }
-.param-warning .param-value { color: var(--warning); }
-.param-danger .param-value { color: var(--danger); }
-
-.param-unit {
-  font-size: 1rem;
+.param-range-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
-  font-weight: 500;
 }
+
+.param-range-value {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--c);
+}
+
+.param-planned .param-range-value { color: #fff; }
 
 .param-desc {
   color: var(--text-muted);
   font-size: 0.9rem;
   line-height: 1.6;
   margin-top: auto;
+}
+
+.param-source {
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
 }

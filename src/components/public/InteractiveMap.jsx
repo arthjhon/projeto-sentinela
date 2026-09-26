@@ -1,8 +1,36 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, Circle, CircleMarker, Popup, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, AttributionControl, Circle, CircleMarker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useMqtt } from '../../hooks/useMqtt';
-import { FLEET, getMqttTopics } from '../../config/fleet';
+import { getMqttTopics } from '../../config/fleet';
+import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
+import { topicsForRegistry, SEED_BUOYS } from '../../services/buoyRegistry';
+import { getSetting, MAP_COLLECTION_RADIUS_KEY } from '../../services/settings';
+import { collectionRings, normalizeCollectionRadius, effectiveOuterRadius, DEFAULT_COLLECTION_RADIUS_M } from '../../utils/collectionRadius';
+
+// Anéis de coleta de uma bóia. Filho do MapContainer para ler a escala do mapa
+// e reagir ao zoom: o anel externo tem um piso em pixels (effectiveOuterRadius)
+// para não sumir atrás do marcador no zoom inicial; ao aproximar, o raio real
+// em metros volta a mandar. Os internos seguem a proporção do externo efetivo.
+const CollectionRings = ({ center, outerRadiusM, color }) => {
+  const map = useMap();
+  const [zoom, setZoom] = useState(() => map.getZoom());
+  useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
+  const metersPerPixel = useMemo(() => {
+    // 1 px a leste do centro, projetado no zoom atual → metros por pixel
+    const p = map.project(center, zoom);
+    const q = map.unproject([p.x + 1, p.y], zoom);
+    return map.distance(center, q);
+  }, [map, center, zoom]);
+  return collectionRings(effectiveOuterRadius(outerRadiusM, metersPerPixel)).map(ring => (
+    <Circle
+      key={ring.radius}
+      center={center}
+      radius={ring.radius}
+      pathOptions={{ color: 'none', fillColor: color, fillOpacity: ring.fillOpacity }}
+    />
+  ));
+};
 import {
   Thermometer, Droplet, Activity,
   Play, Pause, SkipBack,
@@ -10,12 +38,25 @@ import {
 } from 'lucide-react';
 import './InteractiveMap.css';
 
-// ─── Configuração das bóias para o mapa (coords reais do CEMM) ───────────────
-const BUOYS_CONFIG = [
-  { id: 'SM-01', name: 'Bóia Mundaú Centro',  coords: [-9.6559, -35.7701], lagoon: 'mundau'    },
-  { id: 'SM-02', name: 'Bóia Mundaú Sul',      coords: [-9.6862, -35.7847], lagoon: 'mundau'    },
-  { id: 'MG-01', name: 'Bóia Manguaba Norte',  coords: [-9.5873, -35.8394], lagoon: 'manguaba'  },
-].map(b => ({ ...b, deviceId: FLEET.find(f => f.id === b.id)?.deviceId ?? null }));
+// Basemap: CartoDB Dark Matter exige key desde 2026 (gratuita, sem conta:
+// carto.com/basemaps/apikey — tiles sem key chegam com marca d'água "API KEY
+// REQUIRED"). Com VITE_CARTO_BASEMAPS_KEY definida usa o Carto; sem ela cai no
+// Esri World Dark Gray (sem cadastro), que é cinza-médio e ganha um filtro
+// de escurecimento só nessa camada (ver .imap-tiles-fallback no CSS).
+// Ordem {z}/{y}/{x} no Esri: serviços ArcGIS usam row/col, não x/y.
+const CARTO_KEY = import.meta.env.VITE_CARTO_BASEMAPS_KEY;
+const TILES = CARTO_KEY
+  ? {
+      url: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      fallback: false,
+    }
+  : {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+      attribution: '&copy; <a href="https://www.esri.com">Esri</a>',
+      fallback: true,
+    };
 
 const PARAMS = [
   { key: 'ph',          label: 'pH',         icon: Droplet,    unit: '' },
@@ -24,19 +65,21 @@ const PARAMS = [
 ];
 
 // ─── Gerador de histórico mock (7 dias × intervalo de 30 min = 336 snapshots) ─
+// Histórico usa IDs fixos da semente para dados de teste
 function buildHistory() {
   const now = Date.now();
   const INTERVAL = 30 * 60 * 1000;
   const TOTAL    = 7 * 24 * 2; // 336
+  const seedBuoyIds = ['SM-01', 'SM-02', 'MG-01'];
   const snapshots = [];
 
   for (let i = TOTAL; i >= 0; i--) {
     const snapshot = { timestamp: now - i * INTERVAL, buoys: {} };
 
-    BUOYS_CONFIG.forEach((b, bIdx) => {
+    seedBuoyIds.forEach((buoyId, bIdx) => {
       const phase = bIdx * 0.4;
       // padrão sinusoidal + ruído para simular variações naturais
-      snapshot.buoys[b.id] = {
+      snapshot.buoys[buoyId] = {
         temperatura: +(27 + Math.sin((i + phase * 10) * 0.15) * 2.5 + (Math.random() - 0.5) * 0.4).toFixed(1),
         ph:          +(7.4 + Math.sin((i + phase * 8)  * 0.08) * 0.7 + (Math.random() - 0.5) * 0.2).toFixed(2),
         turbidez:    +(15  + Math.sin((i + phase * 12) * 0.12) * 10  + Math.abs((Math.random() - 0.3) * 4)).toFixed(1),
@@ -94,8 +137,43 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
   const [liveMode, setLiveMode]           = useState(true);
   const playIntervalRef = useRef(null);
 
+  // Raio de coleta ajustável em Configurações (app_settings). Fica no padrão
+  // até carregar — e também se nunca foi salvo ou a leitura falhar.
+  const [collectionRadius, setCollectionRadius] = useState(DEFAULT_COLLECTION_RADIUS_M);
+  useEffect(() => {
+    let ativo = true;
+    getSetting(MAP_COLLECTION_RADIUS_KEY, { raio_m: DEFAULT_COLLECTION_RADIUS_M })
+      .then(v => { if (ativo) setCollectionRadius(normalizeCollectionRadius(v?.raio_m)); })
+      .catch(() => {});
+    return () => { ativo = false; };
+  }, []);
+
+  // Registro dinâmico de bóias
+  const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
+
+  // Transforma dados do registro para formato do mapa. Enquanto o registro
+  // carrega, parte da semente (mesmas 3 bóias de antes) — sem mapa vazio no
+  // primeiro paint. Registro vazio depois de carregado = mapa sem bóias. Se a
+  // leitura falhar, o hook já devolve a última lista boa ou a semente.
+  const BUOYS_CONFIG = useMemo(() =>
+    (registryLoading && registryBuoys.length === 0 ? SEED_BUOYS : registryBuoys).map(b => ({
+      id: b.codigo,
+      name: b.nome,
+      coords: [b.lat, b.lng],
+      lagoon: b.lagoa,
+      deviceId: b.deviceId,
+    })),
+  [registryBuoys, registryLoading]);
+
   // MQTT: dados ao vivo de todas as bóias com hardware cadastrado
-  const { messages, connected } = useMqtt(getMqttTopics());
+  const { messages, addTopics } = useMqtt(getMqttTopics());
+
+  // Sincroniza tópicos MQTT com registro
+  useEffect(() => {
+    if (registryBuoys.length) {
+      addTopics(topicsForRegistry(registryBuoys));
+    }
+  }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Dados "atuais" (live MQTT ou snapshot histórico) ──────────────────────
   const currentData = useMemo(() => {
@@ -108,19 +186,26 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
       // sobrescreve com dado real do MQTT quando em modo ao vivo (se tiver hardware)
       if (liveMode && b.deviceId) {
         const live = messages[`${b.deviceId}/sensores`];
+        // O LWT manda no status: leitura em memória não prova que a bóia segue
+        // viva, e "offline" vale mesmo sem leitura nesta sessão — o firmware
+        // retém só o availability (não /sensores), então uma bóia caída chega
+        // só com "offline", e o snapshot mock diria "online".
+        const offline = messages[`${b.deviceId}/availability`] === 'offline';
         if (live) {
           data[b.id] = {
             ...data[b.id],
             temperatura: live.temperatura,
             ph:          live.ph,
             turbidez:    live.turbidez,
-            status:      'online',
+            status:      offline ? 'offline' : 'online',
           };
+        } else if (offline) {
+          data[b.id] = { ...data[b.id], status: 'offline' };
         }
       }
     });
     return data;
-  }, [sliderIdx, liveMode, messages]);
+  }, [sliderIdx, liveMode, messages, BUOYS_CONFIG]);
 
   // ── Controle de playback do time slider ───────────────────────────────────
   useEffect(() => {
@@ -169,6 +254,12 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
 
   const currentTs = HISTORY[sliderIdx]?.timestamp;
 
+  // "Ao vivo" = alguma bóia do mapa com availability online (LWT), não a
+  // conexão deste navegador ao broker.
+  const anyBuoyOnline = BUOYS_CONFIG.some(
+    b => b.deviceId && messages[`${b.deviceId}/availability`] === 'online'
+  );
+
   return (
     <div className="imap-wrapper">
 
@@ -197,9 +288,9 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
             Heatmap
           </button>
 
-          <span className={`imap-mqtt-badge ${connected ? 'online' : 'offline'}`}>
-            {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
-            {connected ? 'Ao vivo' : 'Offline'}
+          <span className={`imap-mqtt-badge ${anyBuoyOnline ? 'online' : 'offline'}`}>
+            {anyBuoyOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
+            {anyBuoyOnline ? 'Ao vivo' : 'Sem sinal'}
           </span>
         </div>
       </div>
@@ -209,17 +300,21 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
         <MapContainer
           center={[-9.630, -35.800]}
           zoom={12}
-          className="imap-leaflet"
+          className={`imap-leaflet${TILES.fallback ? ' imap-tiles-fallback' : ''}`}
           zoomControl
           scrollWheelZoom={false}
           attributionControl={false}
         >
-          {/* Tiles CartoDB Dark Matter — sem API key */}
+          {/* Atribuição obrigatória (OSM/CARTO e Esri) — embaixo à esquerda,
+              porque a legenda ocupa o canto inferior direito. */}
+          <AttributionControl position="bottomleft" prefix={false} />
+          {/* subdomains só quando a URL tem {s}: passar undefined sobrescreve
+              o default do Leaflet e quebra em _getSubdomain. */}
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            subdomains="abcd"
+            url={TILES.url}
+            {...(TILES.subdomains ? { subdomains: TILES.subdomains } : {})}
             maxZoom={19}
-            attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
+            attribution={TILES.attribution}
           />
 
           {visibleBuoys.map(buoy => {
@@ -229,31 +324,14 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
             const paramVal   = d?.[selectedParam];
             const heatColor  = qualityColor(selectedParam, paramVal);
             const dotColor   = isPlanned ? '#64748b' : statusColor(d?.status ?? 'online');
-            const isLive     = liveMode && !!buoy.deviceId && connected;
-            const param      = PARAMS.find(p => p.key === selectedParam);
+            const isLive     = liveMode && !!buoy.deviceId && messages[`${buoy.deviceId}/availability`] === 'online';
 
             return (
               <React.Fragment key={buoy.id}>
 
                 {/* Heatmap: só para boias com hardware (sem inventar qualidade em pontos planejados) */}
                 {showHeatmap && !isPlanned && (
-                  <>
-                    <Circle
-                      center={buoy.coords}
-                      radius={1000}
-                      pathOptions={{ color: 'none', fillColor: heatColor, fillOpacity: 0.05 }}
-                    />
-                    <Circle
-                      center={buoy.coords}
-                      radius={550}
-                      pathOptions={{ color: 'none', fillColor: heatColor, fillOpacity: 0.10 }}
-                    />
-                    <Circle
-                      center={buoy.coords}
-                      radius={220}
-                      pathOptions={{ color: 'none', fillColor: heatColor, fillOpacity: 0.20 }}
-                    />
-                  </>
+                  <CollectionRings center={buoy.coords} outerRadiusM={collectionRadius} color={heatColor} />
                 )}
 
                 {/* Anel pulsante para bóias ao vivo */}

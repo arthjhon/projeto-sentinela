@@ -35,8 +35,10 @@ export const FLEET = [
 ];
 
 // Retorna tópicos MQTT de todos os devices com hardware cadastrado.
-// suffixes: substrings após o deviceId (ex: ['sensores', 'status'])
-export const getMqttTopics = (suffixes = ['sensores', 'status']) =>
+// suffixes: substrings após o deviceId (ex: ['sensores', 'status']). O default
+// inclui 'availability' (LWT do firmware — status real da bóia) e é o mesmo de
+// topicsForRegistry (services/buoyRegistry.js): os dois ficam em sincronia.
+export const getMqttTopics = (suffixes = ['sensores', 'status', 'availability']) =>
   FLEET
     .filter(b => b.deviceId)
     .flatMap(b => suffixes.map(s => `${b.deviceId}/${s}`));

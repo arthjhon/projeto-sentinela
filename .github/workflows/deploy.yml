@@ -27,6 +27,8 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_INFLUX_ORG: ${{ secrets.VITE_INFLUX_ORG }}
           VITE_INFLUX_BUCKET: ${{ secrets.VITE_INFLUX_BUCKET }}
+          # opcional: sem o secret o mapa cai no fallback Esri (ver InteractiveMap.jsx)
+          VITE_CARTO_BASEMAPS_KEY: ${{ secrets.VITE_CARTO_BASEMAPS_KEY }}
         run: npm run build
 
       - name: Connect to Tailscale

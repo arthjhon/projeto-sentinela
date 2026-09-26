@@ -1,15 +1,27 @@
 .site-footer {
   margin-top: 5rem;
+  position: relative;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(4, 7, 14, 0.85);
   backdrop-filter: blur(12px);
 }
 
+.site-footer::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--primary), #a78bfa, transparent);
+  opacity: 0.7;
+}
+
 /* ── Top row ─────────────────────────────── */
 .footer-top {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
-  gap: 3rem;
+  grid-template-columns: 1.3fr 0.9fr 1fr 1fr;
+  gap: 2.5rem;
   max-width: 1100px;
   margin: 0 auto;
   padding: 3rem 2rem 2rem;
@@ -24,9 +36,9 @@
 }
 
 .footer-logo {
-  height: 42px;
+  height: 54px;
   width: auto;
-  max-width: 160px;
+  max-width: 200px;
   object-fit: contain;
   align-self: flex-start;
 }
@@ -66,6 +78,12 @@
   color: var(--primary);
 }
 
+.footer-contact-list a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* Credit column */
 .footer-credit-col {
   display: flex;
@@ -82,34 +100,29 @@
   font-weight: 600;
 }
 
-.footer-umj-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.footer-umj-logo {
-  height: 40px;
-  width: auto;
-  object-fit: contain;
-  border-radius: 6px;
-  opacity: 0.85;
-}
-
-.footer-umj-info {
+.footer-partners-row {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
 }
 
-.footer-umj-info strong {
-  font-size: 0.875rem;
-  color: #e2e8f0;
-  font-weight: 600;
+.footer-partner-logo {
+  height: 32px;
+  width: auto;
+  max-width: 72px;
+  object-fit: contain;
+  opacity: 0.8;
+  transition: opacity 0.2s;
 }
 
-.footer-umj-info span {
-  font-size: 0.78rem;
-  color: var(--text-muted);
+.footer-partner-logo:hover {
+  opacity: 1;
+}
+
+.footer-partner-umj,
+.footer-partner-teranex {
+  border-radius: 4px;
 }
 
 /* ── Bottom bar ──────────────────────────── */
@@ -145,7 +158,8 @@
     gap: 2rem;
   }
 
-  .footer-brand {
+  .footer-brand,
+  .footer-credit-col {
     grid-column: 1 / -1;
   }
 
@@ -160,7 +174,8 @@
     padding: 2rem 1.25rem 1.5rem;
   }
 
-  .footer-brand {
+  .footer-brand,
+  .footer-credit-col {
     grid-column: unset;
   }
 
