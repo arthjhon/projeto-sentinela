@@ -47,3 +47,7 @@ export const FUNDING_GOAL_KEY = 'funding_goal';
 // src/utils/milestones.js e
 // a spec do changelog público.
 export const MONITORAMENTO_INICIO_KEY = 'monitoramento_inicio';
+
+// Chave do raio de "coleta" desenhado ao redor das bóias no mapa público
+// (valor: { raio_m: number }). Faixa e anéis derivados em utils/collectionRadius.js.
+export const MAP_COLLECTION_RADIUS_KEY = 'map_collection_radius';

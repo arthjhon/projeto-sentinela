@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { SlidersHorizontal, FlaskConical, Radio, Target } from 'lucide-react';
+import { SlidersHorizontal, FlaskConical, Radio, Target, Radar } from 'lucide-react';
 import { useMockMode } from '../../config/mockData';
 import { useToast } from '../../contexts/ToastContext';
 import { useReadOnly } from '../../hooks/useReadOnly';
-import { getSetting, saveSetting, FUNDING_GOAL_KEY } from '../../services/settings';
+import { getSetting, saveSetting, FUNDING_GOAL_KEY, MAP_COLLECTION_RADIUS_KEY } from '../../services/settings';
+import {
+  collectionRings, normalizeCollectionRadius,
+  DEFAULT_COLLECTION_RADIUS_M, MIN_COLLECTION_RADIUS_M, MAX_COLLECTION_RADIUS_M,
+} from '../../utils/collectionRadius';
 import './SettingsPage.css';
 
 const SettingsPage = () => {
@@ -17,6 +21,10 @@ const SettingsPage = () => {
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
 
+  // Raio de coleta desenhado ao redor das bóias no mapa público
+  const [raio, setRaio] = useState(String(DEFAULT_COLLECTION_RADIUS_M));
+  const [salvandoRaio, setSalvandoRaio] = useState(false);
+
   useEffect(() => {
     // função interna: setState direto no corpo do effect dispara render em cascata
     let ativo = true;
@@ -28,12 +36,38 @@ const SettingsPage = () => {
         setArrecadado(String(atual.arrecadado ?? 0));
       } catch (err) {
         if (ativo) addToast(`Não foi possível carregar a meta: ${err.message}`, 'error');
+      }
+      try {
+        const r = await getSetting(MAP_COLLECTION_RADIUS_KEY, { raio_m: DEFAULT_COLLECTION_RADIUS_M });
+        if (!ativo) return;
+        setRaio(String(normalizeCollectionRadius(r?.raio_m)));
+      } catch (err) {
+        if (ativo) addToast(`Não foi possível carregar o raio de coleta: ${err.message}`, 'error');
       } finally {
         if (ativo) setCarregando(false);
       }
     })();
     return () => { ativo = false; };
   }, [addToast]);
+
+  const handleSalvarRaio = async () => {
+    const n = Number(raio);
+    if (!Number.isFinite(n) || n < MIN_COLLECTION_RADIUS_M || n > MAX_COLLECTION_RADIUS_M) {
+      addToast(`Informe um raio entre ${MIN_COLLECTION_RADIUS_M} e ${MAX_COLLECTION_RADIUS_M} metros.`, 'error');
+      return;
+    }
+    setSalvandoRaio(true);
+    try {
+      await saveSetting(MAP_COLLECTION_RADIUS_KEY, { raio_m: Math.round(n) });
+      addToast('Raio de coleta atualizado. O mapa público usa o novo valor ao recarregar.', 'success');
+    } catch (err) {
+      addToast(`Falha ao salvar: ${err.message}`, 'error');
+    } finally {
+      setSalvandoRaio(false);
+    }
+  };
+
+  const aneis = collectionRings(raio);
 
   const handleSalvarMeta = async () => {
     const metaNum = Number(meta);
@@ -141,6 +175,39 @@ const SettingsPage = () => {
 
           <button className="btn-primary settings-save-btn" onClick={handleSalvarMeta} disabled={salvando || carregando || readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
             {salvando ? 'Salvando...' : 'Salvar Meta'}
+          </button>
+        </div>
+      </div>
+
+      {/* Raio de coleta no mapa público */}
+      <div className="settings-card glass mt-4">
+        <div className="settings-card-icon" data-on="true">
+          <Radar size={22} />
+        </div>
+
+        <div className="settings-card-body">
+          <h3>Raio de Coleta no Mapa</h3>
+          <p>Tamanho da área de cobertura desenhada ao redor de cada bóia no mapa de <strong>Monitoramento</strong>.</p>
+
+          <div className="settings-field-row">
+            <label className="settings-field">
+              <span>Raio externo (metros)</span>
+              <input
+                type="number" min={MIN_COLLECTION_RADIUS_M} max={MAX_COLLECTION_RADIUS_M} step="50"
+                value={raio}
+                disabled={carregando}
+                onChange={(e) => setRaio(e.target.value)}
+                placeholder={`Ex: ${DEFAULT_COLLECTION_RADIUS_M}`}
+              />
+            </label>
+          </div>
+
+          <p className="settings-hint">
+            Entre {MIN_COLLECTION_RADIUS_M} e {MAX_COLLECTION_RADIUS_M} m. Anéis desenhados: {aneis.map(r => `${r.radius} m`).join(' · ')}.
+          </p>
+
+          <button className="btn-primary settings-save-btn" onClick={handleSalvarRaio} disabled={salvandoRaio || carregando || readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
+            {salvandoRaio ? 'Salvando...' : 'Salvar Raio'}
           </button>
         </div>
       </div>
