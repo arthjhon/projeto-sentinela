@@ -72,7 +72,7 @@ const TeamPage = () => {
             </p>
             <p className="member-bio text-muted">{member.bio}</p>
             
-            <div className="member-socials mt-4">
+            <div className="member-socials">
                <a href="#" className="social-btn"><Linkedin size={18}/></a>
                <a href="#" className="social-btn"><Github size={18}/></a>
                <a href="#" className="social-btn"><Mail size={18}/></a>
@@ -82,11 +82,16 @@ const TeamPage = () => {
       </div>
 
       <div className="umj-banner glass mt-5 text-center animate-fade-in">
-        <img src="/UMJ.svg" alt="Logo UMJ" className="umj-banner-logo" />
+        <div className="umj-banner-logos">
+          <img src="/UMJ.svg" alt="Logo UMJ" className="umj-banner-logo" />
+          <span className="umj-banner-divider" aria-hidden="true" />
+          <img src="/kodelab-text-white.png" alt="Logo Kode.Lab UMJ" className="umj-banner-logo kodelab-banner-logo" />
+        </div>
         <h2>Um projeto nascido na Academia</h2>
         <p className="text-muted mt-2">
-          Orgulhosamente desenvolvido pelos laboratórios do Centro Universitário Mário Pontes Jucá (UMJ).
-          Nosso compromisso é devolver o progresso tecnológico para nossa comunidade riberinha local.
+          Orgulhosamente desenvolvido nos laboratórios do Centro Universitário Mário Pontes Jucá (UMJ),
+          com o apoio do Kode.Lab UMJ — o laboratório de desenvolvimento de software da instituição.
+          Nosso compromisso é devolver o progresso tecnológico para a nossa comunidade ribeirinha local.
         </p>
       </div>
     </div>
