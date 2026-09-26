@@ -39,29 +39,27 @@ const rehydrate = (raw) => raw.map(b => ({
   sensors: b.sensors.map(s => ({ ...s, icon: SENSOR_ICONS[s.name] ?? Activity })),
 }));
 
-// Dados iniciais construídos a partir da frota centralizada (fleet.js)
+// Dados iniciais construídos a partir da frota centralizada (fleet.js).
+// Só a SM-01 tem hardware instalado (deviceId real) — SM-02 e MG-01 são
+// pontos de expansão planejados. Sem inventar leitura "online" pra sensor
+// que não existe: todas partem de placeholder '--', e status reflete se há
+// hardware ou não (mesmo critério de InteractiveMap.jsx/AdminDashboard.jsx).
 const INITIAL_BUOYS = FLEET.map(b => ({
   ...b,
   deviceId: b.deviceId ?? '',
-  status: 'online',
-  lastPing: b.id === 'SM-02' ? '2 min' : 'Agora',
+  status: b.deviceId ? 'online' : 'planejada',
+  lastPing: b.deviceId ? 'Agora' : '--',
   details: {
     coordinates: b.coordinates,
     installedAt: b.installedAt,
     lastMaintenance: b.lastMaintenance,
     collectionRate: '1 leitur/min',
   },
-  sensors: b.id === 'SM-01'
-    ? [
-        { name: 'Turbidez',     icon: Activity,   status: 'online', value: '-- NTU' },
-        { name: 'Sensor de pH', icon: Droplet,     status: 'online', value: '--'     },
-        { name: 'Termômetro',   icon: Thermometer, status: 'online', value: '-- °C'  },
-      ]
-    : [
-        { name: 'Sensor de OD', icon: Activity,   status: 'online', value: b.id === 'SM-02' ? '5.1 mg/L' : '6.0 mg/L' },
-        { name: 'Sensor de pH', icon: Droplet,     status: b.id === 'SM-02' ? 'warning' : 'online', value: b.id === 'SM-02' ? '8.2' : '7.2' },
-        { name: 'Termômetro',   icon: Thermometer, status: 'online', value: b.id === 'SM-02' ? '27.9 °C' : '26.8 °C'  },
-      ],
+  sensors: [
+    { name: 'Turbidez',     icon: Activity,    status: b.deviceId ? 'online' : 'offline', value: '-- NTU' },
+    { name: 'Sensor de pH', icon: Droplet,     status: b.deviceId ? 'online' : 'offline', value: '--'     },
+    { name: 'Termômetro',   icon: Thermometer, status: b.deviceId ? 'online' : 'offline', value: '-- °C'  },
+  ],
 }));
 
 const STORAGE_KEY = 'sentinela_buoys_v1';
@@ -667,6 +665,7 @@ const SensorsPage = () => {
                     <option value="online">Online / Operando</option>
                     <option value="warning">Atenção / Parcial</option>
                     <option value="offline">Offline / Pane</option>
+                    <option value="planejada">Planejada / Sem Hardware</option>
                   </select>
                 </div>
                 <div className="form-group">
@@ -979,9 +978,9 @@ const SensorsPage = () => {
 
       <ConfirmModal 
         isOpen={confirmDeleteOpen}
-        title="Expurgar Bóia de Sensoriamento"
-        text={`Você irá remover todo o registro físico da bóia do lago da base de dados. Esta ação é irreversível. Deseja prosseguir com o expurgo?`}
-        confirmText="Sim, Expurgar Bóia"
+        title="Remover Bóia"
+        text={`Você irá remover todo o registro da bóia da base de dados. Esta ação é irreversível. Deseja prosseguir com a remoção?`}
+        confirmText="Sim, Apagar a Bóia"
         onConfirm={confirmDeleteAction}
         onCancel={() => setConfirmDeleteOpen(false)}
       />
