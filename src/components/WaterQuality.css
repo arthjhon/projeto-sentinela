@@ -10,13 +10,27 @@
   gap: 1.5rem;
 }
 
+/* Mesmo tratamento dos .metric-card do /monitoramento: cor do parametro em
+   --c (vinda de src/config/waterQuality.js), filete no topo e brilho radial.
+   Sem valor "medido" nem selo de status: a secao e explicativa, nao telemetria. */
 .parameter-card {
+  --c: var(--primary);
+  position: relative;
+  overflow: hidden;
   padding: 2rem;
-  border-top: 3px solid transparent;
+  border-top: 2px solid var(--c);
   transition: transform 0.3s ease, background 0.3s ease;
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+.parameter-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at top left, color-mix(in srgb, var(--c) 8%, transparent), transparent 70%);
+  pointer-events: none;
 }
 
 .parameter-card:hover {
@@ -24,12 +38,10 @@
   background: rgba(10, 25, 47, 0.9);
 }
 
-/* Duas familias: o que a boia ja mede (ciano) e o que e referencia (neutro).
-   Sem valor "medido" nem selo de status: a secao e explicativa, nao telemetria. */
-.param-monitored { border-top-color: var(--primary); }
-.param-reference { border-top-color: rgba(255, 255, 255, 0.12); }
+.param-planned { border-top-style: dashed; }
 
 .param-header {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -45,11 +57,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-muted);
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 12%, transparent);
 }
-
-.param-monitored .param-icon { color: var(--primary); background: rgba(0, 240, 255, 0.1); }
 
 .status-badge {
   padding: 0.3rem 0.75rem;
@@ -62,16 +72,17 @@
 }
 
 .badge-monitored {
-  color: var(--primary);
-  border: 1px solid rgba(0, 240, 255, 0.4);
-  background: rgba(0, 240, 255, 0.06);
+  color: var(--c);
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+  background: color-mix(in srgb, var(--c) 8%, transparent);
 }
-.badge-reference {
+.badge-planned {
   color: var(--text-muted);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px dashed rgba(255, 255, 255, 0.25);
 }
 
 .param-body {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -103,10 +114,10 @@
   font-size: 1.5rem;
   font-weight: 700;
   line-height: 1.2;
-  color: #fff;
+  color: var(--c);
 }
 
-.param-monitored .param-range-value { color: var(--primary); }
+.param-planned .param-range-value { color: #fff; }
 
 .param-desc {
   color: var(--text-muted);
