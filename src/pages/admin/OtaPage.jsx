@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabase';
 import { useMqtt } from '../../hooks/useMqtt';
 import { useReadOnly } from '../../hooks/useReadOnly';
@@ -45,7 +46,7 @@ const OtaPage = () => {
   // fecha o histórico — o de outra bóia aparece apenas no card da frota.
   const [deployDeviceId, setDeployDeviceId] = useState(null);
 
-  const logEndRef = useRef(null);
+  const logBodyRef = useRef(null);
   // Último payload de ota/status já tratado, por tópico (ver utils/otaStatus.js)
   const seenOtaRef = useRef({});
 
@@ -71,8 +72,12 @@ const OtaPage = () => {
   // vale então a primeira opção — a mesma que o <select> exibe.
   const targetBuoy = otaTargets.find(b => b.id === targetBuoyId) ?? otaTargets[0] ?? null;
 
-  // Auto-scroll do log
-  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [deployLog]);
+  // Auto-scroll só da caixa do log. scrollIntoView rolava o container da
+  // página inteira até o fim — inclusive na montagem, com o log vazio.
+  useEffect(() => {
+    const el = logBodyRef.current;
+    if (el && deployLog.length) el.scrollTop = el.scrollHeight;
+  }, [deployLog]);
 
   // Sincronizar tópicos do registro
   useEffect(() => {
@@ -460,7 +465,7 @@ const OtaPage = () => {
                 <RotateCw size={15} className="spin text-primary" />
               )}
             </div>
-            <div className="ota-log-body">
+            <div className="ota-log-body" ref={logBodyRef}>
               {deployLog.length === 0 ? (
                 <span className="ota-log-empty">Aguardando deploy...</span>
               ) : (
@@ -473,14 +478,15 @@ const OtaPage = () => {
                   </div>
                 ))
               )}
-              <div ref={logEndRef} />
             </div>
           </div>
         </div>
       </section>
 
       {/* ── Modal de confirmação ── */}
-      {confirmOpen && (
+      {/* Portal no body, como os outros modais: .admin-content tem transform
+          (animate-fade-in) e viraria o containing block do position: fixed. */}
+      {confirmOpen && createPortal(
         <div className="ota-confirm-overlay" onClick={() => setConfirmOpen(false)}>
           <div className="ota-confirm-modal glass animate-fade-in" onClick={e => e.stopPropagation()}>
             <div className="ota-confirm-icon">
@@ -502,7 +508,8 @@ const OtaPage = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
