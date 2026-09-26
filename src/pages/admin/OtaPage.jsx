@@ -41,6 +41,9 @@ const OtaPage = () => {
   const [confirmOpen, setConfirmOpen]   = useState(false);
   // id da linha em firmware_deploys, para fechar o status quando a bóia responder
   const [deployId, setDeployId]         = useState(null);
+  // deviceId da bóia do deploy em curso: só o ota/status DELA muda a fase e
+  // fecha o histórico — o de outra bóia aparece apenas no card da frota.
+  const [deployDeviceId, setDeployDeviceId] = useState(null);
 
   const logEndRef = useRef(null);
   // Último payload de ota/status já tratado, por tópico (ver utils/otaStatus.js)
@@ -85,6 +88,7 @@ const OtaPage = () => {
       seenOtaRef.current[topic] = otaData;
       // Status retido de um OTA anterior aparece só no card da frota.
       if (!fresh) return;
+      if (buoy.deviceId !== deployDeviceId) return;
 
       const status = otaData.status;
       appendLog(`[${buoy.id}] OTA: ${status} — ${otaData.progress ?? 0}%${otaData.error ? ` (${otaData.error})` : ''}`);
@@ -108,7 +112,7 @@ const OtaPage = () => {
         setDeployId(null);
       }
     });
-  }, [messages, deployId, otaTargets, phase]);
+  }, [messages, deployId, deployDeviceId, otaTargets, phase]);
 
   // ─── Helpers ──
   const appendLog = (msg) => {
@@ -150,6 +154,7 @@ const OtaPage = () => {
       appendLog('ERRO: bóia selecionada não possui dispositivo MQTT associado.');
       return;
     }
+    setDeployDeviceId(target.deviceId);
 
     try {
       // ─── 1. Upload para Supabase Storage ──────────────────────────────────
@@ -236,6 +241,7 @@ const OtaPage = () => {
 
   const handleReset = () => {
     setPhase('idle');
+    setDeployDeviceId(null);
     setDeployLog([]);
     setFirmwareFile(null);
     setFirmwareVersion('');
