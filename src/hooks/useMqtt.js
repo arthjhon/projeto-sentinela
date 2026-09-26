@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import mqtt from 'mqtt';
+import { parseMqttPayload } from '../utils/mqttPayload';
+import { newTopicsOnly } from '../utils/mqttTopics';
 
 // Configurações do broker HiveMQ Cloud.
 // Todas as três variáveis são obrigatórias em .env.local:
@@ -19,7 +21,7 @@ if (!BROKER_URL || !MQTT_USER || !MQTT_PASS) {
  * e devolve o último payload recebido por tópico.
  *
  * @param {string[]} topics - Lista de tópicos para subscrever na montagem.
- * @returns {{ messages: Object, connected: boolean }}
+ * @returns {{ messages: Object, connected: boolean, publish: Function, addTopics: Function }}
  *   messages: objeto { [topico]: ultimoPayloadParsed }
  *   connected: true enquanto a conexão WebSocket estiver ativa
  */
@@ -27,6 +29,7 @@ export function useMqtt(topics = []) {
   const [messages, setMessages]   = useState({});
   const [connected, setConnected] = useState(false);
   const clientRef = useRef(null);
+  const extraTopicsRef = useRef(new Set());
 
   useEffect(() => {
     if (!BROKER_URL || !MQTT_USER || !MQTT_PASS) return;
@@ -44,21 +47,22 @@ export function useMqtt(topics = []) {
 
     client.on('connect', () => {
       setConnected(true);
-      // Subscreve em todos os tópicos recebidos na montagem do hook
-      if (topics.length > 0) {
-        client.subscribe(topics, (err) => {
+      // Subscreve os tópicos da montagem e os que addTopics guardou enquanto o
+      // cliente estava desconectado — addTopics só chama subscribe() com o
+      // cliente já conectado, e o registro do Supabase costuma chegar antes do
+      // 'connect'. Nas reconexões o mqtt.js 5.x já refaz sozinho as subscrições
+      // anteriores (resubscribe: true, o default) e ignora aqui os tópicos que
+      // já conhece: a união só acrescenta os guardados durante a queda.
+      const allTopics = newTopicsOnly(new Set(), [...topics, ...extraTopicsRef.current]);
+      if (allTopics.length > 0) {
+        client.subscribe(allTopics, (err) => {
           if (err) console.error('MQTT: erro ao subscrever tópicos', err);
         });
       }
     });
 
     client.on('message', (topic, payload) => {
-      try {
-        const data = JSON.parse(payload.toString());
-        setMessages(prev => ({ ...prev, [topic]: data }));
-      } catch {
-        console.warn(`MQTT: payload não-JSON recebido no tópico "${topic}"`);
-      }
+      setMessages(prev => ({ ...prev, [topic]: parseMqttPayload(payload.toString()) }));
     });
 
     client.on('offline',      ()    => setConnected(false));
@@ -76,13 +80,22 @@ export function useMqtt(topics = []) {
 
   /**
    * Subscreve em tópicos adicionais após a montagem do hook.
-   * Útil quando novas bóias são cadastradas dinamicamente.
+   * Útil quando novas bóias são cadastradas dinamicamente (ex.: registro
+   * Supabase, cujo fetch normalmente resolve antes do 'connect' MQTT numa
+   * montagem nova). Idempotente — chamadas repetidas com a mesma lista
+   * (ex.: a cada atualização do registro) não geram subscribe duplicado.
+   * Se o cliente ainda não estiver conectado, os tópicos só ficam
+   * registrados aqui; o handler 'connect' os subscreve quando a conexão
+   * (ou reconexão) acontecer.
    * @param {string[]} newTopics
    */
   const addTopics = (newTopics) => {
     if (!newTopics?.length) return;
+    const toAdd = newTopicsOnly(extraTopicsRef.current, newTopics);
+    if (toAdd.length === 0) return;
+    toAdd.forEach((topic) => extraTopicsRef.current.add(topic));
     if (clientRef.current?.connected) {
-      clientRef.current.subscribe(newTopics, (err) => {
+      clientRef.current.subscribe(toAdd, (err) => {
         if (err) console.error('MQTT: erro ao subscrever novos tópicos', err);
       });
     }

@@ -19,6 +19,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  /* Folga minima entre a marca e o menu: com space-between e o menu quase
+     da largura do container, a marca encostava no primeiro link. */
+  gap: 2rem;
   height: 68px;
 }
 
@@ -70,13 +73,13 @@
 .navbar-menu {
   display: flex;
   align-items: center;
-  gap: 2rem;
+  gap: 1.75rem;
 }
 
 .nav-links {
   display: flex;
   list-style: none;
-  gap: 1.5rem;
+  gap: 0.5rem;
   margin: 0;
   padding: 0;
 }
@@ -90,8 +93,9 @@
   font-weight: 500;
   font-size: 0.95rem;
   transition: all 0.3s ease;
-  padding: 0.5rem 0.8rem;
+  padding: 0.5rem 0.75rem;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 .nav-link:hover {
@@ -193,7 +197,19 @@
   margin: 0.5rem 0;
 }
 
-@media (max-width: 992px) {
+/* Desktop compacto: abaixo de 1260px o container fica menor que 1200px e a
+   fileira completa (icones + folgas) nao cabe — some o icone dos links e
+   aperta as folgas antes de cair no menu mobile. */
+@media (max-width: 1260px) {
+  .navbar-menu { gap: 1.25rem; }
+  .nav-links { gap: 0.25rem; }
+  .nav-link { padding: 0.5rem 0.6rem; }
+  .nav-link svg { display: none; }
+  .nav-btn-apoie { padding: 0.45rem 0.9rem; }
+  .nav-btn-admin { padding: 0.45rem 0.8rem; }
+}
+
+@media (max-width: 1080px) {
   .desktop-only { display: none; }
   .mobile-only { display: block; }
   .navbar-container { padding: 0 1rem; }

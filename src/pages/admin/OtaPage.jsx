@@ -1,21 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabase';
 import { useMqtt } from '../../hooks/useMqtt';
 import { useReadOnly } from '../../hooks/useReadOnly';
+import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { FLEET, getMqttTopics } from '../../config/fleet';
+import { topicsForRegistry } from '../../services/buoyRegistry';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { sha256Hex } from '../../utils/sha256';
+import { isFreshDeployEvent, phaseFromOtaStatus } from '../../utils/otaStatus';
 import {
   UploadCloud, Cpu, Wifi, WifiOff, CheckCircle2,
   AlertTriangle, RotateCw, Radio, FileCode2, Trash2,
 } from 'lucide-react';
 import './OtaPage.css';
 
-const ALL_TOPICS = getMqttTopics(['status', 'ota/status']);
+// 'availability' é o LWT do firmware (retido): status real de cada bóia. O
+// mesmo conjunto vale na montagem (FLEET) e na sincronia com o registro.
+const TOPIC_SUFFIXES = ['status', 'ota/status', 'availability'];
+const ALL_TOPICS = getMqttTopics(TOPIC_SUFFIXES);
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 const OtaPage = () => {
-  const { messages, connected, publish } = useMqtt(ALL_TOPICS);
+  const { messages, connected, publish, addTopics } = useMqtt(ALL_TOPICS);
+  const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
   const readOnly = useReadOnly();
 
   // ── Form state ──
@@ -34,24 +42,64 @@ const OtaPage = () => {
   const [confirmOpen, setConfirmOpen]   = useState(false);
   // id da linha em firmware_deploys, para fechar o status quando a bóia responder
   const [deployId, setDeployId]         = useState(null);
+  // deviceId da bóia do deploy em curso: só o ota/status DELA muda a fase e
+  // fecha o histórico — o de outra bóia aparece apenas no card da frota.
+  const [deployDeviceId, setDeployDeviceId] = useState(null);
 
-  const logEndRef = useRef(null);
+  const logBodyRef = useRef(null);
+  // Último payload de ota/status já tratado, por tópico (ver utils/otaStatus.js)
+  const seenOtaRef = useRef({});
 
-  // Auto-scroll do log
-  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [deployLog]);
+  // ── Bóias (registro × FLEET) ──
+  // Identidade (código, nome, deviceId) vem do registro; FLEET só completa os
+  // metadados pelo código. FLEET é o fallback síncrono apenas até a primeira
+  // leitura do registro — carregado e vazio = nenhuma bóia.
+  const buoys = useMemo(() => (
+    registryLoading && !registryBuoys.length
+      ? FLEET
+      : registryBuoys.map(r => ({
+          ...FLEET.find(f => f.id === r.codigo),
+          id: r.codigo,
+          name: r.nome,
+          deviceId: r.deviceId || null,
+        }))
+  ), [registryBuoys, registryLoading]);
+
+  // Destinos de OTA: só bóias com dispositivo (deviceId null = bóia planejada).
+  const otaTargets = useMemo(() => buoys.filter(b => b.deviceId), [buoys]);
+
+  // O padrão 'SM-01' (ou a escolha anterior) pode não estar entre os destinos:
+  // vale então a primeira opção — a mesma que o <select> exibe.
+  const targetBuoy = otaTargets.find(b => b.id === targetBuoyId) ?? otaTargets[0] ?? null;
+
+  // Auto-scroll só da caixa do log. scrollIntoView rolava o container da
+  // página inteira até o fim — inclusive na montagem, com o log vazio.
+  useEffect(() => {
+    const el = logBodyRef.current;
+    if (el && deployLog.length) el.scrollTop = el.scrollHeight;
+  }, [deployLog]);
+
+  // Sincronizar tópicos do registro
+  useEffect(() => {
+    if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys, TOPIC_SUFFIXES));
+  }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Recebe status OTA do device via MQTT ──
   useEffect(() => {
-    FLEET.filter(b => b.deviceId).forEach(buoy => {
-      const otaData = messages[`${buoy.deviceId}/ota/status`];
-      if (!otaData) return;
+    otaTargets.forEach(buoy => {
+      const topic   = `${buoy.deviceId}/ota/status`;
+      const otaData = messages[topic];
+      const fresh   = isFreshDeployEvent(otaData, seenOtaRef.current[topic], phase);
+      seenOtaRef.current[topic] = otaData;
+      // Status retido de um OTA anterior aparece só no card da frota.
+      if (!fresh) return;
+      if (buoy.deviceId !== deployDeviceId) return;
 
       const status = otaData.status;
       appendLog(`[${buoy.id}] OTA: ${status} — ${otaData.progress ?? 0}%${otaData.error ? ` (${otaData.error})` : ''}`);
 
-      if (status === 'success') setPhase('success');
-      if (status === 'error')   setPhase('error');
-      if (status === 'flashing' || status === 'downloading') setPhase('waiting');
+      const next = phaseFromOtaStatus(status);
+      if (next) setPhase(next);
 
       // 4.2 — fecha o registro do deploy conforme a bóia reporta o desfecho.
       // Sem isso a linha ficaria 'pendente' para sempre e o histórico mentiria.
@@ -69,7 +117,7 @@ const OtaPage = () => {
         setDeployId(null);
       }
     });
-  }, [messages, deployId]);
+  }, [messages, deployId, deployDeviceId, otaTargets, phase]);
 
   // ─── Helpers ──
   const appendLog = (msg) => {
@@ -106,11 +154,12 @@ const OtaPage = () => {
     setConfirmOpen(false);
     if (!firmwareFile || !firmwareVersion.trim()) return;
 
-    const target = FLEET.find(b => b.id === targetBuoyId);
+    const target = targetBuoy;
     if (!target?.deviceId) {
       appendLog('ERRO: bóia selecionada não possui dispositivo MQTT associado.');
       return;
     }
+    setDeployDeviceId(target.deviceId);
 
     try {
       // ─── 1. Upload para Supabase Storage ──────────────────────────────────
@@ -138,21 +187,11 @@ const OtaPage = () => {
       const publicUrl = urlData.publicUrl;
       appendLog(`URL pública gerada.`);
 
-      // ─── 3. Envia comando OTA via MQTT ────────────────────────────────────
-      setPhase('sending');
-      const cmdTopic = `${target.deviceId}/ota/command`;
-      // sha256 vai junto para o firmware validar o binário antes de gravar a
-      // flash. A validação em si é do lado do ESP32 — ver implementados.md.
-      const cmd = { url: publicUrl, version: firmwareVersion, sha256 };
-      const sent = publish(cmdTopic, cmd);
-
-      if (!sent) throw new Error('MQTT desconectado — comando não enviado. Tente novamente.');
-      appendLog(`Comando OTA enviado → ${cmdTopic}`);
-      appendLog(`Versão alvo: ${firmwareVersion}`);
-      appendLog(`Aguardando resposta do dispositivo...`);
-
-      // 4.2 — registra o deploy. status='pendente' até a bóia confirmar via
-      // MQTT (o useEffect de ota/status fecha o ciclo).
+      // ─── 3. Registra o deploy ─────────────────────────────────────────────
+      // 4.2 — status='pendente' até a bóia confirmar via MQTT (o useEffect de
+      // ota/status fecha o ciclo). Registrado ANTES do comando: uma recusa
+      // rápida da bóia (ex.: same_version) chegaria antes do insert, e a linha
+      // ficaria 'pendente' para sempre.
       const { data: deployRow, error: deployErr } = await supabase
         .from('firmware_deploys')
         .insert({
@@ -165,12 +204,33 @@ const OtaPage = () => {
         .select('id')
         .single();
       if (deployErr) {
-        // não aborta o deploy: o comando já foi para o dispositivo, e falhar
-        // aqui só nos deixa sem histórico — pior seria fingir que não enviamos
-        appendLog(`AVISO: deploy enviado, mas não foi possível registrar no histórico (${deployErr.message}).`);
+        // não aborta o deploy: falhar aqui só nos deixa sem histórico
+        appendLog(`AVISO: não foi possível registrar o deploy no histórico (${deployErr.message}).`);
       } else {
         setDeployId(deployRow.id);
       }
+
+      // ─── 4. Envia comando OTA via MQTT ────────────────────────────────────
+      setPhase('sending');
+      const cmdTopic = `${target.deviceId}/ota/command`;
+      // sha256 vai junto para o firmware validar o binário antes de gravar a
+      // flash. A validação em si é do lado do ESP32 — ver implementados.md.
+      const cmd = { url: publicUrl, version: firmwareVersion, sha256 };
+      const sent = publish(cmdTopic, cmd);
+
+      if (!sent) {
+        if (deployRow) {
+          await supabase
+            .from('firmware_deploys')
+            .update({ status: 'falha', confirmado_em: new Date().toISOString() })
+            .eq('id', deployRow.id);
+          setDeployId(null);
+        }
+        throw new Error('MQTT desconectado — comando não enviado. Tente novamente.');
+      }
+      appendLog(`Comando OTA enviado → ${cmdTopic}`);
+      appendLog(`Versão alvo: ${firmwareVersion}`);
+      appendLog(`Aguardando resposta do dispositivo...`);
 
       logAcao(AUDIT.FIRMWARE_DEPLOY, target.id, {
         versao: firmwareVersion, sha256, arquivo: firmwareFile.name,
@@ -186,6 +246,7 @@ const OtaPage = () => {
 
   const handleReset = () => {
     setPhase('idle');
+    setDeployDeviceId(null);
     setDeployLog([]);
     setFirmwareFile(null);
     setFirmwareVersion('');
@@ -194,7 +255,7 @@ const OtaPage = () => {
   };
 
   // ─── Dados ao vivo de cada bóia ──────────────────────────────────────────
-  const fleetStatus = FLEET.map(buoy => {
+  const fleetStatus = buoys.map(buoy => {
     if (!buoy.deviceId) {
       return { ...buoy, online: false, firmware: 'N/A', rssi: null, uptime: null };
     }
@@ -202,7 +263,9 @@ const OtaPage = () => {
     const otaSt  = messages[`${buoy.deviceId}/ota/status`];
     return {
       ...buoy,
-      online:   !!status,
+      // status real: LWT (<id>/availability, retido). /status não é retido e só
+      // provava que a bóia falou em algum momento desde a montagem da página.
+      online:   messages[`${buoy.deviceId}/availability`] === 'online',
       firmware: status?.firmware ?? '---',
       rssi:     status?.rssi ?? null,
       uptime:   status?.uptime != null ? `${Math.floor(status.uptime / 60)} min` : null,
@@ -211,8 +274,7 @@ const OtaPage = () => {
     };
   });
 
-  const targetBuoy = FLEET.find(b => b.id === targetBuoyId);
-  const targetOnline = fleetStatus.find(b => b.id === targetBuoyId)?.online ?? false;
+  const targetOnline = fleetStatus.find(b => b.id === targetBuoy?.id)?.online ?? false;
   const canDeploy = firmwareFile && firmwareVersion.trim() && targetBuoy?.deviceId && phase === 'idle';
 
   return (
@@ -280,13 +342,13 @@ const OtaPage = () => {
             <div className="ota-field">
               <label>Bóia Alvo</label>
               <select
-                value={targetBuoyId}
+                value={targetBuoy?.id ?? ''}
                 onChange={e => setTargetBuoyId(e.target.value)}
                 disabled={phase !== 'idle'}
               >
-                {FLEET.map(b => (
-                  <option key={b.id} value={b.id} disabled={!b.deviceId}>
-                    {b.id} — {b.name}{!b.deviceId ? ' (sem hardware)' : ''}
+                {otaTargets.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.id} — {b.name}
                   </option>
                 ))}
               </select>
@@ -403,7 +465,7 @@ const OtaPage = () => {
                 <RotateCw size={15} className="spin text-primary" />
               )}
             </div>
-            <div className="ota-log-body">
+            <div className="ota-log-body" ref={logBodyRef}>
               {deployLog.length === 0 ? (
                 <span className="ota-log-empty">Aguardando deploy...</span>
               ) : (
@@ -416,14 +478,15 @@ const OtaPage = () => {
                   </div>
                 ))
               )}
-              <div ref={logEndRef} />
             </div>
           </div>
         </div>
       </section>
 
       {/* ── Modal de confirmação ── */}
-      {confirmOpen && (
+      {/* Portal no body, como os outros modais: .admin-content tem transform
+          (animate-fade-in) e viraria o containing block do position: fixed. */}
+      {confirmOpen && createPortal(
         <div className="ota-confirm-overlay" onClick={() => setConfirmOpen(false)}>
           <div className="ota-confirm-modal glass animate-fade-in" onClick={e => e.stopPropagation()}>
             <div className="ota-confirm-icon">
@@ -431,7 +494,7 @@ const OtaPage = () => {
             </div>
             <h3>Confirmar Deploy OTA</h3>
             <p>
-              Você está prestes a atualizar o firmware da <strong>{targetBuoyId}</strong> para a versão <strong>{firmwareVersion}</strong>.
+              Você está prestes a atualizar o firmware da <strong>{targetBuoy?.id}</strong> para a versão <strong>{firmwareVersion}</strong>.
             </p>
             <p className="ota-confirm-warning">
               <AlertTriangle size={14} /> O dispositivo irá reiniciar após a atualização. A coleta de dados será interrompida por ~30–60 segundos.
@@ -445,7 +508,8 @@ const OtaPage = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

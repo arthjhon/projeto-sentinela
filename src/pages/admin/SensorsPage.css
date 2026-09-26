@@ -122,6 +122,7 @@
 .status-indicator.online { color: var(--success); background: var(--success); }
 .status-indicator.warning { color: var(--warning); background: var(--warning); }
 .status-indicator.offline { color: var(--danger); background: var(--danger); box-shadow: none; }
+.status-indicator.planejada { color: #94a3b8; background: #64748b; box-shadow: none; }
 
 .sc-id {
   font-family: monospace;

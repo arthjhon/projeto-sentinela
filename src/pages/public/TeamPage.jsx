@@ -53,8 +53,7 @@ const TeamPage = () => {
       <div className="team-header text-center mb-5">
         <h1 className="gradient-text mb-3">Pesquisadores do Projeto</h1>
         <p className="subtitle mx-auto" style={{ maxWidth: '700px' }}>
-          Corpo acadêmico da <strong>Engenharia da Computação da UMJ</strong>. Uma equipe multidisciplinar unindo hardware, software e preservação ambiental.
-        </p>
+Formada por estudantes e pesquisadores de Engenharia da Computação da UMJ, nossa equipe combina hardware, software e sustentabilidade para criar soluções de alto impacto.       </p>
       </div>
 
       <div className="team-grid mt-5">
@@ -72,7 +71,7 @@ const TeamPage = () => {
             </p>
             <p className="member-bio text-muted">{member.bio}</p>
             
-            <div className="member-socials mt-4">
+            <div className="member-socials">
                <a href="#" className="social-btn"><Linkedin size={18}/></a>
                <a href="#" className="social-btn"><Github size={18}/></a>
                <a href="#" className="social-btn"><Mail size={18}/></a>
@@ -82,11 +81,14 @@ const TeamPage = () => {
       </div>
 
       <div className="umj-banner glass mt-5 text-center animate-fade-in">
-        <img src="/UMJ.svg" alt="Logo UMJ" className="umj-banner-logo" />
+        <div className="umj-banner-logos">
+          <img src="/UMJ.svg" alt="Logo UMJ" className="umj-banner-logo" />
+          <span className="umj-banner-divider" aria-hidden="true" />
+          <img src="/kodelab-white.png" alt="Logo Kode.Lab UMJ" className="umj-banner-logo kodelab-banner-logo" />
+        </div>
         <h2>Um projeto nascido na Academia</h2>
         <p className="text-muted mt-2">
-          Orgulhosamente desenvolvido pelos laboratórios do Centro Universitário Mário Pontes Jucá (UMJ).
-          Nosso compromisso é devolver o progresso tecnológico para nossa comunidade riberinha local.
+           Nascido no Centro Universitário Mário Pontes Jucá (UMJ) e impulsionado pelo Kode.Lab, este projeto une ciência e inovação para gerar impacto social e tecnológico na comunidade ribeirinha local.
         </p>
       </div>
     </div>

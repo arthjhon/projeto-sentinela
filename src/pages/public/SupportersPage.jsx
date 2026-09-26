@@ -58,8 +58,8 @@ const SupportersPage = () => {
         <h3 className="sp-section-title">Impacto dos Apoiadores</h3>
         <div className="impact-grid">
           <div className="impact-card glass">
-            <span className="impact-number">3</span>
-            <span className="impact-label">Bóias Ativas</span>
+            <span className="impact-number">1</span>
+            <span className="impact-label">Protótipo Ativo<br />+ 2 em Expansão</span>
           </div>
           <div className="impact-card glass">
             <span className="impact-number">+500</span>
