@@ -139,9 +139,9 @@ const DashboardPreview = () => {
                 <label><Activity size={14} /> Sensores</label>
                 <select value={filterSensor} onChange={(e) => setFilterSensor(e.target.value)}>
                   <option value="todos">Todos os Sensores</option>
-                  <option value="od">Oxigênio Dissolvido (OD)</option>
-                  <option value="ph">Nível de pH</option>
                   <option value="temp">Temperatura</option>
+                  <option value="ph">Nível de pH</option>
+                  <option value="turbidez">Turbidez</option>
                 </select>
               </div>
 
