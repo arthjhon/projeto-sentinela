@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { Mail, Instagram, Github } from 'lucide-react';
 import './Footer.css';
 
 const Footer = () => {
@@ -29,15 +30,35 @@ const Footer = () => {
           </ul>
         </div>
 
+        {/* Contato */}
+        <div className="footer-nav-group">
+          <h5>Contato</h5>
+          <ul className="footer-contact-list">
+            <li>
+              <a href="mailto:contato@projetosentinela.com.br">
+                <Mail size={16} /> contato@projetosentinela.com.br
+              </a>
+            </li>
+            <li>
+              <a href="https://instagram.com/proj.sentinela" target="_blank" rel="noopener noreferrer">
+                <Instagram size={16} /> @proj.sentinela
+              </a>
+            </li>
+            <li>
+              <a href="https://github.com/arthjhon/projeto-sentinela" target="_blank" rel="noopener noreferrer">
+                <Github size={16} /> GitHub
+              </a>
+            </li>
+          </ul>
+        </div>
+
         {/* Instituição */}
         <div className="footer-credit-col">
           <h5>Instituição</h5>
-          <div className="footer-umj-row">
-            <img src="/UMJ.svg" alt="UMJ" className="footer-umj-logo" />
-            <div className="footer-umj-info">
-              <strong>UMJ</strong>
-              <span>Engenharia da Computação</span>
-            </div>
+          <div className="footer-partners-row">
+            <img src="/kodelab-white.png" alt="Kode.Lab" className="footer-partner-logo footer-partner-kodelab" />
+            <img src="/teranex.svg" alt="TeraNex" className="footer-partner-logo footer-partner-teranex" />
+            <img src="/UMJ.svg" alt="UMJ" className="footer-partner-logo footer-partner-umj" />
           </div>
         </div>
       </div>
