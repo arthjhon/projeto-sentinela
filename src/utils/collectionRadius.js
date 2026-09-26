@@ -1,9 +1,10 @@
 // Raio de "coleta" desenhado ao redor de cada bóia no mapa (anéis do heatmap).
 // O admin ajusta só o anel externo, em metros; os internos mantêm a proporção
-// que o mapa sempre teve (1000 / 550 / 220 m).
+// original dos anéis (1 : 0,55 : 0,22). A leitura dos sensores é pontual —
+// o padrão de 200 m é só a área representativa, não o alcance do sensor.
 
-export const DEFAULT_COLLECTION_RADIUS_M = 1000;
-export const MIN_COLLECTION_RADIUS_M = 100;
+export const DEFAULT_COLLECTION_RADIUS_M = 200;
+export const MIN_COLLECTION_RADIUS_M = 25;
 export const MAX_COLLECTION_RADIUS_M = 5000;
 
 const RING_RATIOS = [
