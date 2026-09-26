@@ -120,6 +120,25 @@
   font-family: inherit;
 }
 
+/* Só no fallback Esri (sem VITE_CARTO_BASEMAPS_KEY): World Dark Gray é
+   cinza-médio — escurece apenas a camada de tiles (não afeta marcadores,
+   popups nem heatmap) pra aproximar do preto do CartoDB dark_all. */
+.imap-tiles-fallback .leaflet-tile-pane {
+  filter: brightness(0.55) contrast(1.15) saturate(0.9);
+}
+
+/* Atribuição (exigida pelas licenças OSM/CARTO/Esri), no tema escuro */
+.imap-leaflet .leaflet-control-attribution {
+  background: rgba(8, 13, 21, 0.85);
+  color: #64748b;
+  font-size: 0.68rem;
+  padding: 2px 6px;
+  border-top-right-radius: 6px;
+}
+.imap-leaflet .leaflet-control-attribution a {
+  color: #94a3b8;
+}
+
 /* Popup */
 .leaflet-popup-content-wrapper {
   background: #0D141F !important;
