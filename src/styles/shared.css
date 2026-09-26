@@ -146,6 +146,7 @@
 .badge-online { background: rgba(16, 185, 129, 0.1); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.2); }
 .badge-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.2); }
 .badge-offline { background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); }
+.badge-planejada { background: rgba(100, 116, 139, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25); }
 
 /* ── TIPOGRAFIA DE SECAO (paginas publicas) ──────────────────── */
 .section-header {
