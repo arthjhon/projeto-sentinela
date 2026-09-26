@@ -522,3 +522,26 @@
 
 /* 2.1 — selo da faixa (Saudável / Atenção / Crítico) no card */
 .metric-faixa { font-weight: 700; }
+
+/* Seletor de bóia no cabeçalho — mesmo input glass/dark dos formulários do painel */
+.dashboard-buoy-select {
+  margin-top: 1rem;
+  min-width: 260px;
+  padding: 0.55rem 2.25rem 0.55rem 0.9rem;
+  font: inherit;
+  font-size: 0.88rem;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.03)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    no-repeat right 0.85rem center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.dashboard-buoy-select:hover { border-color: rgba(255, 255, 255, 0.18); }
+.dashboard-buoy-select:focus { border-color: rgba(0, 240, 255, 0.35); }
+.dashboard-buoy-select option { background: #0D141F; color: #fff; }
