@@ -14,6 +14,8 @@
 
 .team-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   padding: 2.5rem 2rem 2rem;
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
@@ -97,6 +99,10 @@
   display: flex;
   justify-content: center;
   gap: 1rem;
+  /* Fileira de links presa ao rodape do card: com bios de tamanhos
+     diferentes, os icones ficavam em alturas diferentes entre os cards. */
+  margin-top: auto;
+  padding-top: 1.5rem;
 }
 
 .social-btn {
@@ -162,11 +168,33 @@
   border: 1px solid rgba(0, 240, 255, 0.2);
 }
 
+.umj-banner-logos {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1.75rem;
+  margin-bottom: 1.25rem;
+}
+
 .umj-banner-logo {
   height: 64px;
   width: auto;
   object-fit: contain;
-  margin: 0 auto 1.25rem;
   display: block;
   filter: brightness(1.1);
+}
+
+.kodelab-banner-logo {
+  height: 30px;
+}
+
+.umj-banner-divider {
+  width: 1px;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+@media (max-width: 480px) {
+  .umj-banner-divider { display: none; }
 }
