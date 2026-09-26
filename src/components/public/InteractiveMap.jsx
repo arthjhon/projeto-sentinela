@@ -5,6 +5,8 @@ import { useMqtt } from '../../hooks/useMqtt';
 import { getMqttTopics } from '../../config/fleet';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { topicsForRegistry, SEED_BUOYS } from '../../services/buoyRegistry';
+import { getSetting, MAP_COLLECTION_RADIUS_KEY } from '../../services/settings';
+import { collectionRings, normalizeCollectionRadius, DEFAULT_COLLECTION_RADIUS_M } from '../../utils/collectionRadius';
 import {
   Thermometer, Droplet, Activity,
   Play, Pause, SkipBack,
@@ -110,6 +112,17 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
   const [isPlaying, setIsPlaying]         = useState(false);
   const [liveMode, setLiveMode]           = useState(true);
   const playIntervalRef = useRef(null);
+
+  // Raio de coleta ajustável em Configurações (app_settings). Fica no padrão
+  // até carregar — e também se nunca foi salvo ou a leitura falhar.
+  const [collectionRadius, setCollectionRadius] = useState(DEFAULT_COLLECTION_RADIUS_M);
+  useEffect(() => {
+    let ativo = true;
+    getSetting(MAP_COLLECTION_RADIUS_KEY, { raio_m: DEFAULT_COLLECTION_RADIUS_M })
+      .then(v => { if (ativo) setCollectionRadius(normalizeCollectionRadius(v?.raio_m)); })
+      .catch(() => {});
+    return () => { ativo = false; };
+  }, []);
 
   // Registro dinâmico de bóias
   const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
@@ -293,25 +306,14 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
               <React.Fragment key={buoy.id}>
 
                 {/* Heatmap: só para boias com hardware (sem inventar qualidade em pontos planejados) */}
-                {showHeatmap && !isPlanned && (
-                  <>
-                    <Circle
-                      center={buoy.coords}
-                      radius={1000}
-                      pathOptions={{ color: 'none', fillColor: heatColor, fillOpacity: 0.05 }}
-                    />
-                    <Circle
-                      center={buoy.coords}
-                      radius={550}
-                      pathOptions={{ color: 'none', fillColor: heatColor, fillOpacity: 0.10 }}
-                    />
-                    <Circle
-                      center={buoy.coords}
-                      radius={220}
-                      pathOptions={{ color: 'none', fillColor: heatColor, fillOpacity: 0.20 }}
-                    />
-                  </>
-                )}
+                {showHeatmap && !isPlanned && collectionRings(collectionRadius).map(ring => (
+                  <Circle
+                    key={ring.radius}
+                    center={buoy.coords}
+                    radius={ring.radius}
+                    pathOptions={{ color: 'none', fillColor: heatColor, fillOpacity: ring.fillOpacity }}
+                  />
+                ))}
 
                 {/* Anel pulsante para bóias ao vivo */}
                 {isLive && (
