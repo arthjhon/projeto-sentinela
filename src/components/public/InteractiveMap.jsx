@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, Circle, CircleMarker, Popup, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, AttributionControl, Circle, CircleMarker, Popup, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useMqtt } from '../../hooks/useMqtt';
 import { getMqttTopics } from '../../config/fleet';
@@ -11,6 +11,26 @@ import {
   Wifi, WifiOff, Layers,
 } from 'lucide-react';
 import './InteractiveMap.css';
+
+// Basemap: CartoDB Dark Matter exige key desde 2026 (gratuita, sem conta:
+// carto.com/basemaps/apikey — tiles sem key chegam com marca d'água "API KEY
+// REQUIRED"). Com VITE_CARTO_BASEMAPS_KEY definida usa o Carto; sem ela cai no
+// Esri World Dark Gray (sem cadastro), que é cinza-médio e ganha um filtro
+// de escurecimento só nessa camada (ver .imap-tiles-fallback no CSS).
+// Ordem {z}/{y}/{x} no Esri: serviços ArcGIS usam row/col, não x/y.
+const CARTO_KEY = import.meta.env.VITE_CARTO_BASEMAPS_KEY;
+const TILES = CARTO_KEY
+  ? {
+      url: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      fallback: false,
+    }
+  : {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+      attribution: '&copy; <a href="https://www.esri.com">Esri</a>',
+      fallback: true,
+    };
 
 const PARAMS = [
   { key: 'ph',          label: 'pH',         icon: Droplet,    unit: '' },
@@ -243,17 +263,21 @@ const InteractiveMap = ({ activeArea = 'mundau' }) => {
         <MapContainer
           center={[-9.630, -35.800]}
           zoom={12}
-          className="imap-leaflet"
+          className={`imap-leaflet${TILES.fallback ? ' imap-tiles-fallback' : ''}`}
           zoomControl
           scrollWheelZoom={false}
           attributionControl={false}
         >
-          {/* Tiles CartoDB Dark Matter — sem API key */}
+          {/* Atribuição obrigatória (OSM/CARTO e Esri) — embaixo à esquerda,
+              porque a legenda ocupa o canto inferior direito. */}
+          <AttributionControl position="bottomleft" prefix={false} />
+          {/* subdomains só quando a URL tem {s}: passar undefined sobrescreve
+              o default do Leaflet e quebra em _getSubdomain. */}
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            subdomains="abcd"
+            url={TILES.url}
+            {...(TILES.subdomains ? { subdomains: TILES.subdomains } : {})}
             maxZoom={19}
-            attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
+            attribution={TILES.attribution}
           />
 
           {visibleBuoys.map(buoy => {
