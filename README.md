@@ -24,21 +24,24 @@ O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve 
 ### Portal Público
 
 - **Landing Page imersiva** com design Dark Mode e estética Glassmorphism
-- **Painel de Monitoramento** com gráficos em tempo real via MQTT (temperatura, pH, turbidez, oxigênio dissolvido)
+- **Seção "O que observamos no estuário"** — os indicadores que definem a saúde das lagoas com faixa de referência (CONAMA 357), marcando os três que a bóia já mede (temperatura, pH, turbidez) e os planejados (OD, salinidade, coliformes) — sem leituras inventadas
+- **Painel de Monitoramento** com gráficos em tempo real via MQTT (temperatura, pH, turbidez)
+- **Mapa interativo** (CartoDB Dark Matter) com as bóias na posição cadastrada no painel, anéis de área de coleta e status **real** de cada bóia via LWT (`<deviceId>/availability`) — "Ao vivo" só quando a placa está de fato conectada, não quando o navegador está
 - **Seção "Vida Marinha"** com ilustração SVG animada do ecossistema da lagoa (bóia SM-01, peixes, leito de sururu, badges de dados)
-- **Página de Equipe**, **Apoiadores** (com logo UMJ) e **Apoie o Projeto**
+- **Página de Equipe** (links para as redes de cada membro), **Apoiadores** (UMJ e Kode.Lab) e **Apoie o Projeto**
 - Design totalmente responsivo (desktop → tablet → mobile)
 
 ### Painel Administrativo
 
-- **Autenticação** com controle de acesso por papel (admin / operador) via Supabase
-- **Dashboard** com métricas gerais do sistema e integridade dos dispositivos
+- **Autenticação** com controle de acesso por papel (admin / operador / visualizador) via Supabase
+- **Dashboard** com métricas gerais do sistema e integridade dos dispositivos, **seletor de bóia** ("Todas as Bóias" mostra a média da frota nos cards de temperatura, pH e turbidez) e contagem real da frota
 - **Histórico persistido** — gráfico por janela de tempo (1h / 24h / 7d / 30d) lido do
   InfluxDB, somado às leituras que continuam chegando por MQTT em tempo real
 - **Exportação CSV** das leituras do período selecionado, pronta para abrir no Excel
-- **Gerenciador de Bóias** — CRUD completo: cadastro, edição, remoção e histórico de leituras
+- **Gerenciador de Bóias** — CRUD completo: cadastro, edição, remoção e histórico de leituras. Cada bóia tem **lagoa, latitude, longitude e ID do dispositivo (MQTT)** editáveis no painel: trocar o hardware de uma bóia (ex.: ESP32 → LoRa32 v3, com outro `deviceId`) não exige deploy — mapa, dashboard e OTA passam a escutar o novo dispositivo
 - **Gestão de Operadores** — criação e remoção de usuários (exclusivo para admins)
-- **OTA Firmware** — envio de atualização de firmware para o ESP32 via MQTT, sem acesso físico ao hardware
+- **OTA Firmware** — envio de atualização de firmware para o ESP32 via MQTT, sem acesso físico ao hardware; aceita como destino qualquer bóia cadastrada com dispositivo
+- **Configurações** — dados simulados (mock), meta de financiamento e **raio de coleta** desenhado ao redor das bóias no mapa público
 
 <br/>
 
@@ -74,31 +77,39 @@ O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve 
 | Temperatura | °C | Lagoas e aquicultura |
 | Turbidez | NTU | Lagoas e coletas de campo |
 | pH | — | Lagoas, aquicultura e coletas |
-| Oxigênio Dissolvido | mg/L | Lagoas e aquicultura *(em integração)* |
+| Oxigênio Dissolvido | mg/L | Lagoas e aquicultura *(planejado)* |
 | Salinidade / Condutividade | ppt / µS | Aquicultura *(planejado)* |
+| Coliformes termotolerantes | NMP/100 mL | Lagoas — cultivo de moluscos *(planejado)* |
+
+As faixas de referência usadas nos selos (Saudável / Atenção / Crítico) e na página pública seguem a **Resolução CONAMA 357/2005 (águas salobras)** e ficam em `src/config/waterQuality.js`.
 
 <br/>
 
 ## Fluxo OTA (Over-the-Air Firmware Update)
 
 ```
-Admin faz upload do .bin → Supabase Storage
+Admin faz upload do .bin → Supabase Storage (SHA-256 calculado no navegador)
      ↓
-Admin aciona "Enviar OTA" no painel
+Admin confirma "Implantar Firmware" no painel (registro em firmware_deploys)
      ↓
-Backend publica via MQTT: sentinela/buoy/{id}/ota/command
+Painel publica via MQTT: <deviceId>/ota/command  { url, version, sha256 }
      ↓
-ESP32 recebe a URL do firmware, faz download e se reflasha via HTTPUpdate
+ESP32 recebe a URL do firmware, faz download, valida o hash e se reflasha via HTTPUpdate
      ↓
-ESP32 reinicia com o novo firmware e confirma via MQTT
+ESP32 reinicia com o novo firmware e reporta em <deviceId>/ota/status
+     (downloading → flashing → success | error) — o painel fecha o histórico do deploy
 ```
+
+Só o `ota/status` da bóia do deploy em curso muda o estado do formulário; o último status **retido** no broker (de um OTA anterior) aparece apenas no card da frota e não trava um novo deploy.
 
 <br/>
 
 ## Deploy & Alta Disponibilidade
 
 ### Produção
-O site roda em **`sentinela.arthlabs.dev`**, servido a partir da VM por trás de um **Cloudflare Tunnel** (sem expor portas). O deploy é automático: todo push na branch `main` dispara o GitHub Actions (`deploy.yml`), que builda no servidor e publica o `dist/`.
+O site roda em **`sentinela.arthlabs.dev`**, servido por nginx numa VM da UMJ por trás de um **Cloudflare Tunnel** (sem expor portas). O deploy é automático: todo push na branch `main` dispara o GitHub Actions (`deploy.yml`), que **builda no próprio runner** (`npm ci` + `vite build`, com as variáveis `VITE_*` vindas dos *secrets* do repositório) e envia só o `dist/` para a VM por **rsync** — o runner entra na tailnet via `tailscale/github-action` e usa uma chave SSH presa por `rrsync` ao diretório do site (sem shell no servidor). Nada é compilado na VM.
+
+Secrets esperados pelo workflow: `TAILSCALE_AUTHKEY`, `SSH_KEY_UMJ_RSYNC`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_MQTT_BROKER_URL`, `VITE_MQTT_USER`, `VITE_MQTT_PASS`, `VITE_INFLUX_ORG`, `VITE_INFLUX_BUCKET` e, opcional, `VITE_CARTO_BASEMAPS_KEY`.
 
 ### Failover (GitHub Pages + Cloudflare Worker)
 Para resiliência, uma cópia estática do site é publicada no **GitHub Pages** a cada push na `main` (workflow `pages.yml`). Um **Cloudflare Worker** fica na frente do domínio e faz o roteamento:
@@ -203,6 +214,23 @@ backend próprio no caminho.
 
 <br/>
 
+## Configurando o Mapa (CARTO Basemaps)
+
+O mapa de `/monitoramento` usa o estilo **CartoDB Dark Matter**, que desde 2026 exige uma
+chave — sem ela os tiles chegam com a marca d'água "API KEY REQUIRED". A chave é gratuita
+e não pede conta: informe um e-mail em [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey)
+(5M requisições/mês para uso não comercial) e acrescente ao `.env.local`:
+
+```env
+VITE_CARTO_BASEMAPS_KEY="sua_chave"
+```
+
+Sem a variável o mapa cai automaticamente no **Esri World Dark Gray** (sem cadastro). A chave vai
+para o bundle público — restrinja-a ao domínio do site no painel do CARTO. A atribuição
+"© OpenStreetMap contributors © CARTO" (ou "© Esri") é exigida pelas licenças e fica visível no mapa.
+
+<br/>
+
 ## Roadmap
 
 ### Concluído
@@ -236,6 +264,26 @@ backend próprio no caminho.
       append-only (sem policy de update/delete, nem para admin)
 - [x] **Conta demo somente leitura** (role `visualizador`) — navega o painel
       admin completo sem conseguir alterar nada, protegido por RLS
+- [x] **Cadastro dinâmico de bóias** — posição no mapa, lagoa e `deviceId` de cada
+      bóia editáveis no painel (`map_buoys` em `app_settings`, sem migration);
+      mapa, dashboard, OTA e página pública assinam os tópicos do registro em
+      tempo de execução — troca de hardware sem deploy
+      (spec: `docs/superpowers/specs/2026-09-25-cadastro-boias-design.md`)
+- [x] **Status real das bóias via LWT** — o indicador "Ao vivo" lê
+      `<deviceId>/availability` publicado pelo firmware (retido), em vez da
+      conexão do navegador com o broker; uma placa desligada aparece offline
+      mesmo com o site conectado
+- [x] **Seletor de bóia e média da frota** no Centro de Comando
+- [x] **OTA robusto** — status retido de um OTA anterior não trava o formulário
+      nem fecha um deploy novo; só a bóia do deploy em curso muda o estado
+- [x] **Raio de coleta configurável** (Configurações) com piso visual para os
+      anéis não sumirem atrás do marcador no zoom inicial
+- [x] **Mapa com CartoDB Dark Matter + chave** e fallback Esri; atribuição visível
+- [x] **Pipeline de deploy na VM da UMJ** — build no runner e rsync via Tailscale
+      (chave SSH restrita por `rrsync`)
+- [x] **Página inicial honesta** — seção de parâmetros explicativa (faixas de
+      referência CONAMA 357, "Monitorado pela bóia" vs. "Planejado"), sem
+      leituras simuladas de sensores que não existem
 
 ### Próximos passos
 
@@ -288,7 +336,7 @@ Desenvolvido por pesquisadores da **Engenharia da Computação — Centro Univer
 | **Pedro Henrique** | Engenheiro de Hardware |
 | **Marcos Paulo** | Analista de Documentação Técnica |
 
-**Orientador:** Prof. Pedro Henrique de Meneses Bittencourt Lopes — Engenharia Mecatrônica & Matemática
+Com o apoio do **Kode.Lab UMJ**, laboratório de desenvolvimento de software da instituição.
 
 > *"A tecnologia como termômetro vital em prol do meio ambiente e do desenvolvimento sustentável."*
 
