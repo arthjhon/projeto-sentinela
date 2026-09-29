@@ -104,3 +104,59 @@ from(bucket: "${BUCKET}")
 
   return state;
 }
+
+/**
+ * Converte o CSV anotado de um pivot (uma coluna por campo) em linhas
+ * {time, temperatura, ph, turbidez}. Tolera várias tabelas no mesmo CSV
+ * (cabeçalho repetido), como o Influx devolve quando os schemas diferem.
+ */
+export function parsePivotCsv(csv) {
+  const out = [];
+  let header = null;
+  for (const line of String(csv).split('\n')) {
+    const l = line.trim();
+    if (!l) { header = null; continue; }
+    if (l.startsWith('#')) continue;
+    const cols = l.split(',');
+    if (!header) { header = cols.map(h => h.trim()); continue; }
+    const get = (name) => {
+      const i = header.indexOf(name);
+      if (i === -1 || cols[i] == null || cols[i] === '') return undefined;
+      const n = Number(cols[i]);
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const iTime = header.indexOf('_time');
+    const time = iTime === -1 ? null : new Date(cols[iTime]);
+    if (!time || Number.isNaN(time.getTime())) continue;
+    out.push({ time, temperatura: get('temperatura'), ph: get('ph'), turbidez: get('turbidez') });
+  }
+  return out.sort((a, b) => b.time - a.time);
+}
+
+/**
+ * Últimas leituras brutas (sem agregação) de uma bóia, mais recentes primeiro.
+ * Mesmo filtro por `topic` do useInfluxHistory (ver comentário acima).
+ * @param {string} deviceId
+ * @param {{limit?: number, start?: string, signal?: AbortSignal}} [opts]
+ */
+export async function fetchUltimasLeituras(deviceId, { limit = 50, start = '-24h', signal } = {}) {
+  const flux = `
+from(bucket: "${BUCKET}")
+  |> range(start: ${start})
+  |> filter(fn: (r) => r._measurement == "sensores")
+  |> filter(fn: (r) => r.topic == "${deviceId}/sensores")
+  |> keep(columns: ["_time", "_field", "_value"])
+  |> group()
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> sort(columns: ["_time"], desc: true)
+  |> limit(n: ${Number(limit) || 50})`;
+
+  const res = await fetch(`/influx/api/v2/query?org=${encodeURIComponent(ORG)}`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/vnd.flux', Accept: 'application/csv' },
+    body: flux,
+  });
+  if (!res.ok) throw new Error(`Influx ${res.status}`);
+  return parsePivotCsv(await res.text());
+}
