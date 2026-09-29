@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getSetting, saveSetting, MOCK_MODE_KEY } from '../services/settings';
 
 // ── Geradores de dados simulados ──────────────────────────────
 // Usados enquanto a bóia física ainda não está em operação.
@@ -29,34 +30,60 @@ export function makeMockStatus(uptimeSeconds) {
   };
 }
 
-// ── Flag de modo simulado (persistida em localStorage) ────────
-const KEY = 'sentinela_mock_data';
+// ── Flag de modo simulado (global, em app_settings) ──────────
+// Uma flag para todo mundo: o admin liga/desliga em Configurações e todo
+// visitante passa a ver a mesma fonte. Antes ficava no localStorage de cada
+// navegador, com default LIGADO — quem nunca abriu o painel via "SIMULADO".
+// Default agora é DESLIGADO: sem nada salvo, ou se a leitura falhar, o site
+// mostra só dado real.
 const EVENT = 'sentinela:mockmodechange';
 
-// Default: LIGADO (bóia ainda não opera). Desligar quando entrar em produção.
-export function getMockMode() {
-  if (typeof localStorage === 'undefined') return true;
-  const v = localStorage.getItem(KEY);
-  return v == null ? true : v === 'true';
+export function normalizeMockMode(value) {
+  return value?.ativo === true;
 }
 
-export function setMockMode(on) {
-  localStorage.setItem(KEY, String(on));
-  window.dispatchEvent(new CustomEvent(EVENT, { detail: on }));
+// Uma leitura por carregamento da página, compartilhada por todos os hooks
+// (a página de monitoramento e o contador de dias usam a flag ao mesmo tempo).
+let cached = null;   // último valor conhecido (null = ainda não leu)
+let pending = null;
+
+function loadMockMode() {
+  if (!pending) {
+    pending = getSetting(MOCK_MODE_KEY, { ativo: false })
+      .then(v => { cached = normalizeMockMode(v); return cached; })
+      .catch(err => {
+        console.warn('mockData: falha ao ler a flag de dados simulados, usando desligado', err);
+        cached = false;
+        return cached;
+      });
+  }
+  return pending;
 }
 
-// Hook que lê a flag e reage a mudanças (mesma aba ou outra aba).
+/**
+ * Hook da flag: `[ligado, salvar]`. Começa desligado até a leitura voltar
+ * (primeiro paint nunca mostra dado inventado). `salvar(on)` grava no banco
+ * (RLS: só admin) e lança erro se a gravação falhar — a UI volta ao estado
+ * anterior e avisa.
+ */
 export function useMockMode() {
-  const [on, setOn] = useState(getMockMode);
+  const [on, setOn] = useState(() => cached ?? false);
   useEffect(() => {
-    const handler = () => setOn(getMockMode());
+    let ativo = true;
+    loadMockMode().then(v => { if (ativo) setOn(v); });
+    const handler = (e) => setOn(e.detail === true);
     window.addEventListener(EVENT, handler);
-    window.addEventListener('storage', handler);
     return () => {
+      ativo = false;
       window.removeEventListener(EVENT, handler);
-      window.removeEventListener('storage', handler);
     };
   }, []);
-  const update = (value) => { setMockMode(value); setOn(value); };
+  const update = async (value) => {
+    const next = value === true;
+    await saveSetting(MOCK_MODE_KEY, { ativo: next });
+    cached = next;
+    pending = Promise.resolve(next);
+    window.dispatchEvent(new CustomEvent(EVENT, { detail: next }));
+  };
   return [on, update];
 }
