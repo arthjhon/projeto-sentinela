@@ -5,7 +5,7 @@ import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { FLEET, getMqttTopics } from '../../config/fleet';
 import { topicsForRegistry, LAGOA_LABEL } from '../../services/buoyRegistry';
 import { WATER_PARAMS, classifyParam } from '../../config/waterQuality';
-import { useMockMode, getMockMode, makeMockReading, makeMockStatus } from '../../config/mockData';
+import { useMockMode, makeMockReading, makeMockStatus } from '../../config/mockData';
 import InteractiveMap from '../../components/public/InteractiveMap';
 import WaterQualityIndex from '../../components/monitoring/WaterQualityIndex';
 import ShareableSnapshot from '../../components/monitoring/ShareableSnapshot';
@@ -29,9 +29,9 @@ const MonitoringPage = () => {
   const [history, setHistory] = useState([]);
   const [paused, setPaused] = useState(false);
   const [mockEnabled] = useMockMode();
-  // Seed inicial imediato quando o mock já está ligado no carregamento.
-  const [mockData, setMockData] = useState(() => (getMockMode() ? makeMockReading(null) : null));
-  const [mockStatus, setMockStatus] = useState(() => (getMockMode() ? makeMockStatus(2 * 86400) : null));
+  // A flag chega do banco depois do primeiro paint; o timer abaixo semeia.
+  const [mockData, setMockData] = useState(null);
+  const [mockStatus, setMockStatus] = useState(null);
 
   const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
   // Mesma regra de hoje (primeira com deviceId, senão a primeira da lista).
@@ -70,15 +70,17 @@ const MonitoringPage = () => {
   // Atualiza os dados simulados a cada 3s (setState só no callback do timer).
   useEffect(() => {
     if (!mockEnabled) return undefined;
-    let prev = makeMockReading(null);
+    let prev = null;
     let uptime = 2 * 86400;
-    const id = setInterval(() => {
+    const tick = () => {
       prev = makeMockReading(prev);
       uptime += 3;
       setMockData(prev);
       setMockStatus(makeMockStatus(uptime));
-    }, 3000);
-    return () => clearInterval(id);
+    };
+    const first = setTimeout(tick, 0); // setState fora do corpo do effect
+    const id = setInterval(tick, 3000);
+    return () => { clearTimeout(first); clearInterval(id); };
   }, [mockEnabled]);
 
   // Fonte efetiva: mock quando ligado, senão MQTT real.

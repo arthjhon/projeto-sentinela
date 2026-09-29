@@ -21,12 +21,17 @@ if (!BROKER_URL || !MQTT_USER || !MQTT_PASS) {
  * e devolve o último payload recebido por tópico.
  *
  * @param {string[]} topics - Lista de tópicos para subscrever na montagem.
- * @returns {{ messages: Object, connected: boolean, publish: Function, addTopics: Function }}
+ * @returns {{ messages: Object, receivedAt: Object, connected: boolean, publish: Function, addTopics: Function }}
  *   messages: objeto { [topico]: ultimoPayloadParsed }
+ *   receivedAt: objeto { [topico]: { at, prevAt, retained } } — hora (ms) em que
+ *     este navegador recebeu a última mensagem e a anterior; `retained` marca a
+ *     mensagem retida que o broker entrega no subscribe (hora da entrega, não
+ *     de quando o device publicou)
  *   connected: true enquanto a conexão WebSocket estiver ativa
  */
 export function useMqtt(topics = []) {
   const [messages, setMessages]   = useState({});
+  const [receivedAt, setReceivedAt] = useState({});
   const [connected, setConnected] = useState(false);
   const clientRef = useRef(null);
   const extraTopicsRef = useRef(new Set());
@@ -61,8 +66,13 @@ export function useMqtt(topics = []) {
       }
     });
 
-    client.on('message', (topic, payload) => {
+    client.on('message', (topic, payload, packet) => {
+      const at = Date.now();
       setMessages(prev => ({ ...prev, [topic]: parseMqttPayload(payload.toString()) }));
+      setReceivedAt(prev => ({
+        ...prev,
+        [topic]: { at, prevAt: prev[topic]?.at ?? null, retained: packet?.retain === true },
+      }));
     });
 
     client.on('offline',      ()    => setConnected(false));
@@ -116,5 +126,5 @@ export function useMqtt(topics = []) {
     return clientRef.current.publish(topic, msg);
   };
 
-  return { messages, connected, publish, addTopics };
+  return { messages, receivedAt, connected, publish, addTopics };
 }

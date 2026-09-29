@@ -62,19 +62,3 @@ export function upsertRegistryEntry(list, codigoOriginal, entry) {
     ? list.map(r => (r.codigo === codigoOriginal ? entry : r))
     : [...list, entry];
 }
-
-/**
- * Reconcilia as linhas locais do painel (localStorage: sensores mock, bateria,
- * status...) com o registro, que é a fonte de verdade da identidade de cada
- * bóia: uma linha por entrada, na ordem do registro, com código/nome/deviceId
- * vindos dele. Entrada sem linha local ganha `makeRow(entry)`; linha local cujo
- * código não está no registro (apagada em outra sessão) sai da lista.
- */
-export function mergeRegistryIntoRows(rows, registry, makeRow) {
-  return registry.map(entry => ({
-    ...(rows.find(r => r.id === entry.codigo) ?? makeRow(entry)),
-    id: entry.codigo,
-    name: entry.nome,
-    deviceId: entry.deviceId ?? '',
-  }));
-}

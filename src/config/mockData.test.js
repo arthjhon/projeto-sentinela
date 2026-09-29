@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeMockReading, makeMockStatus } from './mockData';
+import { makeMockReading, makeMockStatus, normalizeMockMode } from './mockData';
 
 describe('makeMockReading', () => {
   it('gera valores dentro de faixas plausíveis', () => {
@@ -28,5 +28,14 @@ describe('makeMockStatus', () => {
     expect(typeof s.rssi).toBe('number');
     expect(typeof s.free_heap).toBe('number');
     expect(typeof s.mqtt_latency).toBe('number');
+  });
+});
+
+describe('normalizeMockMode', () => {
+  it('só liga com { ativo: true } — qualquer outra coisa é desligado', () => {
+    expect(normalizeMockMode({ ativo: true })).toBe(true);
+    for (const v of [null, undefined, {}, { ativo: false }, { ativo: 'true' }, true, 'true']) {
+      expect(normalizeMockMode(v)).toBe(false);
+    }
   });
 });

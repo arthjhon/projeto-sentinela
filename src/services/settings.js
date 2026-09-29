@@ -51,3 +51,7 @@ export const MONITORAMENTO_INICIO_KEY = 'monitoramento_inicio';
 // Chave do raio de "coleta" desenhado ao redor das bóias no mapa público
 // (valor: { raio_m: number }). Faixa e anéis derivados em utils/collectionRadius.js.
 export const MAP_COLLECTION_RADIUS_KEY = 'map_collection_radius';
+
+// Chave da flag global de dados simulados (valor: { ativo: boolean }). Sem
+// registro = desligado. Ver src/config/mockData.js.
+export const MOCK_MODE_KEY = 'mock_mode';
