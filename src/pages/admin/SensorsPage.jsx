@@ -1,105 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useMqtt } from '../../hooks/useMqtt';
 import { useAuth } from './../../contexts/AuthContext';
 import { useToast } from './../../contexts/ToastContext';
 import { useReadOnly } from '../../hooks/useReadOnly';
 import ConfirmModal from './../../components/ConfirmModal';
-import { Wifi, WifiOff, MapPin, Search, ChevronDown, ChevronUp, Activity, Droplet, Thermometer, Wrench, FileText, CheckCircle2, RotateCw, History, Plus, Edit2, Trash2, X } from 'lucide-react';
-import { FLEET, getMqttTopics } from '../../config/fleet';
+import { Wifi, WifiOff, MapPin, Search, ChevronDown, ChevronUp, Activity, Droplet, Thermometer, Wrench, FileText, CheckCircle2, AlertTriangle, XCircle, RotateCw, History, Plus, Edit2, Trash2, X, Download } from 'lucide-react';
+import { getMqttTopics } from '../../config/fleet';
 import {
   iniciarManutencao, finalizarManutencao, listarManutencoes, manutencaoAberta,
   registrarCalibracao, ultimasCalibracoes,
 } from '../../services/maintenance';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
+import { fetchUltimasLeituras } from '../../hooks/useInfluxHistory';
 import {
   getBuoyRegistry, saveBuoyRegistry, topicsForRegistry,
-  codigoEmUso, upsertRegistryEntry, mergeRegistryIntoRows, LAGOA_LABEL,
+  codigoEmUso, upsertRegistryEntry, LAGOA_LABEL,
 } from '../../services/buoyRegistry';
+import {
+  buoyStatus, STATUS_LABEL, formatCoords, formatAge, formatInterval,
+  sensorDiagnosis, readingsToCsv,
+} from '../../utils/buoyRuntime';
 import './SensorsPage.css';
 
-// Mapa de ícones por nome de sensor — usado para reidratar dados do localStorage
-const SENSOR_ICONS = {
-  'Turbidez':     Activity,
-  'Sensor de pH': Droplet,
-  'Termômetro':   Thermometer,
-  'Sensor de OD': Activity,
-};
-
-// Remove funções React (icons) antes de serializar para localStorage
-const dehydrate = (buoys) => buoys.map(({ sensors, ...rest }) => ({
-  ...rest,
-  sensors: sensors.map(({ icon, ...s }) => s),
-}));
-
-// Reinsere os ícones após carregar do localStorage
-const rehydrate = (raw) => raw.map(b => ({
-  ...b,
-  sensors: b.sensors.map(s => ({ ...s, icon: SENSOR_ICONS[s.name] ?? Activity })),
-}));
-
-// Dados iniciais construídos a partir da frota centralizada (fleet.js).
-// Só a SM-01 tem hardware instalado (deviceId real) — SM-02 e MG-01 são
-// pontos de expansão planejados. Sem inventar leitura "online" pra sensor
-// que não existe: todas partem de placeholder '--', e status reflete se há
-// hardware ou não (mesmo critério de InteractiveMap.jsx/AdminDashboard.jsx).
-const INITIAL_BUOYS = FLEET.map(b => ({
-  ...b,
-  deviceId: b.deviceId ?? '',
-  status: b.deviceId ? 'online' : 'planejada',
-  lastPing: b.deviceId ? 'Agora' : '--',
-  details: {
-    coordinates: b.coordinates,
-    installedAt: b.installedAt,
-    lastMaintenance: b.lastMaintenance,
-    collectionRate: '1 leitur/min',
-  },
-  sensors: [
-    { name: 'Turbidez',     icon: Activity,    status: b.deviceId ? 'online' : 'offline', value: '-- NTU' },
-    { name: 'Sensor de pH', icon: Droplet,     status: b.deviceId ? 'online' : 'offline', value: '--'     },
-    { name: 'Termômetro',   icon: Thermometer, status: b.deviceId ? 'online' : 'offline', value: '-- °C'  },
-  ],
-}));
-
-const STORAGE_KEY = 'sentinela_buoys_v1';
-
-const getInitialBuoys = () => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return rehydrate(JSON.parse(stored));
-  } catch {}
-  return INITIAL_BUOYS;
-};
-
-// Sensores mock de uma bóia que não está em FLEET.
-const sensoresPadrao = () => [
-  { name: 'Sensor de OD', icon: Activity,    status: 'online', value: '--' },
-  { name: 'Sensor de pH', icon: Droplet,     status: 'online', value: '--' },
-  { name: 'Termômetro',   icon: Thermometer, status: 'online', value: '--' },
+// Sensores que o firmware publica em <deviceId>/sensores. `name` é também a
+// chave das calibrações já gravadas no Supabase — não renomear.
+const SENSORES = [
+  { name: 'Turbidez',     key: 'turbidez',    icon: Activity,    unit: ' NTU', digits: 2 },
+  { name: 'Sensor de pH', key: 'ph',          icon: Droplet,     unit: '',     digits: 2 },
+  { name: 'Termômetro',   key: 'temperatura', icon: Thermometer, unit: ' °C',  digits: 1 },
 ];
 
-// Linha local de uma bóia que está no registro mas não neste navegador
-// (cadastrada em outra sessão, ou localStorage limpo): a de FLEET se o código
-// existir lá, como getInitialBuoys faria; senão status/bateria default do
-// formulário de cadastro, sem histórico local. id/name/deviceId vêm do registro
-// (mergeRegistryIntoRows).
-const linhaDoRegistro = (entry) => INITIAL_BUOYS.find(b => b.id === entry.codigo) ?? {
-  id: entry.codigo,
-  deviceId: entry.deviceId ?? '',
-  name: entry.nome,
-  status: 'online',
-  battery: 100,
-  lastPing: '--',
-  location: LAGOA_LABEL[entry.lagoa] ?? 'Lagoa Mundaú',
-  details: {
-    coordinates: 'N/A',
-    installedAt: '--',
-    lastMaintenance: '--',
-    collectionRate: '1 leitur/min',
-  },
-  sensors: sensoresPadrao(),
-};
+// Diagnóstico do sensor → classe visual já existente no CSS
+const DIAG_CLASS = { ok: 'online', 'sem-valor': 'warning', 'sem-leitura': 'offline' };
+// Status da bóia → classe (sem sinal usa o amarelo de "atenção")
+const STATUS_CLASS = { online: 'online', offline: 'offline', planejada: 'planejada', 'sem-sinal': 'warning' };
+
+const fmtValor = (v, sensor) =>
+  Number.isFinite(v) ? `${v.toFixed(sensor.digits)}${sensor.unit}` : `--${sensor.unit}`;
 
 const SensorsPage = () => {
   const [expandedId, setExpandedId] = useState(null);
@@ -115,7 +54,6 @@ const SensorsPage = () => {
   const [calibracoes, setCalibracoes]     = useState({});     // boiaId -> {sensorKey: registro}
   const [salvando, setSalvando]           = useState(false);
   const [activeHistoryId, setActiveHistoryId] = useState(null);
-  const [testStatuses, setTestStatuses] = useState({});
   const [maintenanceNotes, setMaintenanceNotes] = useState('');
 
   // Access Auth Profile & Contexts
@@ -123,7 +61,7 @@ const SensorsPage = () => {
   const readOnly = useReadOnly();
   const { addToast } = useToast();
 
-  const { messages, connected, addTopics } = useMqtt(getMqttTopics());
+  const { messages, receivedAt, connected, addTopics } = useMqtt(getMqttTopics());
 
   const {
     buoys: registryBuoys, loading: registryLoading, error: registryError, reload: reloadRegistry,
@@ -136,8 +74,43 @@ const SensorsPage = () => {
     if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys));
   }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps -- addTopics é estável (ref interno do hook)
 
-  // Declarado antes dos useEffects que dependem de buoys
-  const [buoys, setBuoys] = useState(getInitialBuoys);
+  // Relógio para "última leitura há X s" e para o diagnóstico dos sensores
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setAgora(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Linhas da tabela derivadas só do que é real: identidade e posição do
+  // registro (map_buoys, compartilhado); status do LWT; valores, saúde e hora
+  // de chegada do MQTT desta sessão. Nada fica no navegador — antes a tabela
+  // vivia no localStorage, com status/bateria digitados à mão e defaults
+  // "online"/100%.
+  const buoys = useMemo(() => registryBuoys.map(r => {
+    const d = r.deviceId || null;
+    const reading = d ? messages[`${d}/sensores`] : undefined;
+    const st = d ? messages[`${d}/status`] : undefined;
+    const health = st && typeof st === 'object' ? st : {};
+    const chegada = d ? receivedAt[`${d}/sensores`] : undefined;
+    const idade = chegada ? agora - chegada.at : null;
+    return {
+      id: r.codigo,
+      name: r.nome,
+      deviceId: d ?? '',
+      location: LAGOA_LABEL[r.lagoa] ?? r.lagoa,
+      coordinates: formatCoords(r.lat, r.lng),
+      status: buoyStatus(d, d ? messages[`${d}/availability`] : undefined),
+      // o firmware atual não mede bateria; aparece quando o /status trouxer
+      battery: Number.isFinite(health.battery) ? health.battery : null,
+      lastReading: idade,
+      interval: chegada?.prevAt ? chegada.at - chegada.prevAt : null,
+      health,
+      sensors: SENSORES.map(sensor => {
+        const diag = d ? sensorDiagnosis(reading, sensor.key, idade) : 'sem-leitura';
+        return { ...sensor, diag, status: DIAG_CLASS[diag], value: fmtValor(reading?.[sensor.key], sensor) };
+      }),
+    };
+  }), [registryBuoys, messages, receivedAt, agora]);
 
   // CRUD States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -147,74 +120,16 @@ const SensorsPage = () => {
   // Confirmation state
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [buoyToDelete, setBuoyToDelete] = useState(null);
+  const [removendo, setRemovendo] = useState(false);
 
   // Validation State
   const [formErrors, setFormErrors] = useState({});
 
-  const initialFormData = {
-    id: '', deviceId: '', name: '', status: 'online', location: 'Lagoa Mundaú', battery: 100, coordinates: '',
-    lagoa: 'mundau', lat: '', lng: ''
-  };
+  const initialFormData = { id: '', deviceId: '', name: '', lagoa: 'mundau', lat: '', lng: '' };
   const [formData, setFormData] = useState(initialFormData);
 
-  // Persiste bóias no localStorage sempre que o estado mudar
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(dehydrate(buoys)));
-    } catch {}
-  }, [buoys]);
-
-  // Identidade (código, nome, deviceId) e existência de cada bóia vêm do registro
-  // compartilhado, não do localStorage deste navegador: a cada leitura bem-sucedida
-  // (montagem e todo reload) as linhas locais são reconciliadas — bóia de outra
-  // sessão aparece, bóia removida lá sai. Com `registryError`, `registryBuoys` é o
-  // fallback do hook, não o registro: não reconcilia (o erro aparece na página).
-  useEffect(() => {
-    if (registryLoading || registryError) return;
-    setBuoys(prev => mergeRegistryIntoRows(prev, registryBuoys, linhaDoRegistro));
-  }, [registryBuoys, registryLoading, registryError]);
-
-  // Atualiza sensores e status de todas as bóias com deviceId vinculado
-  useEffect(() => {
-    const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setBuoys(prev => prev.map(b => {
-      if (!b.deviceId) return b;
-      const sData = messages[`${b.deviceId}/sensores`];
-      const stData = messages[`${b.deviceId}/status`];
-      const availability = messages[`${b.deviceId}/availability`];
-      if (!sData && !stData && availability == null) return b;
-
-      const isOnline = availability === 'online';
-      const isOffline = availability === 'offline';
-
-      return {
-        ...b,
-        ...(isOffline ? { status: 'offline' } : {}),
-        ...(sData ? {
-          status: isOffline ? 'offline' : 'online',
-          lastPing: now,
-          sensors: b.sensors.map(s => {
-            if (s.name === 'Termômetro')
-              return { ...s, value: sData.temperatura != null ? `${sData.temperatura.toFixed(1)} °C` : '-- °C', status: isOffline ? 'offline' : 'online' };
-            if (s.name === 'Sensor de pH')
-              return { ...s, value: sData.ph != null ? `${sData.ph.toFixed(2)}` : '--', status: isOffline ? 'offline' : 'online' };
-            if (s.name === 'Turbidez')
-              return { ...s, value: sData.turbidez != null ? `${sData.turbidez.toFixed(2)} NTU` : '-- NTU', status: isOffline ? 'offline' : 'online' };
-            return s;
-          }),
-        } : {}),
-        ...(isOnline && !sData ? { status: 'online' } : {}),
-        ...(stData ? {
-          details: {
-            ...b.details,
-            rssi:        `${stData.rssi} dBm`,
-            uptime:      `${Math.floor(stData.uptime / 60)} min`,
-            mqttLatency: `${stData.mqtt_latency} ms`,
-          },
-        } : {}),
-      };
-    }));
-  }, [messages]);
+  // Histórico bruto (InfluxDB) por bóia: { [boiaId]: { loading, rows, error } }
+  const [historico, setHistorico] = useState({});
 
   // CRUD Functions
   const handleOpenCreate = () => {
@@ -248,10 +163,6 @@ const SensorsPage = () => {
       id: buoy.id,
       deviceId: regEntry.deviceId ?? '',
       name: regEntry.nome ?? buoy.name,
-      status: buoy.status,
-      location: buoy.location,
-      battery: buoy.battery,
-      coordinates: buoy.details.coordinates,
       lagoa: regEntry.lagoa ?? 'mundau',
       lat: regEntry.lat ?? '',
       lng: regEntry.lng ?? '',
@@ -265,23 +176,28 @@ const SensorsPage = () => {
     setConfirmDeleteOpen(true);
   };
 
-  const confirmDeleteAction = () => {
-    // captura antes de remover da lista, senão o nome já não existe no log
-    const alvo = buoys.find(b => b.id === buoyToDelete);
-    setBuoys(buoys.filter(b => b.id !== buoyToDelete));
-    if(expandedId === buoyToDelete) setExpandedId(null);
-    addToast("Bóia desconectada e deletada permanentemente da nuvem.", "success");
-    logAcao(AUDIT.BOIA_REMOVER, buoyToDelete, { nome: alvo?.name, deviceId: alvo?.deviceId });
-    // Busca uma cópia fresca do registro (não o `registryBuoys` do closure, que pode
-    // estar vazio (fetch inicial ainda não resolveu) ou desatualizado (outra sessão
-    // salvou depois do último fetch desta página) — salvar a partir do closure
-    // sobrescreveria o array inteiro no Supabase com dados stale/incompletos.
-    getBuoyRegistry()
-      .then(fresh => saveBuoyRegistry(fresh.filter(r => r.codigo !== buoyToDelete)))
-      .then(reloadRegistry)
-      .catch(err => addToast(`Bóia removida localmente, mas falhou remover do registro: ${err.message}`, 'error'));
-    setConfirmDeleteOpen(false);
-    setBuoyToDelete(null);
+  // Registro primeiro: a tabela é derivada dele, então a bóia só some da lista
+  // quando a remoção foi gravada. Parte de uma cópia fresca (não do closure,
+  // que pode estar vazio ou stale — saveBuoyRegistry substitui o array inteiro).
+  const confirmDeleteAction = async () => {
+    if (removendo) return;
+    const id = buoyToDelete;
+    const alvo = buoys.find(b => b.id === id);
+    setRemovendo(true);
+    try {
+      const fresh = await getBuoyRegistry();
+      await saveBuoyRegistry(fresh.filter(r => r.codigo !== id));
+      logAcao(AUDIT.BOIA_REMOVER, id, { nome: alvo?.name, deviceId: alvo?.deviceId });
+      if (expandedId === id) setExpandedId(null);
+      addToast(`Bóia ${id} removida do registro.`, 'success');
+    } catch (err) {
+      addToast(`Falha ao remover a bóia: ${err.message}`, 'error');
+    } finally {
+      setRemovendo(false);
+      setConfirmDeleteOpen(false);
+      setBuoyToDelete(null);
+      reloadRegistry();
+    }
   };
 
   // Grava a entrada desta bóia no registro dinâmico (map_buoys) a partir de uma
@@ -310,8 +226,6 @@ const SensorsPage = () => {
     const errors = {};
     if (!codigo) errors.id = true;
     if (!formData.name.trim()) errors.name = true;
-    if (!formData.coordinates.trim()) errors.coordinates = true;
-    if (formData.battery === '' || formData.battery === null) errors.battery = true;
     if (formData.lat === '' || Number.isNaN(Number(formData.lat))) errors.lat = true;
     if (formData.lng === '' || Number.isNaN(Number(formData.lng))) errors.lng = true;
 
@@ -321,9 +235,9 @@ const SensorsPage = () => {
       return;
     }
 
-    // Código único: registro e linhas desta página, exceto a própria bóia em
-    // edição. syncRegistryEntry confere de novo contra o registro fresco.
-    if (codigoEmUso([...registryBuoys.map(r => r.codigo), ...buoys.map(b => b.id)], codigo, codigoAtual)) {
+    // Código único no registro, exceto a própria bóia em edição.
+    // syncRegistryEntry confere de novo contra o registro fresco.
+    if (codigoEmUso(registryBuoys.map(r => r.codigo), codigo, codigoAtual)) {
       setFormErrors({ id: true });
       addToast(`Já existe uma bóia com o código ${codigo}.`, 'error');
       return;
@@ -332,8 +246,9 @@ const SensorsPage = () => {
     const newDeviceId = formData.deviceId.trim();
     const nome = formData.name.trim();
 
-    // Registro primeiro: se falhar (código tomado por outra sessão, bóia removida,
-    // rede/RLS), nada muda localmente e o modal continua aberto.
+    // Se falhar (código tomado por outra sessão, bóia removida, rede/RLS), nada
+    // muda e o modal continua aberto. Os tópicos MQTT da bóia nova/editada são
+    // inscritos pelo effect do registro, após o reload.
     setSalvandoBoia(true);
     try {
       await syncRegistryEntry(codigoAtual, {
@@ -352,55 +267,11 @@ const SensorsPage = () => {
       setSalvandoBoia(false);
     }
 
-    if(editingBuoy) {
-      // Edit
-      if (newDeviceId && newDeviceId !== editingBuoy.deviceId) {
-        addTopics([`${newDeviceId}/sensores`, `${newDeviceId}/status`]);
-      }
-      setBuoys(prev => prev.map(b => {
-        if(b.id === codigoAtual) {
-          return {
-            ...b,
-            id: codigo,
-            deviceId: newDeviceId,
-            name: nome,
-            status: formData.status,
-            location: formData.location,
-            battery: Number(formData.battery),
-            details: { ...b.details, coordinates: formData.coordinates }
-          };
-        }
-        return b;
-      }));
-      addToast("Parâmetros operacionais da bóia alterados.", "success");
-      logAcao(AUDIT.BOIA_EDITAR, codigo, {
-        nome, deviceId: newDeviceId, status: formData.status,
-      });
+    if (editingBuoy) {
+      addToast('Cadastro da bóia atualizado.', 'success');
+      logAcao(AUDIT.BOIA_EDITAR, codigo, { nome, deviceId: newDeviceId });
     } else {
-      // Create
-      if (newDeviceId) {
-        addTopics([`${newDeviceId}/sensores`, `${newDeviceId}/status`]);
-      }
-      const newBuoy = {
-        id: codigo,
-        deviceId: newDeviceId,
-        name: nome,
-        status: formData.status,
-        battery: Number(formData.battery),
-        lastPing: 'Agora',
-        location: formData.location,
-        details: {
-          coordinates: formData.coordinates || 'N/A',
-          installedAt: new Date().toLocaleDateString('pt-BR'),
-          lastMaintenance: 'Recém Instalada',
-          collectionRate: '1 leitur/min'
-        },
-        sensors: sensoresPadrao(),
-      };
-      // filter: uma releitura do registro concluída durante o save pode já ter
-      // criado a linha padrão desta bóia.
-      setBuoys(prev => [...prev.filter(b => b.id !== codigo), newBuoy]);
-      addToast("Bóia de Sensoriamento registrada e conectada na rede.", "success");
+      addToast('Bóia cadastrada.', 'success');
       logAcao(AUDIT.BOIA_CRIAR, codigo, { nome, deviceId: newDeviceId });
     }
 
@@ -421,16 +292,6 @@ const SensorsPage = () => {
       // mount: são 3 queries por bóia e a maioria nunca é expandida.
       carregarDadosBoia(id);
     }
-  };
-
-  const startTest = (buoyId, sensorName) => {
-    const key = `${buoyId}-${sensorName}`;
-    setTestStatuses(prev => ({ ...prev, [key]: 'testing' }));
-    setTimeout(() => setTestStatuses(prev => ({ ...prev, [key]: 'success' })), 2000 + Math.random() * 1000);
-  };
-
-  const testAllSensors = (buoyId, sensors) => {
-    sensors.forEach(s => startTest(buoyId, s.name));
   };
 
   // 3.1 — carrega o que está persistido para a bóia (timeline, manutenção
@@ -476,9 +337,6 @@ const SensorsPage = () => {
       addToast(`Log salvo! A bóia ${buoyId} voltou a operar em modo normal.`, "success");
       setActiveMaintenanceId(null);
       setMaintenanceNotes('');
-      const newStatuses = { ...testStatuses };
-      Object.keys(newStatuses).forEach(k => { if (k.startsWith(buoyId)) delete newStatuses[k]; });
-      setTestStatuses(newStatuses);
       await carregarDadosBoia(buoyId);
     } catch (err) {
       addToast(`Não foi possível fechar a manutenção: ${err.message}`, "error");
@@ -499,24 +357,29 @@ const SensorsPage = () => {
     }
   };
 
-  const generateMockHistory = (buoy) => {
-    const coords = buoy.details.coordinates;
-    const history = [];
-    for(let i=0; i<5; i++) {
-        const time = new Date();
-        time.setMinutes(time.getMinutes() - (i * 15));
-        const sensor = buoy.sensors[i % buoy.sensors.length];
-        let valueStr = sensor.value;
-        if(valueStr === '--' || sensor.status === 'offline') valueStr = 'Falha/Timeout';
-        history.push({
-            date: time.toLocaleDateString('pt-BR'),
-            time: time.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
-            sensorName: sensor.name,
-            value: valueStr,
-            location: coords
-        });
+  // Histórico bruto: últimas leituras gravadas no InfluxDB (30 dias), sem agregação
+  const abrirHistorico = async (buoy) => {
+    setActiveHistoryId(buoy.id);
+    if (!buoy.deviceId) return;
+    setHistorico(prev => ({ ...prev, [buoy.id]: { loading: true, rows: prev[buoy.id]?.rows ?? [], error: null } }));
+    try {
+      const rows = await fetchUltimasLeituras(buoy.deviceId, { limit: 50, start: '-30d' });
+      setHistorico(prev => ({ ...prev, [buoy.id]: { loading: false, rows, error: null } }));
+    } catch (err) {
+      setHistorico(prev => ({ ...prev, [buoy.id]: { loading: false, rows: [], error: err.message } }));
     }
-    return history;
+  };
+
+  const exportarCsv = (buoy) => {
+    const rows = historico[buoy.id]?.rows ?? [];
+    if (!rows.length) return;
+    const blob = new Blob([readingsToCsv(rows)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${buoy.id}_leituras_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const filteredBuoys = buoys.filter(b => 
@@ -633,18 +496,6 @@ const SensorsPage = () => {
                   <input type="text" className={`w-100 ${formErrors.name ? 'input-error' : ''}`} value={formData.name} onChange={e => {setFormData({...formData, name: e.target.value}); setFormErrors({...formErrors, name: false})}} placeholder="Ponto Canal A" />
                 </div>
                 <div className="form-group">
-                  <label>Lagoa / Área de Atuação</label>
-                  <select value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})}>
-                    <option value="Lagoa Mundaú">Lagoa Mundaú</option>
-                    <option value="Lagoa Manguaba">Lagoa Manguaba</option>
-                    <option value="Transição">Canal de Transição</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Coordenadas (GPS)</label>
-                  <input type="text" className={`w-100 ${formErrors.coordinates ? 'input-error' : ''}`} value={formData.coordinates} onChange={e => {setFormData({...formData, coordinates: e.target.value}); setFormErrors({...formErrors, coordinates: false})}} placeholder="9°XX'XX S 35°XX'XX W" />
-                </div>
-                <div className="form-group">
                   <label>Lagoa (mapa)</label>
                   <select value={formData.lagoa} onChange={e => setFormData({...formData, lagoa: e.target.value})}>
                     <option value="mundau">Mundaú</option>
@@ -658,19 +509,6 @@ const SensorsPage = () => {
                 <div className="form-group">
                   <label>Longitude (mapa)</label>
                   <input type="number" step="any" className={`w-100 ${formErrors.lng ? 'input-error' : ''}`} value={formData.lng} onChange={e => {setFormData({...formData, lng: e.target.value}); setFormErrors({...formErrors, lng: false})}} placeholder="Ex: -35.7701" />
-                </div>
-                <div className="form-group">
-                  <label>Status Operacional</label>
-                  <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-                    <option value="online">Online / Operando</option>
-                    <option value="warning">Atenção / Parcial</option>
-                    <option value="offline">Offline / Pane</option>
-                    <option value="planejada">Planejada / Sem Hardware</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Bateria Reportada (%)</label>
-                  <input type="number" min="0" max="100" className={`w-100 ${formErrors.battery ? 'input-error' : ''}`} value={formData.battery} onChange={e => {setFormData({...formData, battery: e.target.value}); setFormErrors({...formErrors, battery: false})}} />
                 </div>
               </div>
               <div className="crud-modal-footer">
@@ -694,10 +532,17 @@ const SensorsPage = () => {
               <th>Localização</th>
               <th>Status Geral</th>
               <th>Bateria</th>
-              <th>Último Ping</th>
+              <th>Última Leitura</th>
             </tr>
           </thead>
           <tbody>
+            {filteredBuoys.length === 0 && (
+              <tr>
+                <td colSpan="6" className="text-muted" style={{ textAlign: 'center', padding: '2rem' }}>
+                  {registryLoading ? 'Carregando bóias...' : searchTerm ? 'Nenhuma bóia encontrada.' : 'Nenhuma bóia cadastrada.'}
+                </td>
+              </tr>
+            )}
             {filteredBuoys.map(buoy => (
               <React.Fragment key={buoy.id}>
                 <tr className={`buoy-row ${expandedId === buoy.id ? 'expanded' : ''}`}>
@@ -705,7 +550,7 @@ const SensorsPage = () => {
                     {expandedId === buoy.id ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                   </td>
                   <td className="sensor-id-cell" onClick={() => toggleRow(buoy.id)}>
-                    <div className={`status-indicator ${buoy.status}`}></div>
+                    <div className={`status-indicator ${STATUS_CLASS[buoy.status]}`}></div>
                     <span className="sc-id">{buoy.id}</span>
                     <span className="sc-name">{buoy.name}</span>
                     {buoy.deviceId && (
@@ -716,21 +561,32 @@ const SensorsPage = () => {
                     <span className="sc-location"><MapPin size={14} /> {buoy.location}</span>
                   </td>
                   <td onClick={() => toggleRow(buoy.id)}>
-                    <span className={`badge badge-${buoy.status}`}>
+                    <span
+                      className={`badge badge-${STATUS_CLASS[buoy.status]}`}
+                      title={buoy.status === 'sem-sinal' ? 'O broker nunca recebeu o status (LWT) deste Device ID' : undefined}
+                    >
                       {buoy.status === 'online' ? <Wifi size={14} /> : <WifiOff size={14} />}
-                      {buoy.status.toUpperCase()}
+                      {STATUS_LABEL[buoy.status]}
                     </span>
                   </td>
                   <td onClick={() => toggleRow(buoy.id)}>
-                    <div className="battery-bar-container">
-                      <div 
-                        className={`battery-bar ${buoy.battery > 20 ? 'bg-success' : 'bg-danger'}`}
-                        style={{ width: `${buoy.battery}%` }}
-                      ></div>
-                    </div>
-                    <span className="battery-text">{buoy.battery}%</span>
+                    {buoy.battery == null ? (
+                      <span className="battery-text text-muted" title="O firmware atual não reporta bateria">--</span>
+                    ) : (
+                      <>
+                        <div className="battery-bar-container">
+                          <div
+                            className={`battery-bar ${buoy.battery > 20 ? 'bg-success' : 'bg-danger'}`}
+                            style={{ width: `${buoy.battery}%` }}
+                          ></div>
+                        </div>
+                        <span className="battery-text">{buoy.battery}%</span>
+                      </>
+                    )}
                   </td>
-                  <td className="sc-ping" onClick={() => toggleRow(buoy.id)}>{buoy.lastPing}</td>
+                  <td className="sc-ping" onClick={() => toggleRow(buoy.id)}>
+                    {buoy.lastReading == null ? '--' : formatAge(buoy.lastReading)}
+                  </td>
                 </tr>
 
                 {expandedId === buoy.id && (
@@ -748,16 +604,14 @@ const SensorsPage = () => {
                             </div>
                           )}
                           <div className="info-block">
-                            <span className="info-label">Coordenadas GPS</span>
-                            <span className="info-value">{buoy.details.coordinates}</span>
+                            <span className="info-label">Coordenadas (lat, lng)</span>
+                            <span className="info-value">{buoy.coordinates}</span>
                           </div>
                           <div className="info-block">
-                            <span className="info-label">Taxa de Coleta</span>
-                            <span className="info-value">{buoy.details.collectionRate}</span>
-                          </div>
-                          <div className="info-block">
-                            <span className="info-label">Data de Instalação</span>
-                            <span className="info-value">{buoy.details.installedAt}</span>
+                            <span className="info-label">Intervalo entre Leituras</span>
+                            <span className="info-value" title="Medido entre as duas últimas leituras recebidas nesta sessão">
+                              {formatInterval(buoy.interval)}
+                            </span>
                           </div>
                           <div className="info-block">
                             <span className="info-label">Manutenções</span>
@@ -779,22 +633,38 @@ const SensorsPage = () => {
                               </ul>
                             )}
                           </div>
-                          {buoy.details.rssi && (
+                          {Number.isFinite(buoy.health.rssi) && (
                             <div className="info-block">
                               <span className="info-label">Sinal WiFi (RSSI)</span>
-                              <span className="info-value">{buoy.details.rssi}</span>
+                              <span className="info-value">{buoy.health.rssi} dBm</span>
                             </div>
                           )}
-                          {buoy.details.uptime && (
+                          {Number.isFinite(buoy.health.uptime) && (
                             <div className="info-block">
                               <span className="info-label">Uptime do Dispositivo</span>
-                              <span className="info-value">{buoy.details.uptime}</span>
+                              <span className="info-value">{Math.floor(buoy.health.uptime / 60)} min</span>
                             </div>
                           )}
-                          {buoy.details.mqttLatency && (
+                          {Number.isFinite(buoy.health.mqtt_latency) && (
                             <div className="info-block">
                               <span className="info-label">Latência MQTT</span>
-                              <span className="info-value">{buoy.details.mqttLatency}</span>
+                              <span className="info-value">{buoy.health.mqtt_latency} ms</span>
+                            </div>
+                          )}
+                          {buoy.health.firmware && (
+                            <div className="info-block">
+                              <span className="info-label">Firmware</span>
+                              <span className="info-value" style={{ fontFamily: 'monospace' }}>
+                                {buoy.health.firmware}{buoy.health.board ? ` · ${buoy.health.board}` : ''}
+                              </span>
+                            </div>
+                          )}
+                          {typeof buoy.health.calibrated === 'boolean' && (
+                            <div className="info-block">
+                              <span className="info-label">Calibração no Firmware</span>
+                              <span className={`info-value ${buoy.health.calibrated ? '' : 'text-warning'}`}>
+                                {buoy.health.calibrated ? 'Calibrado' : 'Não calibrado'}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -810,34 +680,29 @@ const SensorsPage = () => {
                             <div className="maintenance-body">
                               <div className="maintenance-test-section glass">
                                 <div className="test-header d-flex-between">
-                                  <span>Testes de Hardware</span>
-                                  <button className="btn-primary btn-sm" onClick={() => testAllSensors(buoy.id, buoy.sensors)}>
-                                    Testar Todos
-                                  </button>
+                                  <span>Diagnóstico ao Vivo</span>
+                                  <span className="text-muted" style={{ fontSize: '0.8rem' }}>
+                                    {buoy.lastReading == null ? 'nenhuma leitura nesta sessão' : `última leitura ${formatAge(buoy.lastReading)}`}
+                                  </span>
                                 </div>
                                 <div className="test-list">
-                                  {buoy.sensors.map((sensor, idx) => {
-                                    const testStatus = testStatuses[`${buoy.id}-${sensor.name}`];
-                                    return (
-                                      <div key={idx} className="test-item">
-                                        <div className="test-item-info">
-                                          <sensor.icon size={16} className="text-muted" />
-                                          <span>Ping: {sensor.name}</span>
-                                        </div>
-                                        <div className="test-item-action">
-                                          {testStatus === 'testing' ? (
-                                            <span className="status-testing"><RotateCw size={14} className="spin" /> Verificando...</span>
-                                          ) : testStatus === 'success' ? (
-                                            <span className="status-success"><CheckCircle2 size={14} /> OK</span>
-                                          ) : (
-                                            <button className="btn-table action-btn btn-sm" onClick={() => startTest(buoy.id, sensor.name)}>
-                                              Executar Teste
-                                            </button>
-                                          )}
-                                        </div>
+                                  {buoy.sensors.map(sensor => (
+                                    <div key={sensor.key} className="test-item">
+                                      <div className="test-item-info">
+                                        <sensor.icon size={16} className="text-muted" />
+                                        <span>{sensor.name}</span>
                                       </div>
-                                    );
-                                  })}
+                                      <div className="test-item-action">
+                                        {sensor.diag === 'ok' ? (
+                                          <span className="status-success"><CheckCircle2 size={14} /> OK · {sensor.value}</span>
+                                        ) : sensor.diag === 'sem-valor' ? (
+                                          <span className="status-warn"><AlertTriangle size={14} /> Leitura sem valor</span>
+                                        ) : (
+                                          <span className="status-fail"><XCircle size={14} /> Sem leitura recente</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                               <div className="maintenance-report-section glass">
@@ -863,36 +728,55 @@ const SensorsPage = () => {
                         ) : activeHistoryId === buoy.id ? (
                           <div className="history-panel animate-fade-in">
                             <div className="history-header">
-                              <h4><History size={18} className="text-primary" /> Histórico Bruto de Coletas: {buoy.id}</h4>
+                              <h4><History size={18} className="text-primary" /> Histórico de Leituras: {buoy.id}</h4>
                               <button className="btn-table action-btn btn-sm" onClick={() => setActiveHistoryId(null)}>
                                 Fechar Tabela de Histórico
                               </button>
                             </div>
                             <div className="history-body">
-                              <table className="history-data-table">
-                                <thead>
-                                  <tr>
-                                    <th>Data</th>
-                                    <th>Hora</th>
-                                    <th>Sensor</th>
-                                    <th>Dado Aficionado</th>
-                                    <th>Localização (GPS)</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {generateMockHistory(buoy).map((record, index) => (
-                                    <tr key={index}>
-                                      <td className="date-col">{record.date}</td>
-                                      <td className="time-col">{record.time}</td>
-                                      <td className="sensor-col">{record.sensorName}</td>
-                                      <td className={`val-col ${record.value === 'Falha/Timeout' ? 'text-danger' : 'text-success'}`}>{record.value}</td>
-                                      <td className="gps-col">{record.location}</td>
+                              {!buoy.deviceId ? (
+                                <p className="text-muted">Bóia sem Device ID: não há leituras gravadas.</p>
+                              ) : historico[buoy.id]?.loading ? (
+                                <p className="status-testing"><RotateCw size={14} className="spin" /> Buscando leituras no banco...</p>
+                              ) : historico[buoy.id]?.error ? (
+                                <p className="text-danger">Não foi possível ler o histórico: {historico[buoy.id].error}</p>
+                              ) : !(historico[buoy.id]?.rows?.length) ? (
+                                <p className="text-muted">Nenhuma leitura gravada nos últimos 30 dias.</p>
+                              ) : (
+                                <table className="history-data-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Data</th>
+                                      <th>Hora</th>
+                                      <th>Temperatura</th>
+                                      <th>pH</th>
+                                      <th>Turbidez</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                                  </thead>
+                                  <tbody>
+                                    {historico[buoy.id].rows.map((r, i) => (
+                                      <tr key={`${r.time.getTime()}-${i}`}>
+                                        <td className="date-col">{r.time.toLocaleDateString('pt-BR')}</td>
+                                        <td className="time-col">{r.time.toLocaleTimeString('pt-BR')}</td>
+                                        <td className="val-col">{fmtValor(r.temperatura, SENSORES[2])}</td>
+                                        <td className="val-col">{fmtValor(r.ph, SENSORES[1])}</td>
+                                        <td className="val-col">{fmtValor(r.turbidez, SENSORES[0])}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
                               <div className="history-footer-actions mt-3 text-right">
-                                <button className="btn-table action-btn">Exportar CSV</button>
+                                <span className="text-muted" style={{ fontSize: '0.8rem', marginRight: '1rem' }}>
+                                  Últimas 50 leituras gravadas no InfluxDB (até 30 dias)
+                                </span>
+                                <button
+                                  className="btn-table action-btn"
+                                  onClick={() => exportarCsv(buoy)}
+                                  disabled={!(historico[buoy.id]?.rows?.length)}
+                                >
+                                  <Download size={16} /> Exportar CSV
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -901,8 +785,8 @@ const SensorsPage = () => {
                             <div className="attached-sensors-section mt-2">
                               <h4 className="attached-sensors-title">Sensores Acoplados</h4>
                               <div className="attached-sensors-grid">
-                                {buoy.sensors.map((sensor, idx) => (
-                                  <div key={idx} className="sub-sensor-card glass">
+                                {buoy.sensors.map(sensor => (
+                                  <div key={sensor.key} className="sub-sensor-card glass">
                                     <div className="sub-sensor-header">
                                       <div className={`sub-sensor-icon ${sensor.status}`}><sensor.icon size={18} /></div>
                                       <span className={`status-indicator mini ${sensor.status}`}></span>
@@ -940,7 +824,7 @@ const SensorsPage = () => {
                                   </button>
                                 </>
                               )}
-                              <button className="btn-table action-btn" onClick={() => setActiveHistoryId(buoy.id)}>
+                              <button className="btn-table action-btn" onClick={() => abrirHistorico(buoy)}>
                                 <History size={16} /> Histórico de Coletas
                               </button>
                               
@@ -979,8 +863,8 @@ const SensorsPage = () => {
       <ConfirmModal 
         isOpen={confirmDeleteOpen}
         title="Remover Bóia"
-        text={`Você irá remover todo o registro da bóia da base de dados. Esta ação é irreversível. Deseja prosseguir com a remoção?`}
-        confirmText="Sim, Apagar a Bóia"
+        text={`A bóia sai do registro (mapa, painel e assinaturas MQTT). As leituras já gravadas e o histórico de manutenção continuam no banco. Deseja prosseguir?`}
+        confirmText={removendo ? 'Removendo...' : 'Sim, Apagar a Bóia'}
         onConfirm={confirmDeleteAction}
         onCancel={() => setConfirmDeleteOpen(false)}
       />
