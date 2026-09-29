@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { SlidersHorizontal, FlaskConical, Radio, Target, Radar } from 'lucide-react';
 import { useMockMode } from '../../config/mockData';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { useReadOnly } from '../../hooks/useReadOnly';
 import { getSetting, saveSetting, FUNDING_GOAL_KEY, MAP_COLLECTION_RADIUS_KEY } from '../../services/settings';
 import {
@@ -12,8 +13,26 @@ import './SettingsPage.css';
 
 const SettingsPage = () => {
   const [mockEnabled, setMockEnabled] = useMockMode();
+  const [salvandoMock, setSalvandoMock] = useState(false);
   const { addToast } = useToast();
   const readOnly = useReadOnly();
+  const { currentUser } = useAuth();
+  // app_settings: escrita só de admin (RLS) — operador vê, mas não altera
+  const podeEditarMock = currentUser?.role === 'admin';
+
+  const handleToggleMock = async (on) => {
+    setSalvandoMock(true);
+    try {
+      await setMockEnabled(on);
+      addToast(on
+        ? 'Dados simulados ligados para todos os visitantes.'
+        : 'Dados simulados desligados: o site mostra só as leituras reais.', 'success');
+    } catch (err) {
+      addToast(`Falha ao salvar: ${err.message}`, 'error');
+    } finally {
+      setSalvandoMock(false);
+    }
+  };
 
   // 5.4 — meta de financiamento, editável aqui e exibida na página de apoio
   const [meta, setMeta] = useState('');
@@ -116,16 +135,21 @@ const SettingsPage = () => {
               : 'A dashboard usa os dados reais da bóia via MQTT.'}
           </p>
           <p className="settings-hint">
-            Quando a bóia entrar em operação, <strong>desligue</strong> esta opção para remover os
-            dados simulados e passar a exibir as leituras reais. O histórico simulado é limpo ao desligar.
+            Vale para <strong>todos os visitantes</strong> do site, não só para este navegador.
+            Deixe desligado com a bóia em operação; ligue só para demonstrações. O histórico
+            simulado é limpo ao desligar.
           </p>
         </div>
 
-        <label className="settings-switch" title="Ligar/desligar dados simulados">
+        <label
+          className="settings-switch"
+          title={podeEditarMock ? 'Ligar/desligar dados simulados' : 'Só administradores alteram esta opção'}
+        >
           <input
             type="checkbox"
             checked={mockEnabled}
-            onChange={(e) => setMockEnabled(e.target.checked)}
+            disabled={!podeEditarMock || salvandoMock}
+            onChange={(e) => handleToggleMock(e.target.checked)}
           />
           <span className="settings-slider" />
           <span className="settings-switch-label">{mockEnabled ? 'Ligado' : 'Desligado'}</span>
