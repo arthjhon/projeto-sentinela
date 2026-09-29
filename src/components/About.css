@@ -4,7 +4,7 @@
 }
 
 /* .section-header/.section-title/.section-subtitle vivem em shared.css
-   (usados por WaterQuality, MarineLife e DashboardPreview). */
+   (usados por WaterQuality e MarineLife). */
 
 .about-grid {
   display: grid;
