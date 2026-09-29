@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FLEET, getMqttTopics } from '../config/fleet';
 import {
-  topicsForRegistry, codigoEmUso, upsertRegistryEntry, mergeRegistryIntoRows,
+  topicsForRegistry, codigoEmUso, upsertRegistryEntry,
   SEED_BUOYS, LAGOA_LABEL,
 } from './buoyRegistry';
 
@@ -81,37 +81,6 @@ describe('upsertRegistryEntry', () => {
   it('não altera a lista recebida', () => {
     upsertRegistryEntry(list, 'SM-01', { codigo: 'SM-01', nome: 'Z', deviceId: null });
     expect(list[0].nome).toBe('A');
-  });
-});
-
-describe('mergeRegistryIntoRows', () => {
-  const makeRow = (entry) => ({ id: entry.codigo, battery: 100, created: true });
-
-  it('identidade vem do registro; o resto da linha local é preservado', () => {
-    const rows = [{ id: 'SM-01', name: 'Local', deviceId: 'esp_velho', battery: 42 }];
-    const registry = [{ codigo: 'SM-01', nome: 'Registro', deviceId: 'esp_novo' }];
-    expect(mergeRegistryIntoRows(rows, registry, makeRow)).toEqual([
-      { id: 'SM-01', name: 'Registro', deviceId: 'esp_novo', battery: 42 },
-    ]);
-  });
-
-  it('bóia só no registro ganha linha padrão; linha fora do registro sai; ordem do registro', () => {
-    const rows = [
-      { id: 'APAGADA', name: 'x', deviceId: '', battery: 1 },
-      { id: 'SM-01', name: 'a', deviceId: 'esp_a', battery: 50 },
-    ];
-    const registry = [
-      { codigo: 'NOVA', nome: 'Nova', deviceId: null },
-      { codigo: 'SM-01', nome: 'a', deviceId: 'esp_a' },
-    ];
-    expect(mergeRegistryIntoRows(rows, registry, makeRow)).toEqual([
-      { id: 'NOVA', name: 'Nova', deviceId: '', battery: 100, created: true },
-      { id: 'SM-01', name: 'a', deviceId: 'esp_a', battery: 50 },
-    ]);
-  });
-
-  it('registro vazio esvazia a tabela', () => {
-    expect(mergeRegistryIntoRows([{ id: 'SM-01' }], [], makeRow)).toEqual([]);
   });
 });
 

@@ -424,6 +424,17 @@
   font-size: 0.9rem;
 }
 
+.status-warn,
+.status-fail {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.status-warn { color: var(--warning); }
+.status-fail { color: var(--danger); }
+
 .report-input {
   flex: 1;
   display: flex;
