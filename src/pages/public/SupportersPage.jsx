@@ -1,10 +1,24 @@
 import React from 'react';
 import { ArrowRight, FlaskConical, Cpu, Wifi, Leaf, Laptop, DollarSign, Building2, GraduationCap } from 'lucide-react';
+import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
+import { useDiasMonitorados } from '../../hooks/useDiasMonitorados';
+import { useLeiturasDia } from '../../hooks/useLeiturasDia';
 import './SupportersPage.css';
 
 const SHOW_KODELAB = true;
 
+const fmt = (n) => (n == null ? '—' : n.toLocaleString('pt-BR'));
+
 const SupportersPage = () => {
+  // Números do bloco de impacto vêm dos dados, não de texto fixo: bóias do
+  // registro (com deviceId = instalada), leituras gravadas nas últimas 24h e dias
+  // desde a primeira leitura (mesmo contador da página Apoie).
+  const { buoys, loading: carregandoBoias } = useBuoyRegistry();
+  const ativas = buoys.filter(b => b.deviceId).length;
+  const planejadas = buoys.length - ativas;
+  const { leituras } = useLeiturasDia();
+  const { dias } = useDiasMonitorados();
+
   return (
     <div className="supporters-page">
       <div className="text-center mb-5">
@@ -58,20 +72,23 @@ const SupportersPage = () => {
         <h3 className="sp-section-title">Impacto dos Apoiadores</h3>
         <div className="impact-grid">
           <div className="impact-card glass">
+            <span className="impact-number">{carregandoBoias ? '—' : ativas}</span>
+            <span className="impact-label">
+              {ativas === 1 ? 'Bóia Instalada' : 'Bóias Instaladas'}
+              {planejadas > 0 && <><br />+ {planejadas} em Expansão</>}
+            </span>
+          </div>
+          <div className="impact-card glass">
+            <span className="impact-number">{fmt(leituras)}</span>
+            <span className="impact-label">Leituras nas Últimas 24h</span>
+          </div>
+          <div className="impact-card glass">
+            <span className="impact-number">{fmt(dias)}</span>
+            <span className="impact-label">Dias de Monitoramento</span>
+          </div>
+          <div className="impact-card glass">
             <span className="impact-number">1</span>
-            <span className="impact-label">Protótipo Ativo<br />+ 2 em Expansão</span>
-          </div>
-          <div className="impact-card glass">
-            <span className="impact-number">+500</span>
-            <span className="impact-label">Leituras por Dia</span>
-          </div>
-          <div className="impact-card glass">
-            <span className="impact-number">6+</span>
-            <span className="impact-label">Meses de Monitoramento</span>
-          </div>
-          <div className="impact-card glass">
-            <span className="impact-number">1</span>
-            <span className="impact-label">Ecossistema Protegido</span>
+            <span className="impact-label">Complexo Estuarino Monitorado</span>
           </div>
         </div>
       </section>
@@ -88,12 +105,12 @@ const SupportersPage = () => {
           <div className="area-card glass">
             <Cpu size={32} color="var(--warning)" />
             <h4>Hardware & Sensoriamento</h4>
-            <p>Projeto e montagem das bóias com ESP32, sensores de turbidez, temperatura e pH calibrados para o ambiente estuarino alagoano.</p>
+            <p>Projeto e montagem das bóias com ESP32-S3 (Heltec WiFi LoRa 32 V3) e sensores de turbidez, temperatura e pH, em calibração para as águas salobras do estuário alagoano.</p>
           </div>
           <div className="area-card glass">
             <Wifi size={32} color="var(--success)" />
             <h4>Conectividade & Cloud</h4>
-            <p>Transmissão 4G/GSM dos dados coletados em campo e armazenamento seguro em bancos de dados na nuvem em tempo real.</p>
+            <p>Transmissão das leituras via Wi-Fi e MQTT criptografado (TLS), com armazenamento em banco de séries temporais e painel público em tempo real.</p>
           </div>
           <div className="area-card glass">
             <Leaf size={32} color="#4ade80" />
