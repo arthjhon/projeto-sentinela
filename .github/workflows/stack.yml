@@ -66,6 +66,8 @@ jobs:
 
       # Imagem python pinada, rodando em container; sem segredo nem rede externa.
       - name: Worker tests (pytest)
+        env:
+          RUN_SLOW: "1"   # acceptance and memory tests (marker slow) always run in CI
         run: bash worker/scripts/test.sh
 
   # Publica a imagem do worker (tag = sha do commit) só na main; o deploy passa

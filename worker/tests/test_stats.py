@@ -304,3 +304,17 @@ def test_historico_is_sliced_by_since_and_drives_sufficiency():
     assert stats.layer2_flags(recent, "ph", CFG, since=None, historico=hist).dados_suficientes
     late = (T0 + timedelta(days=4)).to_pydatetime()
     assert not stats.layer2_flags(recent, "ph", CFG, since=late, historico=hist).dados_suficientes
+
+
+def test_incrustacao_flag_time_is_stable_across_runs():
+    start = T0 + timedelta(days=1)
+    s = inject_drift(series("turbidez", 10, 3), start, 5.0)
+    times = set()
+    for end_day in (7, 8, 9.5):
+        upto = s[s.index < T0 + timedelta(days=end_day)]
+        inc = of(stats.layer2_flags(upto, "turbidez", CFG, since=start.to_pydatetime()), "incrustacao")
+        assert len(inc) == 1
+        times.add(inc[0].time)
+    assert len(times) == 1
+    t = pd.Timestamp(times.pop())
+    assert start + timedelta(days=stats.INCRUSTACAO_MIN_DAYS) <= t < T0 + timedelta(days=7)

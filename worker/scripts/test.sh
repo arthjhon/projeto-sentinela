@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs pytest inside the pinned production Python image (never the host Python).
-# Extra args go to pytest. Optional env: TEST_PG_DSN (passed through, never printed),
+# Extra args go to pytest. Optional env: RUN_SLOW=1 (also run tests marked slow), TEST_PG_DSN (passed through, never printed),
 # DOCKER_NETWORK (attach the test container to this network).
 # Optional SUPABASE_ENV_FILE: when set, ONLY POSTGRES_PASSWORD is parsed from it (never sourced,
 # never printed) to build TEST_PG_DSN against supabase-db on the supabase_default network.
@@ -37,4 +37,8 @@ args=(--rm -v "$HERE":/app -w /app -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/a
 [[ -n "${DOCKER_NETWORK:-}" ]] && args+=(--network "$DOCKER_NETWORK")
 [[ -n "${TEST_PG_DSN:-}" ]] && args+=(-e TEST_PG_DSN)   # name only: value is not printed
 
-exec docker run "${args[@]}" "$IMAGE" python -m pytest -q -p no:cacheprovider "$@"
+# Slow acceptance/memory tests (marker "slow") run only with RUN_SLOW=1 (CI sets it).
+select=()
+[[ "${RUN_SLOW:-0}" == "1" ]] || select=(-m "not slow")
+
+exec docker run "${args[@]}" "$IMAGE" python -m pytest -q -p no:cacheprovider "${select[@]}" "$@"

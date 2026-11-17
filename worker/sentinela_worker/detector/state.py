@@ -32,6 +32,8 @@ class HealthStore(Protocol):
 
     def apply(self, changes: list[StateChange], prune: list[tuple[str, str]]) -> None: ...
 
+    def last_success(self) -> datetime | None: ...
+
 
 def _motivo(flags: "list[Flag]") -> str:
     first = flags[0]

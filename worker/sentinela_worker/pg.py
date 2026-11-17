@@ -116,6 +116,13 @@ class PgHealthStore:
             ).fetchall()
         return {(d, s): SensorState(e, m or "", t) for d, s, e, m, t in rows}
 
+    def last_success(self, job: str = "detector") -> datetime | None:
+        """worker_jobs.ultimo_sucesso of the detector job (written by PgJobStatus)."""
+        with self._conn.transaction():
+            row = self._conn.execute("SELECT ultimo_sucesso FROM public.worker_jobs WHERE job = %s",
+                                     (job,)).fetchone()
+        return row[0] if row else None
+
     def apply(self, changes: list[StateChange], prune: list[tuple[str, str]]) -> None:
         """Persist changes and prune rows in ONE transaction (all or nothing).
 

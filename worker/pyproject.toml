@@ -26,3 +26,4 @@ include = ["sentinela_worker*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: long acceptance/memory tests (scripts/test.sh runs them only with RUN_SLOW=1)"]

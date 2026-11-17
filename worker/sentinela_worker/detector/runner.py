@@ -6,8 +6,9 @@ Order of side effects (all-or-nothing on the Postgres side):
 
 Flag point identity is stable (measurement + tags + flag time), so rewriting the same flag in a
 later run overwrites the same Influx point instead of adding a new one. Each run rewrites the
-per-sample flags of the last WRITE_LOOKBACK and every episode flag (one per episode) found since
-the analysis start; a failed Influx write is therefore repaired by the next run.
+per-sample flags since the last successful detector run (at least WRITE_LOOKBACK, at most
+`janela`) and every episode flag (one per episode) found since the analysis start; a failed
+Influx write or an outage is therefore repaired by the next successful run.
 """
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -30,7 +31,9 @@ QUALIDADE_BUCKET = "qualidade"
 QUALIDADE_MEASUREMENT = "qualidade_dado"
 
 RECENT = timedelta(minutes=10)            # a per-sample flag drives the state for 2 runs
-WRITE_LOOKBACK = timedelta(minutes=30)    # per-sample flags rewritten (same identity) for 6 runs
+WRITE_LOOKBACK = timedelta(minutes=30)    # minimum rewrite window of per-sample flags (6 runs)
+MAX_UNREGISTERED = 20                     # R26: unregistered devices given a state per run
+WRITE_CHUNK = 5000                        # flag points per Influx write call
 PICO_WINDOW = timedelta(minutes=60)       # R23: pico_min_count picos within this window
 PRUNE_SILENCE = timedelta(hours=24)       # unregistered device silent longer than this is pruned
 EPISODE_RULES = ("travado", "campo_ausente", "sem_dados", "deriva", "incrustacao")
@@ -117,18 +120,33 @@ def _context(buoy, maintenance, now: datetime, cfg: DetectorConfig) -> _Context:
     return _Context(em_manutencao, reset)
 
 
-def _registry(registry) -> dict:
+def _registry(registry, warn: bool = False) -> dict:
     out = {}
     for b in registry:
-        if b.device_id and b.device_id not in out:   # first entry wins on a duplicated deviceId
-            out[b.device_id] = b
+        if not b.device_id:
+            continue
+        if b.device_id in out:                       # first entry wins on a duplicated deviceId
+            if warn:
+                log("WARN", "detector", "duplicate deviceId in registry; entry ignored",
+                    device_id=b.device_id, kept=out[b.device_id].codigo, ignored=b.codigo)
+            continue
+        out[b.device_id] = b
     return out
+
+
+def write_lookback(now: datetime, last_success: datetime | None, cfg: DetectorConfig) -> timedelta:
+    """Per-sample flags are (re)written since the last successful detector run, so an Influx or
+    Postgres outage longer than WRITE_LOOKBACK loses nothing; bounded to [WRITE_LOOKBACK, janela].
+    No record of a previous success (first run) means nothing to recover: WRITE_LOOKBACK."""
+    if last_success is None:
+        return WRITE_LOOKBACK
+    return min(max(WRITE_LOOKBACK, now - last_success), cfg.janela)
 
 
 # ---- analysis ----------------------------------------------------------------------------
 
 def _analyse(sensor: str, df: pd.DataFrame, hist: pd.DataFrame | None, ctx: _Context,
-             campo: bool, now: datetime, cfg: DetectorConfig
+             campo: bool, now: datetime, cfg: DetectorConfig, lookback: timedelta = WRITE_LOOKBACK
              ) -> tuple[list[Flag], list[Flag], bool]:
     """Returns (flags to write, flags active now, dados_suficientes) for one sensor."""
     rules = cfg.sensores[sensor]
@@ -139,9 +157,9 @@ def _analyse(sensor: str, df: pd.DataFrame, hist: pd.DataFrame | None, ctx: _Con
     active: list[Flag] = []
 
     # per-sample rules: only the recent tail matters for state and for writes
-    tail = s[s.index > pd.Timestamp(now - WRITE_LOOKBACK - 2 * NOMINAL_STEP)]
+    tail = s[s.index > pd.Timestamp(now - lookback - 2 * NOMINAL_STEP)]
     sample = check_faixa(tail, rules) + check_plausibilidade(tail, rules) + check_salto(tail, rules)
-    sample = [f for f in sample if f.time > now - WRITE_LOOKBACK]
+    sample = [f for f in sample if f.time > now - lookback]
     write += sample
     active += [f for f in sample if f.time > now - RECENT]
 
@@ -172,13 +190,15 @@ def _analyse(sensor: str, df: pd.DataFrame, hist: pd.DataFrame | None, ctx: _Con
                             f"nenhuma amostra desde {start:%Y-%m-%d %H:%M} UTC")
             active.append(flag)
 
-    # layer 2: Hampel on the raw recent tail, STL/CUSUM/Theil-Sen on the floating baseline
+    # layer 2: Hampel on the raw recent tail (covering the write lookback), STL/CUSUM/Theil-Sen
+    # on the floating baseline
     margin = NOMINAL_STEP * cfg.stats.hampel_window
-    recent = s[s.index > pd.Timestamp(now - PICO_WINDOW - margin)]
+    recent = s[s.index > pd.Timestamp(now - max(PICO_WINDOW, lookback) - margin)]
     level = _level(hist[sensor] if hist is not None else None, s)
     res = layer2_flags(recent, sensor, cfg, since=ctx.reset, historico=level)
-    picos = [f for f in res.flags if f.regra == "pico" and f.time > now - PICO_WINDOW]
-    write += [f for f in picos if f.time > now - WRITE_LOOKBACK]    # R23: raw picos always marked
+    all_picos = [f for f in res.flags if f.regra == "pico"]
+    write += [f for f in all_picos if f.time > now - lookback]      # R23: raw picos always marked
+    picos = [f for f in all_picos if f.time > now - PICO_WINDOW]
     # a Hampel window overlapping a stuck run has a degenerate MAD (half of it is flat), so the
     # picos it yields at the run's edges are artifacts: they never count towards the state
     spans = _stuck_spans(s, travado, rules.travado_eps, margin)
@@ -189,7 +209,8 @@ def _analyse(sensor: str, df: pd.DataFrame, hist: pd.DataFrame | None, ctx: _Con
                            f"(limite {cfg.pico_min_count})"))
     persistent = [f for f in res.flags if f.regra != "pico"]   # deriva/incrustacao since the reset
     write += persistent
-    active += persistent
+    # R26: the deriva mark stays written, but only drives the state while the level is shifted
+    active += [f for f in persistent if f.regra != "deriva" or res.deriva_ativa]
     return write, active, res.dados_suficientes
 
 
@@ -246,17 +267,23 @@ def run_detector(now: datetime, readings: pd.DataFrame, registry: list, maintena
                  historico: pd.DataFrame | None = None) -> RunResult:
     raw = _by_device(readings, now)
     hist = _by_device(historico, now) if historico is not None else {}
-    buoys = _registry(registry)
+    buoys = _registry(registry, warn=True)
     previous = store.load_states()
+    lookback = write_lookback(now, store.last_success(), cfg)
 
     last_pub = {d: g.index[-1] for d, g in raw.items() if len(g)}
-    recent_unregistered = {d for d, t in last_pub.items()
-                           if d not in buoys and now - t.to_pydatetime() <= PRUNE_SILENCE}
-    devices = sorted(set(buoys) | recent_unregistered)
+    recent_unregistered = sorted(
+        (d for d, t in last_pub.items() if d not in buoys and now - t.to_pydatetime() <= PRUNE_SILENCE),
+        key=lambda d: (last_pub[d], d), reverse=True)            # most recently seen first
+    kept = set(buoys) | set(recent_unregistered)                 # never pruned this run
+    devices = sorted(set(buoys) | set(recent_unregistered[:MAX_UNREGISTERED]))
+    if len(recent_unregistered) > MAX_UNREGISTERED:
+        log("WARN", "detector", "unregistered devices skipped",
+            skipped=len(recent_unregistered) - MAX_UNREGISTERED, limit=MAX_UNREGISTERED)
     empty = pd.DataFrame(columns=list(SENSORS), index=pd.DatetimeIndex([], tz="UTC"), dtype=float)
 
     changes: list[StateChange] = []
-    points: list[Point] = []
+    marks: list[tuple[str, str, str, Flag]] = []
     transitions = 0
     for dev in devices:
         buoy = buoys.get(dev)
@@ -265,12 +292,12 @@ def run_detector(now: datetime, readings: pd.DataFrame, registry: list, maintena
         df = raw.get(dev, empty)
         for sensor in SENSORS:
             prev = previous.get((dev, sensor))
-            if ctx.em_manutencao:
+            if ctx.em_manutencao or buoy is None:   # R26: unregistered devices get state only
                 write, active, suficientes = [], [], True
             else:
                 write, active, suficientes = _analyse(
                     sensor, df, hist.get(dev, empty) if historico is not None else None,
-                    ctx, modo == "campo", now, cfg)
+                    ctx, modo == "campo", now, cfg, lookback)
             new = derive_state(active, modo, ctx.em_manutencao, buoy is not None, suficientes,
                                now, prev)
             open_event, close_event = _events(prev, new)
@@ -278,9 +305,9 @@ def run_detector(now: datetime, readings: pd.DataFrame, registry: list, maintena
                                        buoy.modo if buoy else "bancada", new,
                                        open_event, close_event))
             transitions += prev is None or prev.estado != new.estado
-            points += [_point(dev, sensor, modo, f) for f in write]
+            marks += [(dev, sensor, modo, f) for f in write]
 
-    prune = sorted(k for k in previous if k[0] not in devices)
+    prune = sorted(k for k in previous if k[0] not in kept)
     for dev, sensor in prune:   # never leave an open event behind a pruned row
         if previous[(dev, sensor)].estado in ALERTA:
             changes.append(StateChange(dev, sensor, None, "bancada", SensorState(
@@ -288,23 +315,23 @@ def run_detector(now: datetime, readings: pd.DataFrame, registry: list, maintena
                 False, True))
 
     store.apply(changes, prune)
-    if points:
-        influx.write(QUALIDADE_BUCKET, points)
-    return RunResult(transitions, len(points))
+    for i in range(0, len(marks), WRITE_CHUNK):   # Points are built per chunk to bound memory
+        influx.write(QUALIDADE_BUCKET, [_point(*m) for m in marks[i:i + WRITE_CHUNK]])
+    return RunResult(transitions, len(marks))
 
 
 def run_cycle(now: datetime, influx, store: HealthStore, registry: list, maintenance: list,
               cfg: DetectorConfig) -> RunResult:
     """Two Flux queries per run: raw samples over `janela` and 5-min means from the earliest
-    reset point (never before now - janela_max), then run_detector."""
+    reset point of the REGISTERED devices (never before now - janela_max; unregistered devices
+    are not analysed, so they never widen it), then run_detector."""
     readings = influx.query_df(raw_query(now - cfg.janela, now))
-    buoys = _registry(registry)
-    starts = [_context(b, maintenance, now, cfg).reset for b in buoys.values()]
-    publishing = set(readings["device_id"].dropna().astype(str)) if "device_id" in readings else set()
-    if not starts or publishing - set(buoys):
-        starts.append(now - cfg.janela_max)
-    start = pd.Timestamp(min(starts)).floor(STL_BIN).to_pydatetime()
-    historico = influx.query_df(historico_query(start, now))
+    starts = [_context(b, maintenance, now, cfg).reset for b in _registry(registry).values()]
+    if starts:
+        start = pd.Timestamp(min(starts)).floor(STL_BIN).to_pydatetime()
+        historico = influx.query_df(historico_query(start, now))
+    else:   # nothing registered: nothing needs a baseline
+        historico = pd.DataFrame(columns=["_time", "device_id", *SENSORS])
     return run_detector(now, readings, registry, maintenance, store, influx, cfg,
                         historico=historico)
 

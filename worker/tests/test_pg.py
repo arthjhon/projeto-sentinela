@@ -289,3 +289,14 @@ def test_fanout_isolates_failing_sink():
 
     FanOutStatus(Bad(), Good()).record("j", True, T0, 1.0, None)
     assert len(seen) == 1
+
+
+def test_last_success_reads_detector_job(conn):
+    store = PgHealthStore(conn)
+    conn.execute("DELETE FROM public.worker_jobs WHERE job = 'detector'")   # rolled back
+    assert store.last_success() is None
+    PgJobStatus(conn).record("detector", True, T0, 1.0, None)
+    PgJobStatus(conn).record("detector", False, T0 + timedelta(minutes=5), 1.0, "boom")
+    PgJobStatus(conn).record("ana", True, T0 + timedelta(minutes=9), 1.0, None)
+    as_role(conn, "sentinela_worker")
+    assert store.last_success() == T0

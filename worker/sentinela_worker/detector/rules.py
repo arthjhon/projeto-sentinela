@@ -15,7 +15,7 @@ from sentinela_worker.detector.config import DetectorConfig, SensorRules
 NOMINAL_STEP = timedelta(seconds=5)
 
 
-@dataclass
+@dataclass(slots=True)   # slots: a long outage can recover ~10^5 flags in one run
 class Flag:
     regra: str
     severidade: Literal["suspeito", "falha"]

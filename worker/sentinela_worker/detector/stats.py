@@ -18,6 +18,8 @@ MAD_TO_SIGMA = 1.4826
 STL_BIN = pd.Timedelta(minutes=5)
 CUSUM_BIN = pd.Timedelta(hours=1)
 INCRUSTACAO_MIN_DAYS = 3
+INCRUSTACAO_GRID = pd.Timedelta(hours=6)    # prefix ends searched for the first crossing
+DERIVA_RECENT = pd.Timedelta(hours=24)      # window of the "still shifted" check
 # Interpolation strides: ~10x faster than the exact smoother, no visible change in the seasonal.
 _STL_JUMPS = dict(seasonal_jump=6, trend_jump=24, low_pass_jump=24)
 
@@ -26,6 +28,8 @@ _STL_JUMPS = dict(seasonal_jump=6, trend_jump=24, low_pass_jump=24)
 class Layer2Result:
     flags: list[Flag] = field(default_factory=list)
     dados_suficientes: bool = True
+    # R26: a deriva flag only drives the state while the level is still away from the baseline
+    deriva_ativa: bool = False
 
 
 def _mad(x: np.ndarray) -> float:
@@ -152,6 +156,34 @@ def theil_sen_per_day(s: pd.Series) -> float:
     return float(theilslopes(h.to_numpy(), days)[0])
 
 
+def deriva_still_shifted(level: pd.Series, cfg: StatsConfig, rules: DerivaRules) -> bool:
+    """|mean of the level over its last 24 h - CUSUM baseline| >= delta_min / 2."""
+    h = coerce(level).resample(CUSUM_BIN).mean().dropna()
+    if h.empty:
+        return False
+    base = h[h.index < h.index[0] + pd.Timedelta(days=cfg.stl_min_days)]
+    recent = coerce(level)
+    recent = recent[recent.index > recent.index[-1] - DERIVA_RECENT]
+    return abs(float(recent.mean()) - float(np.median(base))) >= rules.delta_min / 2
+
+
+def incrustacao_onset(level: pd.Series, threshold: float) -> pd.Timestamp | None:
+    """First prefix end (6-hour grid from INCRUSTACAO_MIN_DAYS after the first sample) whose
+    Theil-Sen slope exceeds `threshold`: a flag time that does not move from run to run."""
+    h = coerce(level).resample(CUSUM_BIN).mean().dropna()
+    if len(h) < 2:
+        return None
+    days = (h.index - h.index[0]).total_seconds().to_numpy() / 86400
+    vals = h.to_numpy()
+    end = h.index[0] + pd.Timedelta(days=INCRUSTACAO_MIN_DAYS)
+    while end <= h.index[-1]:
+        n = int(h.index.searchsorted(end, side="right"))
+        if n >= 2 and float(theilslopes(vals[:n], days[:n])[0]) > threshold:
+            return h.index[n - 1]
+        end += INCRUSTACAO_GRID
+    return None
+
+
 def layer2_flags(s: pd.Series, sensor: str, cfg: DetectorConfig,
                  since: datetime | None, *, historico: pd.Series | None = None) -> Layer2Result:
     """Adapter for the runner. `since` is the last reset point (maintenance/mode change):
@@ -178,9 +210,11 @@ def layer2_flags(s: pd.Series, sensor: str, cfg: DetectorConfig,
     if d is None:
         return Layer2Result(flags, False)
 
+    ativa = False
     if rules.deriva.habilitado:
         alarm = cusum_alarm(d, st, rules.deriva)
         if alarm is not None:
+            ativa = deriva_still_shifted(d, st, rules.deriva)
             flags.append(Flag("deriva", "suspeito", alarm.start, alarm.shift,
                               f"deriva lenta: nivel {alarm.shift:+.3g} (unidades do sensor) em relacao "
                               f"ao baseline; inicio estimado {alarm.start:%Y-%m-%d %H:%M}, "
@@ -190,7 +224,9 @@ def layer2_flags(s: pd.Series, sensor: str, cfg: DetectorConfig,
         if d.index[-1] - d.index[0] >= pd.Timedelta(days=INCRUSTACAO_MIN_DAYS):
             slope = theil_sen_per_day(d)
             if slope > st.incrustacao_ntu_dia:
-                flags.append(Flag("incrustacao", "suspeito", d.index[-1].to_pydatetime(), slope,
+                onset = incrustacao_onset(d, st.incrustacao_ntu_dia)
+                t = (onset if onset is not None else d.index[-1]).to_pydatetime()
+                flags.append(Flag("incrustacao", "suspeito", t, slope,
                                   f"turbidez subindo {slope:.1f} NTU/dia desde a ultima manutencao "
                                   f"(limite {st.incrustacao_ntu_dia:g})"))
-    return Layer2Result(flags, True)
+    return Layer2Result(flags, True, ativa)

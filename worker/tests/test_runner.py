@@ -38,6 +38,10 @@ class FakeStore:
         self.events: list[dict] = []
         self.fail = False
         self.applied = 0
+        self.last_ok = None         # worker_jobs.ultimo_sucesso of the detector job
+
+    def last_success(self):
+        return self.last_ok
 
     def load_states(self):
         return dict(self.states)
@@ -242,7 +246,7 @@ def test_unregistered_device_is_processed_as_nao_cadastrado():
     ghost = [c for c in captured if c.device_id == "ghost"]
     assert all(c.boia_id is None and c.modo == "bancada" and not c.open_event for c in ghost)
     assert store.opened("ghost") == []
-    assert {f["modo"] for f in influx.flags(device_id="ghost", regra="faixa")} == {"nao_cadastrado"}
+    assert influx.flags(device_id="ghost") == []           # R26: state only, no analysis
     # the registered campo buoy that never published is sem_dados
     assert {store.states[("dev1", s)].estado for s in SENSORS} == {"sem_dados"}
 
@@ -301,6 +305,77 @@ def test_influx_failure_after_apply_is_repaired_by_next_run():
     run(now + timedelta(minutes=5), readings, [buoy()], store, influx)
     assert [f["time"] for f in influx.flags(regra="faixa")] == [pd.Timestamp(now - timedelta(minutes=1))]
     assert len(store.events) == 1
+
+
+def test_per_sample_flags_survive_an_outage_longer_than_30_min():
+    data = week(4, seed=314)
+    now = at(days=3, hours=6)
+    data["ph"] = inject_out_of_range(data["ph"], now - timedelta(minutes=1), 15.0)
+    data["turbidez"] = inject_spike(data["turbidez"], now - timedelta(minutes=2), 40.0)
+    readings = frame("dev1", **data)
+    store, influx = FakeStore(), FakeInflux()
+    store.last_ok = now - timedelta(minutes=5)              # last successful detector run
+    influx.fail_write = True
+    with pytest.raises(RuntimeError):
+        run(now, readings, [buoy()], store, influx)
+    influx.fail_write = False
+    later = now + timedelta(minutes=40)                     # runs in between failed too
+    run(later, readings, [buoy()], store, influx)
+    assert [f["time"] for f in influx.flags(regra="faixa")] == [pd.Timestamp(now - timedelta(minutes=1))]
+    assert pd.Timestamp(now - timedelta(minutes=2)) in [f["time"] for f in influx.flags(regra="pico")]
+    # without a record of a previous success the lookback stays at 30 min
+    influx2, store2 = FakeInflux(), FakeStore()
+    run(later, readings, [buoy()], store2, influx2)
+    assert influx2.flags(regra="faixa") == []
+
+
+def test_write_lookback_is_capped_at_janela():
+    now = at(days=10)
+    store = FakeStore()
+    store.last_ok = now - timedelta(days=30)
+    assert runner.write_lookback(now, store.last_ok, CFG) == CFG.janela
+    assert runner.write_lookback(now, None, CFG) == runner.WRITE_LOOKBACK
+    assert runner.write_lookback(now, now - timedelta(minutes=5), CFG) == runner.WRITE_LOOKBACK
+    assert runner.write_lookback(now, now - timedelta(hours=2), CFG) == timedelta(hours=2)
+
+
+def test_deriva_state_clears_after_level_recovers():
+    data = week(16, seed=340)
+    data["ph"] = inject_step(data["ph"], at(days=5), 0.5)
+    data["ph"] = inject_step(data["ph"], at(days=7), -0.5)      # back to the baseline at day 7
+    raw = frame("dev1", **data)
+    store, influx = FakeStore(), FakeInflux(raw)
+    out = {}
+    for d in (6, 8, 10, 14):
+        runner.run_cycle(at(days=d), influx, store, [buoy()], [], CFG)
+        out[d] = store.states[("dev1", "ph")]
+    assert out[6].estado == "suspeito" and "deriva" in out[6].motivo
+    assert {out[d].estado for d in (8, 10, 14)} == {"ok"}, out
+    [ev] = store.opened("dev1", "ph")
+    assert ev["estado"] == "suspeito" and ev["fim"] == at(days=8)
+    assert influx.flags(regra="deriva", sensor="ph")             # the alarm itself stays marked
+
+
+def test_unregistered_devices_capped_per_run_most_recent_first(capsys):
+    now = at(days=3)
+    frames = [frame(f"g{i:02d}", ph=clean_series("ph", 0.01, start=now - timedelta(minutes=60 + i)))
+              for i in range(25)]                           # g00 most recent ... g24 oldest
+    store = FakeStore()
+    store.states[("g24", "ph")] = SensorState("nao_cadastrado", "x", now - timedelta(hours=1))
+    run(now, pd.concat(frames, ignore_index=True), [], store, FakeInflux())
+    processed = {d for d, _ in store.states}
+    assert processed == {f"g{i:02d}" for i in range(20)} | {"g24"}   # g24 kept, not pruned
+    assert store.states[("g24", "ph")].motivo == "x"                 # ...and not updated
+    assert "unregistered devices skipped" in capsys.readouterr().out
+
+
+def test_duplicate_device_id_in_registry_is_logged(capsys):
+    store = FakeStore()
+    empty = pd.DataFrame(columns=["_time", "device_id", *SENSORS])
+    run(at(days=3), empty, [buoy("d1", codigo="A"), buoy("d1", codigo="B")], store, FakeInflux())
+    out = capsys.readouterr().out
+    assert "duplicate deviceId" in out and "B" in out
+    assert ("d1", "ph") in store.states
 
 
 # ---- state inputs -----------------------------------------------------------------------
@@ -407,7 +482,9 @@ def test_queries():
 
 
 def test_run_cycle_issues_two_queries_and_historico_starts_at_earliest_reset():
-    raw = frame("dev1", **week(4, seed=312))
+    raw = pd.concat([frame("dev1", **week(4, seed=312)),
+                     frame("ghost", ph=clean_series("ph", 0.1, start=at(days=3, hours=10)))],
+                    ignore_index=True)                     # unregistered: must not widen the start
     fake = FakeInflux(raw)
     now = at(days=3, hours=12)
     reg = [buoy(desde=at(days=1, minutes=2)), buoy("dev2", desde=at(days=2))]
@@ -446,6 +523,7 @@ def test_runner_config_rejects_bad_values(tmp_path, old, new, key):
 
 # ---- acceptance (held-out seeds >= 300) -------------------------------------------------
 
+@pytest.mark.slow
 @pytest.mark.parametrize("seed", [320, 321])
 def test_acceptance_clean_campo_week_at_most_one_event_per_sensor(seed):
     """Hourly runs over the week (a 5-min cadence costs ~10 min per seed). What an hourly cadence
@@ -490,6 +568,7 @@ def test_acceptance_stuck_ph_opens_falha_then_closes():
 
 # ---- memory -----------------------------------------------------------------------------
 
+@pytest.mark.slow
 def test_runner_peak_rss_for_7d_raw_and_30d_means_under_worker_limit():
     """7 days x 1 device x 3 sensors raw + 30 days of 5-min means, in a fresh interpreter."""
     code = textwrap.dedent(f"""
