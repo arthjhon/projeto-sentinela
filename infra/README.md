@@ -499,6 +499,28 @@ o job de teste: `"required_status_checks": {"strict": true, "contexts": ["test"]
 - Recomendado: `read_only: true`, `user` não-root, `security_opt: [no-new-privileges:true]`,
   `mem_limit: 384m`, healthcheck (o deploy espera `healthy`).
 
+### 13b. Role `sentinela_worker` no Supabase (migration do detector)
+
+A migration `supabase/migrations/20261117_sensor_health.sql` cria as tabelas `sensor_health`,
+`sensor_health_events`, `worker_jobs`, o role `sentinela_worker` (NOLOGIN, sem BYPASSRLS, sem
+ownership) e as policies de RLS. É idempotente: pode ser reexecutada.
+
+1. Aplicar no SQL Editor do Supabase de produção (ou `psql` como `postgres`) o conteúdo do arquivo.
+   Impacto: só cria objetos novos e revoga escrita de `anon`/`authenticated` nas 3 tabelas novas;
+   não altera tabelas existentes. Rollback: `DROP TABLE public.sensor_health, public.sensor_health_events,
+   public.worker_jobs; DROP OWNED BY sentinela_worker; DROP ROLE sentinela_worker;`
+   (o `DROP OWNED` também remove as policies e grants do role em `app_settings`/`maintenance_logs`).
+2. Habilitar login com senha forte, fora do histórico do shell (a senha vai para o `.env` da VM):
+
+   ```sql
+   ALTER ROLE sentinela_worker WITH LOGIN PASSWORD '<openssl rand -hex 32>';
+   ```
+
+3. Montar `PG_WORKER_DSN` no `.env` da stack (`postgresql://sentinela_worker:<senha>@<host-supabase-db>:5432/postgres`,
+   entre aspas simples). O worker só alcança o Postgres pela rede `SUPABASE_NETWORK`.
+4. Verificar: com esse DSN, `SELECT` em `app_settings` funciona e `UPDATE app_settings ...` falha
+   com `permission denied`.
+
 ### 14. Rotação de segredos
 
 - **Token Influx** (`telegraf`, `worker`, `nginx-publico`, `backup`):
