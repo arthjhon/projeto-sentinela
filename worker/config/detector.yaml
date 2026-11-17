@@ -19,6 +19,7 @@ sensores:
       habilitado: true    # fonte: valor inicial; deriva lenta so e separavel de mudanca ambiental com referencia - recalibrar em campo
       delta_min: 0.3      # fonte: menor deslocamento de pH que interessa (unidades de pH); recalibrar em campo
       sigma_min: 0.05     # fonte: piso do ruido de nivel (variacao dia-a-dia plausivel); recalibrar em campo
+      limiar_saida_frac: 0.5  # fonte: decisao R27 (histerese): ativa com |desvio 24 h| >= delta_min/2, sai abaixo de delta_min/4
   temperatura:
     faixa: [-10, 60]      # fonte: DS18B20 datasheet (-55 a 125 C), estreitado para agua
     plausivel: [15, 40]   # fonte: valor inicial de bancada; recalibrar em campo
@@ -31,6 +32,7 @@ sensores:
       habilitado: false   # fonte: valor inicial; deriva lenta so e separavel de mudanca ambiental com referencia - recalibrar em campo; temperatura sazonal/ambiental confunde com deriva
       delta_min: 1.0      # fonte: valor inicial; so vale se habilitado
       sigma_min: 0.2      # fonte: valor inicial; so vale se habilitado
+      limiar_saida_frac: 0.5  # fonte: decisao R27; so vale se habilitado
   turbidez:
     # fonte: a confirmar na folha do TS-300B. Nao ha datasheet do fabricante acessivel;
     # anuncios de revendedores divergem (0-1000 NTU em OFweek/Robozar; 0-3000 NTU em
@@ -46,6 +48,7 @@ sensores:
       habilitado: false   # fonte: valor inicial; deriva lenta so e separavel de mudanca ambiental com referencia - recalibrar em campo; incrustacao e coberta pelo Theil-Sen
       delta_min: 5.0      # fonte: valor inicial; so vale se habilitado
       sigma_min: 2.0      # fonte: valor inicial; so vale se habilitado
+      limiar_saida_frac: 0.5  # fonte: decisao R27; so vale se habilitado
 
 stats:
   hampel_window: 121      # fonte: janela 21 marcava 29-99 amostras/semana limpa; 121 reduz a variancia do MAD; recalibrar em campo

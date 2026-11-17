@@ -318,3 +318,40 @@ def test_incrustacao_flag_time_is_stable_across_runs():
     assert len(times) == 1
     t = pd.Timestamp(times.pop())
     assert start + timedelta(days=stats.INCRUSTACAO_MIN_DAYS) <= t < T0 + timedelta(days=7)
+
+
+# ---- deriva hysteresis (R27) ------------------------------------------------------------
+
+def _parked(residual, seed=107, end_day=10):
+    s = inject_step(series("ph", end_day + 1, seed), T0 + timedelta(days=5), 0.5)
+    s = inject_step(s, T0 + timedelta(days=7), residual - 0.5)
+    return s[s.index < T0 + timedelta(days=end_day)]
+
+
+def test_deriva_hysteresis_enter_and_exit_thresholds():
+    rules = CFG.sensores["ph"].deriva
+    enter = rules.delta_min / 2
+    exit_ = enter * rules.limiar_saida_frac
+    assert rules.limiar_saida_frac == 0.5 and exit_ == pytest.approx(rules.delta_min / 4)
+    between = _parked(0.11)                     # between delta_min/4 (0.075) and delta_min/2 (0.15)
+    off = stats.layer2_flags(between, "ph", CFG, since=None, deriva_ativa_antes=False)
+    on = stats.layer2_flags(between, "ph", CFG, since=None, deriva_ativa_antes=True)
+    assert of(off, "deriva") and of(on, "deriva")
+    assert off.deriva_ativa is False and on.deriva_ativa is True
+    assert on.deriva_desvio == pytest.approx(0.11, abs=0.03)
+    low = stats.layer2_flags(_parked(0.02), "ph", CFG, since=None, deriva_ativa_antes=True)
+    assert low.deriva_ativa is False                                  # below delta_min/4 clears
+    high = stats.layer2_flags(_parked(0.3), "ph", CFG, since=None, deriva_ativa_antes=False)
+    assert high.deriva_ativa is True and high.deriva_desvio > enter
+
+
+def test_deriva_limiar_saida_frac_config(tmp_path):
+    assert CFG.sensores["temperatura"].deriva.limiar_saida_frac == 0.5
+    txt = CFG_PATH.read_text()
+    old = "      limiar_saida_frac: 0.5 "
+    assert old in txt
+    for bad in ("0", "1.5", "abc"):
+        p = tmp_path / "d.yaml"
+        p.write_text(txt.replace(old, f"      limiar_saida_frac: {bad} ", 1))
+        with pytest.raises(ConfigError, match=r"sensores\.ph\.deriva\.limiar_saida_frac"):
+            load_detector_config(p)

@@ -35,6 +35,16 @@ class HealthStore(Protocol):
     def last_success(self) -> datetime | None: ...
 
 
+def motivo_regras(motivo: str) -> set[str]:
+    """Rules named in a motivo built by derive_state: 'regra: detalhe (+ a, b)'."""
+    if not motivo or ":" not in motivo:
+        return set()
+    regras = {motivo.split(":", 1)[0].strip()}
+    if motivo.endswith(")") and "(+ " in motivo:
+        regras |= {r.strip() for r in motivo.rsplit("(+ ", 1)[1][:-1].split(",")}
+    return regras
+
+
 def _motivo(flags: "list[Flag]") -> str:
     first = flags[0]
     others = list(dict.fromkeys(f.regra for f in flags if f.regra != first.regra))

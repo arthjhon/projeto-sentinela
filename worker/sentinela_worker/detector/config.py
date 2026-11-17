@@ -19,6 +19,8 @@ class DerivaRules:
     habilitado: bool = False
     delta_min: float = 1.0      # smallest level shift worth flagging, in sensor units
     sigma_min: float = 1.0      # floor for the noise scale, in sensor units
+    # R27 hysteresis: active at |24 h shift| >= delta_min/2, clears below that x this fraction
+    limiar_saida_frac: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -87,7 +89,8 @@ def _section(d, key: str) -> dict:
 
 _SENSOR_KEYS = {"faixa", "plausivel", "salto_max", "travado_min_min", "travado_eps", "piso",
                 "mad_min", "deriva"}
-_DERIVA_KEYS = {"habilitado", "delta_min", "sigma_min"}
+_DERIVA_KEYS = {"habilitado", "delta_min", "sigma_min", "limiar_saida_frac"}
+_DERIVA_REQUIRED = ("habilitado", "delta_min", "sigma_min")
 _TOP_KEYS = {"sem_dados_max_min", "estabilizacao_min", "janela_dias", "pico_min_count",
              "janela_max_dias", "sensores", "stats"}
 
@@ -101,15 +104,20 @@ def _no_unknown(d: dict, prefix: str, allowed: set) -> None:
 def _deriva(d, p: str) -> DerivaRules:
     d = _section(d, p)
     _no_unknown(d, p, _DERIVA_KEYS)
-    for k in _DERIVA_KEYS:
+    for k in _DERIVA_REQUIRED:
         if k not in d:
             raise ConfigError(f"{p}.{k}: missing")
     if not isinstance(d["habilitado"], bool):
         raise ConfigError(f"{p}.habilitado: expected true/false, got {d['habilitado']!r}")
+    frac = _num(d.get("limiar_saida_frac", DerivaRules.limiar_saida_frac),
+                f"{p}.limiar_saida_frac", positive=True)
+    if frac > 1:
+        raise ConfigError(f"{p}.limiar_saida_frac: must be in (0, 1], got {frac:g}")
     return DerivaRules(
         habilitado=d["habilitado"],
         delta_min=_num(d["delta_min"], f"{p}.delta_min", positive=True),
         sigma_min=_num(d["sigma_min"], f"{p}.sigma_min", positive=True),
+        limiar_saida_frac=frac,
     )
 
 

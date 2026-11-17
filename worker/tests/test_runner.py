@@ -370,12 +370,51 @@ def test_unregistered_devices_capped_per_run_most_recent_first(capsys):
 
 
 def test_duplicate_device_id_in_registry_is_logged(capsys):
+    runner._reset_registry_warnings()
     store = FakeStore()
     empty = pd.DataFrame(columns=["_time", "device_id", *SENSORS])
     run(at(days=3), empty, [buoy("d1", codigo="A"), buoy("d1", codigo="B")], store, FakeInflux())
     out = capsys.readouterr().out
     assert "duplicate deviceId" in out and "B" in out
     assert ("d1", "ph") in store.states
+
+
+def test_deriva_motivo_reports_current_shift_and_hysteresis_comes_from_previous_state():
+    data = week(10, seed=341)
+    data["ph"] = inject_step(data["ph"], at(days=5), 0.5)
+    data["ph"] = inject_step(data["ph"], at(days=7), 0.11 - 0.5)    # parked between the thresholds
+    raw = frame("dev1", **data)
+    store = FakeStore()
+    runner.run_cycle(at(days=9), FakeInflux(raw), store, [buoy()], [], CFG)
+    assert store.states[("dev1", "ph")].estado == "ok"              # not active: enter threshold
+    store.states[("dev1", "ph")] = SensorState("suspeito", "deriva: x (+ pico)", at(days=8))
+    runner.run_cycle(at(days=9), FakeInflux(raw), store, [buoy()], [], CFG)
+    st = store.states[("dev1", "ph")]
+    assert st.estado == "suspeito" and st.desde == at(days=8)       # stays active: exit threshold
+    shift = float(re.search(r"nivel atual ([+-][0-9.]+)", st.motivo).group(1))
+    assert shift == pytest.approx(0.11, abs=0.03)                   # current 24 h shift, not the alarm
+
+
+def test_duplicate_device_id_warns_once_per_registry_change(capsys):
+    runner._reset_registry_warnings()
+    empty = pd.DataFrame(columns=["_time", "device_id", *SENSORS])
+    reg = [buoy("d1", codigo="A"), buoy("d1", codigo="B")]
+    for _ in range(3):
+        run(at(days=3), empty, reg, FakeStore(), FakeInflux())
+    assert capsys.readouterr().out.count("duplicate deviceId") == 1
+    run(at(days=3), empty, reg + [buoy("d2", codigo="C"), buoy("d2", codigo="D")], FakeStore(), FakeInflux())
+    assert capsys.readouterr().out.count("duplicate deviceId") == 2   # content changed: warn again
+
+
+def test_long_write_lookback_is_logged(capsys):
+    store = FakeStore()
+    store.last_ok = at(days=3) - timedelta(hours=2)
+    run(at(days=3), pd.DataFrame(columns=["_time", "device_id", *SENSORS]), [], store, FakeInflux())
+    out = capsys.readouterr().out
+    assert "write lookback extended" in out and "7200" in out
+    store.last_ok = at(days=3) - timedelta(minutes=5)
+    run(at(days=3), pd.DataFrame(columns=["_time", "device_id", *SENSORS]), [], store, FakeInflux())
+    assert "write lookback extended" not in capsys.readouterr().out
 
 
 # ---- state inputs -----------------------------------------------------------------------
@@ -567,6 +606,27 @@ def test_acceptance_stuck_ph_opens_falha_then_closes():
 
 
 # ---- memory -----------------------------------------------------------------------------
+
+@pytest.mark.slow
+@pytest.mark.parametrize("seed", [350, 351])
+def test_acceptance_deriva_parked_at_threshold_opens_at_most_one_event(seed):
+    """R27: residual offset parked exactly at delta_min/2 for days 8-11, 15-min runs."""
+    data = week(12, seed=seed)
+    data["ph"] = inject_step(data["ph"], at(days=5), 0.5)
+    data["ph"] = inject_step(data["ph"], at(days=7), 0.15 - 0.5)
+    raw = frame("dev1", **data)
+    store, fake = FakeStore(), FakeInflux(raw)
+    seq = []
+    for now in every(at(days=8), at(days=11), minutes=15):
+        store.last_ok = now - timedelta(minutes=15)
+        runner.run_cycle(now, fake, store, [buoy()], [], CFG)
+        seq.append(store.states[("dev1", "ph")].estado)
+    transitions = sum(a != b for a, b in zip(seq, seq[1:]))
+    events = store.opened("dev1", "ph")
+    print(f"deriva parked at 0.15, seed {seed}: transitions={transitions} events={len(events)} "
+          f"states={sorted(set(seq))}")
+    assert len(events) <= 1, events
+
 
 @pytest.mark.slow
 def test_runner_peak_rss_for_7d_raw_and_30d_means_under_worker_limit():

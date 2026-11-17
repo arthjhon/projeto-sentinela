@@ -28,8 +28,10 @@ _STL_JUMPS = dict(seasonal_jump=6, trend_jump=24, low_pass_jump=24)
 class Layer2Result:
     flags: list[Flag] = field(default_factory=list)
     dados_suficientes: bool = True
-    # R26: a deriva flag only drives the state while the level is still away from the baseline
+    # R26/R27: a deriva flag only drives the state while the level is still away from the
+    # baseline (with hysteresis); deriva_desvio = current 24 h shift from the baseline
     deriva_ativa: bool = False
+    deriva_desvio: float | None = None
 
 
 def _mad(x: np.ndarray) -> float:
@@ -156,15 +158,25 @@ def theil_sen_per_day(s: pd.Series) -> float:
     return float(theilslopes(h.to_numpy(), days)[0])
 
 
-def deriva_still_shifted(level: pd.Series, cfg: StatsConfig, rules: DerivaRules) -> bool:
-    """|mean of the level over its last 24 h - CUSUM baseline| >= delta_min / 2."""
+def deriva_shift(level: pd.Series, cfg: StatsConfig) -> float | None:
+    """Mean of the level over its last 24 h minus the CUSUM baseline (median of the first
+    `stl_min_days` of hourly means)."""
     h = coerce(level).resample(CUSUM_BIN).mean().dropna()
     if h.empty:
-        return False
+        return None
     base = h[h.index < h.index[0] + pd.Timedelta(days=cfg.stl_min_days)]
     recent = coerce(level)
     recent = recent[recent.index > recent.index[-1] - DERIVA_RECENT]
-    return abs(float(recent.mean()) - float(np.median(base))) >= rules.delta_min / 2
+    return float(recent.mean()) - float(np.median(base))
+
+
+def deriva_still_shifted(shift: float | None, rules: DerivaRules, was_active: bool) -> bool:
+    """Hysteresis (R27): becomes active at |shift| >= delta_min/2; once active, clears only
+    below delta_min/2 * limiar_saida_frac. `was_active` comes from the previous state."""
+    if shift is None:
+        return False
+    enter = rules.delta_min / 2
+    return abs(shift) >= (enter * rules.limiar_saida_frac if was_active else enter)
 
 
 def incrustacao_onset(level: pd.Series, threshold: float) -> pd.Timestamp | None:
@@ -185,14 +197,16 @@ def incrustacao_onset(level: pd.Series, threshold: float) -> pd.Timestamp | None
 
 
 def layer2_flags(s: pd.Series, sensor: str, cfg: DetectorConfig,
-                 since: datetime | None, *, historico: pd.Series | None = None) -> Layer2Result:
+                 since: datetime | None, *, historico: pd.Series | None = None,
+                 deriva_ativa_antes: bool = False) -> Layer2Result:
     """Adapter for the runner. `since` is the last reset point (maintenance/mode change):
     every statistic uses only data from `since` on.
 
     `historico` (optional) is the floating baseline: 5-min means from the reset point (capped by
     the runner at `janela_max`). When given, STL/CUSUM/Theil-Sen run on it, so a level shift stays
     visible after the raw window has slid past the baseline phase; Hampel always runs on the raw
-    recent `s`."""
+    recent `s`. `deriva_ativa_antes` (from the previous state) selects the hysteresis exit
+    threshold for the deriva activity."""
     st, rules = cfg.stats, cfg.sensores[sensor]
     s = coerce(s)
     level = s if historico is None else coerce(historico)
@@ -210,11 +224,12 @@ def layer2_flags(s: pd.Series, sensor: str, cfg: DetectorConfig,
     if d is None:
         return Layer2Result(flags, False)
 
-    ativa = False
+    ativa, desvio = False, None
     if rules.deriva.habilitado:
         alarm = cusum_alarm(d, st, rules.deriva)
         if alarm is not None:
-            ativa = deriva_still_shifted(d, st, rules.deriva)
+            desvio = deriva_shift(d, st)
+            ativa = deriva_still_shifted(desvio, rules.deriva, deriva_ativa_antes)
             flags.append(Flag("deriva", "suspeito", alarm.start, alarm.shift,
                               f"deriva lenta: nivel {alarm.shift:+.3g} (unidades do sensor) em relacao "
                               f"ao baseline; inicio estimado {alarm.start:%Y-%m-%d %H:%M}, "
@@ -229,4 +244,4 @@ def layer2_flags(s: pd.Series, sensor: str, cfg: DetectorConfig,
                 flags.append(Flag("incrustacao", "suspeito", t, slope,
                                   f"turbidez subindo {slope:.1f} NTU/dia desde a ultima manutencao "
                                   f"(limite {st.incrustacao_ntu_dia:g})"))
-    return Layer2Result(flags, True, ativa)
+    return Layer2Result(flags, True, ativa, desvio)

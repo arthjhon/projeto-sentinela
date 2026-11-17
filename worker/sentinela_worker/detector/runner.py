@@ -21,7 +21,7 @@ from ..log import log
 from .config import SENSORS, DetectorConfig
 from .rules import (NOMINAL_STEP, Flag, check_campo_ausente, check_faixa, check_plausibilidade,
                     check_salto, check_sem_dados, check_travado, coerce)
-from .state import ALERTA, HealthStore, SensorState, StateChange, derive_state
+from .state import ALERTA, HealthStore, SensorState, StateChange, derive_state, motivo_regras
 from .stats import STL_BIN, layer2_flags
 
 DETECTOR_INTERVAL_S = 300
@@ -120,17 +120,31 @@ def _context(buoy, maintenance, now: datetime, cfg: DetectorConfig) -> _Context:
     return _Context(em_manutencao, reset)
 
 
+_warned_registry: list[int] = []   # hash of the last registry content warned about
+
+
+def _reset_registry_warnings() -> None:
+    _warned_registry.clear()
+
+
 def _registry(registry, warn: bool = False) -> dict:
-    out = {}
+    """{deviceId: Buoy}; the first entry wins on a duplicated deviceId. With `warn`, duplicates
+    are logged once per registry content (not on every 5-min run)."""
+    out, dups = {}, []
     for b in registry:
         if not b.device_id:
             continue
-        if b.device_id in out:                       # first entry wins on a duplicated deviceId
-            if warn:
-                log("WARN", "detector", "duplicate deviceId in registry; entry ignored",
-                    device_id=b.device_id, kept=out[b.device_id].codigo, ignored=b.codigo)
+        if b.device_id in out:
+            dups.append((b.device_id, out[b.device_id].codigo, b.codigo))
             continue
         out[b.device_id] = b
+    if warn and dups:
+        key = hash(tuple((b.codigo, b.device_id, b.modo, b.modo_desde) for b in registry))
+        if _warned_registry != [key]:
+            _warned_registry[:] = [key]
+            for device_id, kept, ignored in dups:
+                log("WARN", "detector", "duplicate deviceId in registry; entry ignored",
+                    device_id=device_id, kept=kept, ignored=ignored)
     return out
 
 
@@ -146,8 +160,8 @@ def write_lookback(now: datetime, last_success: datetime | None, cfg: DetectorCo
 # ---- analysis ----------------------------------------------------------------------------
 
 def _analyse(sensor: str, df: pd.DataFrame, hist: pd.DataFrame | None, ctx: _Context,
-             campo: bool, now: datetime, cfg: DetectorConfig, lookback: timedelta = WRITE_LOOKBACK
-             ) -> tuple[list[Flag], list[Flag], bool]:
+             campo: bool, now: datetime, cfg: DetectorConfig, lookback: timedelta = WRITE_LOOKBACK,
+             deriva_antes: bool = False) -> tuple[list[Flag], list[Flag], bool]:
     """Returns (flags to write, flags active now, dados_suficientes) for one sensor."""
     rules = cfg.sensores[sensor]
     start = max(ctx.reset, now - cfg.janela)
@@ -195,7 +209,8 @@ def _analyse(sensor: str, df: pd.DataFrame, hist: pd.DataFrame | None, ctx: _Con
     margin = NOMINAL_STEP * cfg.stats.hampel_window
     recent = s[s.index > pd.Timestamp(now - max(PICO_WINDOW, lookback) - margin)]
     level = _level(hist[sensor] if hist is not None else None, s)
-    res = layer2_flags(recent, sensor, cfg, since=ctx.reset, historico=level)
+    res = layer2_flags(recent, sensor, cfg, since=ctx.reset, historico=level,
+                       deriva_ativa_antes=deriva_antes)
     all_picos = [f for f in res.flags if f.regra == "pico"]
     write += [f for f in all_picos if f.time > now - lookback]      # R23: raw picos always marked
     picos = [f for f in all_picos if f.time > now - PICO_WINDOW]
@@ -209,8 +224,17 @@ def _analyse(sensor: str, df: pd.DataFrame, hist: pd.DataFrame | None, ctx: _Con
                            f"(limite {cfg.pico_min_count})"))
     persistent = [f for f in res.flags if f.regra != "pico"]   # deriva/incrustacao since the reset
     write += persistent
-    # R26: the deriva mark stays written, but only drives the state while the level is shifted
-    active += [f for f in persistent if f.regra != "deriva" or res.deriva_ativa]
+    # R26/R27: the deriva mark (first alarm) stays written; the state uses it only while the
+    # level is still shifted (hysteresis), and its motivo reports the CURRENT 24 h shift
+    active += [f for f in persistent if f.regra != "deriva"]
+    for f in persistent:
+        if f.regra == "deriva" and res.deriva_ativa:
+            r = cfg.sensores[sensor].deriva
+            active.append(Flag("deriva", "suspeito", f.time, res.deriva_desvio,
+                               f"deriva lenta: nivel atual {res.deriva_desvio:+.3f} em relacao ao "
+                               f"baseline (media 24 h; ativa >= {r.delta_min / 2:g}, sai < "
+                               f"{r.delta_min / 2 * r.limiar_saida_frac:g}); primeiro alarme com "
+                               f"inicio estimado {f.time:%Y-%m-%d %H:%M}"))
     return write, active, res.dados_suficientes
 
 
@@ -270,6 +294,9 @@ def run_detector(now: datetime, readings: pd.DataFrame, registry: list, maintena
     buoys = _registry(registry, warn=True)
     previous = store.load_states()
     lookback = write_lookback(now, store.last_success(), cfg)
+    if lookback > WRITE_LOOKBACK:
+        log("INFO", "detector", "write lookback extended since last success",
+            lookback_s=int(lookback.total_seconds()))
 
     last_pub = {d: g.index[-1] for d, g in raw.items() if len(g)}
     recent_unregistered = sorted(
@@ -297,7 +324,8 @@ def run_detector(now: datetime, readings: pd.DataFrame, registry: list, maintena
             else:
                 write, active, suficientes = _analyse(
                     sensor, df, hist.get(dev, empty) if historico is not None else None,
-                    ctx, modo == "campo", now, cfg, lookback)
+                    ctx, modo == "campo", now, cfg, lookback,
+                    prev is not None and "deriva" in motivo_regras(prev.motivo))
             new = derive_state(active, modo, ctx.em_manutencao, buoy is not None, suficientes,
                                now, prev)
             open_event, close_event = _events(prev, new)
