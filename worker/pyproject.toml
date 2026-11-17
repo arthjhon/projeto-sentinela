@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentinela-worker"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "httpx==0.28.1",
+  "influxdb-client==1.50.0",
+  "psycopg[binary]==3.3.9",
+  "pandas==3.1.1",
+  "numpy==2.5.5",
+  "statsmodels==0.15.0",
+  "PyYAML==6.0.3",
+]
+
+[project.optional-dependencies]
+test = ["pytest==9.2.0", "respx==0.23.1"]
+
+[tool.setuptools.packages.find]
+include = ["sentinela_worker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
