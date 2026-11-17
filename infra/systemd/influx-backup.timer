@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Sentinela InfluxDB backup at 03:30 (local time)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+AccuracySec=1min
+Unit=influx-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,52 @@
+# Installed by Arthur (infra/README.md). Runs infra/bin/influx-backup.sh as root.
+# Note: docker socket access is root-equivalent; the sandbox below limits what
+# the script itself can touch, it does not make the docker API less powerful.
+[Unit]
+Description=Sentinela InfluxDB backup (influx backup via docker exec)
+Documentation=file:///usr/local/sbin/influx-backup.sh
+Requires=docker.service
+After=docker.service
+# /srv/sentinela/backups/influx must exist (ReadWritePaths needs it).
+ConditionPathIsDirectory=/srv/sentinela/backups/influx
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/influx-backup.sh
+User=root
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=30min
+# docker CLI: no /root/.docker needed for exec
+Environment=HOME=/nonexistent DOCKER_CONFIG=/nonexistent
+
+# Sandbox. The docker socket is a filesystem AF_UNIX socket: it stays reachable
+# with ProtectSystem=strict (connect() is not a write) and PrivateNetwork.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+IPAddressDeny=any
+ProtectSystem=strict
+ReadWritePaths=/srv/sentinela/backups/influx
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Root-owned token (600), root-owned backup dir and the root:docker socket are
+# all reachable as file owner: no capability is needed.
+CapabilityBoundingSet=
+AmbientCapabilities=
