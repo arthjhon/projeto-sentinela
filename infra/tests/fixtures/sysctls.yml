@@ -1,0 +1,5 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    sysctls:
+      net.ipv4.ip_forward: "1"

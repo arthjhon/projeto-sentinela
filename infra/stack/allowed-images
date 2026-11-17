@@ -1,0 +1,6 @@
+# Images the root deploy may run. One entry per line; '#' lines and blank lines ignored.
+# An entry is an exact repo:tag, or the literal worker pattern line below
+# (tag must be a 40-hex git sha, or an @sha256:<64 hex> digest). Never 'latest'.
+influxdb:2.7.12
+telegraf:1.33.3
+ghcr.io/arthjhon/sentinela-worker:<sha>

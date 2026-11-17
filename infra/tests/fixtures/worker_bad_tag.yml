@@ -1,0 +1,3 @@
+services:
+  worker:
+    image: ghcr.io/arthjhon/sentinela-worker:v1

@@ -1,0 +1,7 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    volumes:
+      - type: bind
+        source: /run/docker.sock
+        target: /x

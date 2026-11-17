@@ -1,0 +1,19 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    ports: ["127.0.0.1:8086:8086"]
+    volumes: [influxdb-data:/var/lib/influxdb2]
+    security_opt: ["no-new-privileges:true"]
+  telegraf:
+    image: telegraf:1.33.3
+    volumes: ["./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro"]
+  worker:
+    image: ghcr.io/arthjhon/sentinela-worker:0123456789abcdef0123456789abcdef01234567
+    networks: [supabase]
+networks:
+  supabase:
+    external: true
+    name: ${SUPABASE_NETWORK}
+volumes:
+  influxdb-data:
+    name: sentinela-influxdb-data

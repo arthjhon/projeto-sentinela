@@ -1,0 +1,6 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    network_mode: "service:telegraf"
+  telegraf:
+    image: telegraf:1.33.3

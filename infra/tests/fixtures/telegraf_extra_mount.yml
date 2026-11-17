@@ -1,0 +1,6 @@
+services:
+  telegraf:
+    image: telegraf:1.33.3
+    volumes:
+      - "./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro"
+      - "./secrets:/secrets"

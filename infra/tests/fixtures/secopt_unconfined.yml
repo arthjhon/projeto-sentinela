@@ -1,0 +1,4 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    security_opt: ["seccomp=unconfined"]

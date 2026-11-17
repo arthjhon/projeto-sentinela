@@ -1,0 +1,4 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    ports: ["0.0.0.0:8086:8086"]
