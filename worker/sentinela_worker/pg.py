@@ -73,6 +73,14 @@ class PgHealthStore:
         return {(d, s): SensorState(e, m or "", t) for d, s, e, m, t in rows}
 
     def apply(self, changes: list[StateChange], prune: list[tuple[str, str]]) -> None:
+        """Persist changes and prune rows in ONE transaction (all or nothing).
+
+        Event contract: close_event closes the open event of (device_id, sensor) at new.desde.
+        open_event opens a new event; if an event with a DIFFERENT estado is still open it is
+        closed first (fim = new.desde, never before its inicio), so a falha->suspeito transition
+        never drops the new event. An already-open event with the same estado is kept as is
+        (idempotent). At most one open event per (device_id, sensor) always holds.
+        """
         with self._conn.transaction():  # one transaction: any failure rolls everything back
             for c in changes:
                 self._conn.execute(
@@ -89,6 +97,10 @@ class PgHealthStore:
                         " WHERE device_id=%s AND sensor=%s AND fim IS NULL",
                         (c.new.desde, c.device_id, c.sensor))
                 if c.open_event:
+                    self._conn.execute(
+                        "UPDATE public.sensor_health_events SET fim=GREATEST(inicio, %s)"
+                        " WHERE device_id=%s AND sensor=%s AND fim IS NULL AND estado<>%s",
+                        (c.new.desde, c.device_id, c.sensor, c.new.estado))
                     self._conn.execute(
                         "INSERT INTO public.sensor_health_events"
                         " (device_id, sensor, boia_id, estado, motivo, inicio)"

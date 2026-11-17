@@ -505,21 +505,68 @@ A migration `supabase/migrations/20261117_sensor_health.sql` cria as tabelas `se
 `sensor_health_events`, `worker_jobs`, o role `sentinela_worker` (NOLOGIN, sem BYPASSRLS, sem
 ownership) e as policies de RLS. É idempotente: pode ser reexecutada.
 
-1. Aplicar no SQL Editor do Supabase de produção (ou `psql` como `postgres`) o conteúdo do arquivo.
-   Impacto: só cria objetos novos e revoga escrita de `anon`/`authenticated` nas 3 tabelas novas;
-   não altera tabelas existentes. Rollback: `DROP TABLE public.sensor_health, public.sensor_health_events,
-   public.worker_jobs; DROP OWNED BY sentinela_worker; DROP ROLE sentinela_worker;`
-   (o `DROP OWNED` também remove as policies e grants do role em `app_settings`/`maintenance_logs`).
-2. Habilitar login com senha forte, fora do histórico do shell (a senha vai para o `.env` da VM):
+1. Aplicar como `postgres`, em transação única e abortando no primeiro erro:
 
-   ```sql
-   ALTER ROLE sentinela_worker WITH LOGIN PASSWORD '<openssl rand -hex 32>';
+   ```bash
+   psql -1 -v ON_ERROR_STOP=1 -f supabase/migrations/20261117_sensor_health.sql
    ```
 
-3. Montar `PG_WORKER_DSN` no `.env` da stack (`postgresql://sentinela_worker:<senha>@<host-supabase-db>:5432/postgres`,
-   entre aspas simples). O worker só alcança o Postgres pela rede `SUPABASE_NETWORK`.
+   Impacto: cria objetos novos, revoga escrita de `anon`/`authenticated` nas 3 tabelas novas e
+   adiciona uma policy de SELECT e um GRANT SELECT para `sentinela_worker` em `app_settings` e
+   `maintenance_logs` (tabelas existentes; nenhuma permissão de outros roles é removida delas).
+   Rollback (no Supabase o `postgres` não é superuser; sem o primeiro comando o `DROP OWNED`
+   falha com `permission denied` e o `DROP ROLE` também):
+
+   ```sql
+   GRANT sentinela_worker TO postgres;
+   DROP TABLE public.sensor_health, public.sensor_health_events, public.worker_jobs;
+   DROP OWNED BY sentinela_worker;   -- remove também policies e grants em app_settings/maintenance_logs
+   DROP ROLE sentinela_worker;
+   ```
+
+2. Habilitar login e definir a senha **sem** passar o literal em SQL (`ALTER ROLE ... PASSWORD
+   '<literal>'` cai em texto claro no log do Postgres com `log_statement=ddl` e no
+   `pg_stat_statements`). O `\password` do psql envia apenas o hash SCRAM:
+
+   ```bash
+   psql -U postgres -c 'ALTER ROLE sentinela_worker WITH LOGIN'
+   psql -U postgres -c '\password sentinela_worker'
+   ```
+
+3. Gravar `PG_WORKER_DSN` no `.env` da stack sem expor a senha no histórico do shell
+   (`read -rs`; use a mesma senha digitada no passo 2; entre aspas simples no arquivo):
+
+   ```bash
+   read -rs -p 'senha do sentinela_worker: ' PW; echo
+   sudo sh -c "printf \"PG_WORKER_DSN='postgresql://sentinela_worker:%s@<host-supabase-db>:5432/postgres'\n\" \"$PW\" >> /srv/sentinela/stack/.env"
+   unset PW
+   ```
+
+   O worker só alcança o Postgres pela rede `SUPABASE_NETWORK`.
 4. Verificar: com esse DSN, `SELECT` em `app_settings` funciona e `UPDATE app_settings ...` falha
    com `permission denied`.
+
+**Risco residual aceito: privilégios herdados via PUBLIC.** Todo role herda de `PUBLIC`: EXECUTE
+em `net.http_get/post/delete` (extensão gerenciada `pg_net`), arwdDxt em `net.http_request_queue` e
+`net._http_response`, e TEMP/CONNECT no banco. A migration não mexe na extensão gerenciada. Motivo:
+o container do worker já tem egress de rede próprio, então o `pg_net` acrescenta pouco; alterar
+objetos da extensão arrisca quebrar o Supabase. Se o dono quiser fechar:
+
+```sql
+-- 1) conferir se pg_net / Database Webhooks estão em uso (triggers do schema supabase_functions):
+SELECT extname FROM pg_extension WHERE extname = 'pg_net';
+SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+ WHERE p.proname = 'http_request';
+-- 2) se NÃO estiver em uso, retirar do PUBLIC e devolver só aos roles do Supabase:
+REVOKE EXECUTE ON FUNCTION net.http_get, net.http_post, net.http_delete FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION net.http_get, net.http_post, net.http_delete
+  TO postgres, service_role, supabase_functions_admin;
+REVOKE ALL ON net.http_request_queue, net._http_response FROM PUBLIC;
+-- 3) TEMP/CONNECT: REVOKE TEMP ON DATABASE postgres FROM sentinela_worker; (CONNECT é necessário)
+```
+
+Se houver Database Webhooks, o passo 2 precisa re-conceder aos roles que os disparam; reverter =
+os mesmos `GRANT ... TO PUBLIC`. Testar em staging antes.
 
 ### 14. Rotação de segredos
 

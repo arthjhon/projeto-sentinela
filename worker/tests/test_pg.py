@@ -205,6 +205,38 @@ def test_apply_upserts_opens_closes_and_prunes(conn):
     assert conn.execute("SELECT count(*) FROM public.sensor_health_events WHERE fim IS NULL").fetchone()[0] == 1
 
 
+def test_open_over_open_closes_previous_event(conn):
+    store = PgHealthStore(conn)
+    store.apply([change(estado="falha")], [])
+    t1 = T0 + timedelta(minutes=10)
+    store.apply([StateChange("dev1", "ph", "SM-01", "campo",
+                             SensorState("suspeito", "m2", t1), True, False)], [])
+    rows = conn.execute("SELECT estado, inicio, fim FROM public.sensor_health_events"
+                        " ORDER BY inicio").fetchall()
+    assert rows == [("falha", T0, t1), ("suspeito", t1, None)]
+
+
+def test_event_checks_reject_bad_rows(conn):
+    for sql in ("INSERT INTO public.sensor_health_events(device_id,sensor,estado,inicio,fim)"
+                " VALUES ('d','ph','falha',now(), now() - interval '1 hour')",
+                "INSERT INTO public.sensor_health_events(device_id,sensor,estado,inicio)"
+                " VALUES ('d','ph','bogus',now())"):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("SAVEPOINT s")
+            try:
+                conn.execute(sql)
+            finally:
+                conn.execute("ROLLBACK TO s")
+
+
+def test_migration_hardens_preexisting_role(conn):
+    conn.execute("ALTER ROLE sentinela_worker CREATEDB CREATEROLE INHERIT")
+    conn.execute(MIGRATION.read_text())
+    assert conn.execute("SELECT rolcreatedb, rolcreaterole, rolinherit, rolbypassrls, rolsuper"
+                        " FROM pg_roles WHERE rolname='sentinela_worker'").fetchone() == (
+        False, False, False, False, False)
+
+
 def test_apply_is_atomic(conn):
     store = PgHealthStore(conn)
     store.apply([change(sensor="ph", estado="ok", open_event=False)], [])

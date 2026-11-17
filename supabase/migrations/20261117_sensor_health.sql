@@ -42,11 +42,42 @@ CREATE TABLE IF NOT EXISTS public.worker_jobs (
   erro            text
 );
 
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sensor_health_events_fim_check'
+                 AND conrelid = 'public.sensor_health_events'::regclass) THEN
+    ALTER TABLE public.sensor_health_events
+      ADD CONSTRAINT sensor_health_events_fim_check CHECK (fim IS NULL OR fim >= inicio);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sensor_health_events_estado_check'
+                 AND conrelid = 'public.sensor_health_events'::regclass) THEN
+    ALTER TABLE public.sensor_health_events
+      ADD CONSTRAINT sensor_health_events_estado_check CHECK (estado IN (
+        'ok', 'suspeito', 'falha', 'sem_dados', 'manutencao',
+        'bancada', 'dados_insuficientes', 'nao_cadastrado'));
+  END IF;
+END
+$$;
+
 -- ---------------------------------------------------------------- role
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentinela_worker') THEN
     CREATE ROLE sentinela_worker NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
+  END IF;
+END
+$$;
+
+-- Unconditional hardening (also corrects a role that pre-existed with other attributes).
+-- LOGIN is deliberately not touched: the owner enables it in the runbook.
+-- (NOSUPERUSER/NOBYPASSRLS cannot be written here: on Supabase `postgres` is not a superuser and
+-- PG15 refuses those keywords for non-superusers. Instead fail closed if either is set.)
+ALTER ROLE sentinela_worker NOINHERIT NOCREATEDB NOCREATEROLE;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentinela_worker'
+             AND (rolsuper OR rolbypassrls)) THEN
+    RAISE EXCEPTION 'sentinela_worker must not be SUPERUSER or BYPASSRLS';
   END IF;
 END
 $$;
