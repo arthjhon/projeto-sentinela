@@ -1,0 +1,7 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    volumes: ["vol1:/v"]
+volumes:
+  vol1:
+    name: sentinela-dev-influxdb-data

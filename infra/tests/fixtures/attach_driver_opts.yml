@@ -1,0 +1,14 @@
+services:
+  worker:
+    image: ghcr.io/arthjhon/sentinela-worker:0123456789abcdef0123456789abcdef01234567
+    networks:
+      sb:
+        driver_opts:
+          com.docker.network.endpoint.sysctls: "net.ipv4.conf.IFNAME.proxy_arp=1"
+        gw_priority: 100
+        priority: 1000
+networks:
+  sb:
+    external: true
+    name: ${SUPABASE_NETWORK}
+

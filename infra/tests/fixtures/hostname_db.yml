@@ -1,0 +1,10 @@
+services:
+  worker:
+    image: ghcr.io/arthjhon/sentinela-worker:0123456789abcdef0123456789abcdef01234567
+    hostname: db
+    networks: [sb]
+networks:
+  sb:
+    external: true
+    name: ${SUPABASE_NETWORK}
+

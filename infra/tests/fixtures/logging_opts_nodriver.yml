@@ -1,0 +1,7 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    logging:
+      options:
+        syslog-address: "tcp://127.0.0.1:5432"
+        fluentd-address: "127.0.0.1:5432"

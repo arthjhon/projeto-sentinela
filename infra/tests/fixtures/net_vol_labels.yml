@@ -1,0 +1,15 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    volumes: ["vol1:/v"]
+    networks: [n]
+networks:
+  n:
+    labels:
+      com.docker.compose.project: supabase
+      com.docker.compose.network: default
+volumes:
+  vol1:
+    labels:
+      com.docker.compose.project: supabase
+      com.docker.compose.volume: db-config

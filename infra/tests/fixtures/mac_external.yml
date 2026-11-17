@@ -1,0 +1,11 @@
+services:
+  worker:
+    image: ghcr.io/arthjhon/sentinela-worker:0123456789abcdef0123456789abcdef01234567
+    networks:
+      sb:
+        mac_address: "02:42:ac:12:00:05"
+networks:
+  sb:
+    external: true
+    name: ${SUPABASE_NETWORK}
+

@@ -87,6 +87,9 @@ def under_root($p):
 # apparmor=/seccomp=/label=/systempaths= tweaks, no-new-privileges:false).
 | ["no-new-privileges", "no-new-privileges:true", "no-new-privileges=true"] as $secopt_ok
 
+# Rule list FIVE: fixed volume names allowed besides <project>_<key>.
+| ["sentinela-influxdb-data", "sentinela-influxdb-config"] as $vol_names
+
 # Image policy: exact entry, or the worker pattern line (40-hex tag or sha256 digest).
 | "ghcr.io/arthjhon/sentinela-worker:<sha>" as $worker_line
 | "^ghcr\\.io/arthjhon/sentinela-worker(:[0-9a-f]{40}|@sha256:[0-9a-f]{64})\\z" as $worker_re
@@ -148,12 +151,26 @@ def under_root($p):
       deny(($v.container_name | present) and (($v.container_name | startswith("sentinela-")) | not);
            "container_name must start with sentinela-: \($v.container_name)"),
 
-      # R16: no network aliases / static addresses on external (shared) networks (DNS hijack).
+      # R16: attachments to an external (shared) network must be empty: no aliases,
+      # static IPs, mac_address, driver_opts, priorities (DNS/ARP/sysctl tricks).
       (($v.networks // {}) | if type == "object" then to_entries[] else empty end
-        | select(.value | type == "object") | .key as $nk | .value as $att
-        | select(($top_networks[$nk].external | present))
-        | ["aliases", "ipv4_address", "ipv6_address", "link_local_ips"][] as $f
-        | deny($att[$f] | present; "\($f) not allowed on external network \($nk)")),
+        | .key as $nk | .value as $att
+        | select($top_networks[$nk].external | present)
+        | deny(($att | present); "attachment options not allowed on external network \($nk)")),
+
+      # R23: a service on an external network must drop NET_RAW (ARP spoofing of Supabase).
+      deny((($v.networks // {}) | if type == "object" then keys else [] end
+              | any(. as $nk | $top_networks[$nk].external | present))
+           and ((($v.cap_drop // []) | any(. == "ALL" or . == "NET_RAW")) | not);
+           "service on external network must cap_drop ALL or NET_RAW"),
+
+      # R24: hostname/domainname are registered as DNS names on every attached network.
+      (["hostname", "domainname"][] as $f
+        | deny(($v[$f] | present) and (($v[$f] | startswith("sentinela-")) | not);
+               "\($f) must start with sentinela-: \($v[$f])")),
+
+      # R25: no fixed MAC address.
+      deny($v.mac_address | present; "mac_address not allowed"),
 
       # R17: no com.docker.* labels (spoofing compose project/service identity).
       (if ($v.labels | type) == "array" then "labels must be a map"
@@ -162,6 +179,9 @@ def under_root($p):
       # R18: log driver only json-file/local (others run inside dockerd on the host).
       deny(($v.logging.driver | present) and (["json-file", "local"] | index($v.logging.driver)) == null;
            "logging driver not allowed: \($v.logging.driver)"),
+      # logging.options only with an explicit safe driver (otherwise daemon default applies).
+      deny(($v.logging.options | present) and ((["json-file", "local"] | index($v.logging.driver // "")) == null);
+           "logging.options requires driver json-file or local"),
 
       # R19: deploy limited to resource limits/reservations and restart policy (no devices etc.).
       (($v.deploy // {}) as $d
@@ -204,7 +224,8 @@ def under_root($p):
        deny(($net.external | present | not) and $net.name != ($project + "_" + $k);
             "network name must be \($project)_\($k), got \($net.name)"),
        deny(["host", "bridge", "none"] | index($net.name) != null; "network name not allowed: \($net.name)"),
-       deny($net.ipam | present; "network ipam not allowed"))
+       deny($net.ipam | present; "network ipam not allowed"),
+       deny(($net.labels // {}) | keys | any(startswith("com.docker.")); "com.docker.* label not allowed"))
     | "DENY: networks.\($k): \(.)"),
 
   # R13: named volumes: no external, no driver tricks (local+driver_opts can bind the host).
@@ -212,9 +233,10 @@ def under_root($p):
     | (deny($vol.external | present; "external volume not allowed"),
        deny(($vol.driver | present) and $vol.driver != "local"; "volume driver not allowed: \($vol.driver)"),
        deny($vol.driver_opts | present; "volume driver_opts not allowed"),
+       deny(($vol.labels // {}) | keys | any(startswith("com.docker.")); "com.docker.* label not allowed"),
        # R22: volume name scoped to this project (blocks adopting Supabase volumes via name:).
-       deny(($vol.name // "") as $vn | ($vn == ($project + "_" + $k) or ($vn | startswith("sentinela-"))) | not;
-            "volume name must be \($project)_\($k) or sentinela-*, got \($vol.name)"))
+       deny(($vol.name // "") as $vn | ($vn == ($project + "_" + $k) or ($vol_names | index($vn)) != null) | not;
+            "volume name must be \($project)_\($k) or a listed volume, got \($vol.name)"))
     | "DENY: volumes.\($k): \(.)"),
 
   # R14: secrets/configs: file sources must live under root (else they read host files).

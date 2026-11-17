@@ -1,0 +1,11 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    hostname: kong
+    command: ["bash","-c","sleep infinity"]
+    networks: [sb]
+networks:
+  sb:
+    external: true
+    name: ${SUPABASE_NETWORK}
+

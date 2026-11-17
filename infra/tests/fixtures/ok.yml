@@ -9,6 +9,7 @@ services:
     volumes: ["./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro"]
   worker:
     image: ghcr.io/arthjhon/sentinela-worker:0123456789abcdef0123456789abcdef01234567
+    cap_drop: [ALL]
     networks: [supabase]
 networks:
   supabase:
