@@ -8,15 +8,30 @@
 #   - the files it rsynced into $INCOMING (exactly EXPECTED_FILES), and
 #   - the single argument (worker image tag; `none` keeps the deployed one).
 #
+# Live layout ($LIVE = /srv/sentinela/stack, root 750, only root writes):
+#   .env                         root 600, never touched here
+#   releases/<id>/               one immutable dir per deploy attempt:
+#     compose.yml  telegraf/telegraf.conf  rendered.json (validated, 600)
+#     DEPLOYED                   "<iso-time> <sha|none>", written only once healthy
+#   current  -> releases/<id>    what was last started (moved by one rename)
+#   .current -> releases/<id>    last-known-good: moved only after the health check
+#   .previous -> releases/<id>   the last-known-good before that
+#   compose.yml -> current/compose.yml, telegraf -> current/telegraf (static links;
+#                                the telegraf bind path $LIVE/telegraf/telegraf.conf
+#                                stays fixed while `current` flips both files at once)
+#   DEPLOYED -> .current/DEPLOYED
+# Every pointer change is an atomic rename of a symlink: a crash at any point
+# leaves .current/DEPLOYED naming a release that was healthy.
+#
 # Sequence (any failure before "point of no return" leaves live untouched):
-#   1. argument check, flock, log
+#   1. argument check, trust checks, flock, log
 #   2. incoming tree check: only EXPECTED_FILES/EXPECTED_DIRS, regular files,
 #      nlink 1, no setuid/setgid/sticky, <= MAX_FILE_BYTES; no symlink, device,
 #      fifo or socket anywhere
 #   3. copy into a fresh root-owned staging dir under $LIVE/.staging, reading
-#      each file with the privileges of $DEPLOY_USER (no confused deputy:
-#      a symlink/hardlink swapped in after step 2 can only reach what the
-#      deploy user could read anyway); re-check the staged tree
+#      each file with the privileges of $DEPLOY_USER (a symlink/hardlink swapped
+#      in after step 2 can only reach what the deploy user could read anyway);
+#      re-check the staged tree
 #   4. raw compose check (strict, text level): ASCII only, no '\' (YAML escape)
 #      and no '!' (YAML tag, e.g. !!binary), none of the words env_file,
 #      label_file, include, extends. These make `docker compose config` read
@@ -33,15 +48,22 @@
 #   7. root-installed validator ($VALIDATOR) on the same JSON
 #   8. `pull` of the validated JSON (failure = nothing changed)
 #   -- point of no return --
-#   9. snapshot live -> $LIVE/.previous; rename staged files into live
+#   9. staged dir renamed to releases/<id>; `current` flipped to it
 #  10. `up -d --remove-orphans` from the validated JSON (validated == executed),
-#      force-recreate services whose bind sources changed (a file bind keeps
-#      the old inode otherwise)
+#      force-recreate services whose bind content changed (a running container
+#      keeps the old inode otherwise)
 #  11. wait up to HEALTH_TIMEOUT s for every service: running, healthy when it
 #      has a healthcheck, restart count stable over two polls; `unhealthy` = fail
-#  12. OK -> write $LIVE/DEPLOYED "<iso-time> <sha|none>". Fail -> restore
-#      .previous (re-rendered and re-validated against the current policy and
-#      .env), `up` it, exit 1.
+#  12. OK -> write releases/<id>/DEPLOYED, .previous -> old .current,
+#      .current -> releases/<id>. Fail -> `current` back to .current (re-rendered
+#      and re-validated against the current policy and .env), `up` it, exit 1.
+#
+# Output: stdout (what CI sees) carries only step names, service names, rule
+# names and file names from the incoming tree, never a rendered compose value.
+# Compose output and full validator/policy messages (which can contain .env
+# values) go only to $LOG (root 600). SIGPIPE/SIGHUP are ignored and stdout
+# write errors are non-fatal, so a dropped SSH session cannot stop a deploy
+# halfway.
 #
 # Exit: 0 deployed; 1 denied or failed (rolled back when possible); 2 usage.
 #
@@ -49,9 +71,7 @@
 # every path below and switches the compose project to sentinela-stack-test.
 # As root it is ignored (sudo's env_reset strips it anyway). See
 # infra/tests/stack-deploy.test.sh.
-#
-# Never prints .env content: values of secret-looking keys are redacted from
-# stdout and log; compose/validator raw output goes to the log file only.
+trap '' PIPE HUP
 set -uo pipefail
 umask 077
 export LC_ALL=C
@@ -69,16 +89,20 @@ readonly ALLOWED_IMAGES_PATH=/usr/local/etc/sentinela/allowed-images
 readonly LOG_PATH=/var/log/sentinela-stack-deploy.log
 readonly LOCK_PATH=/run/sentinela-stack-deploy.lock
 readonly ROOT_HOME=/root
-# The only files CI may ship (relative to incoming and live). Keep in sync with CI.
+# The only files CI may ship (relative to incoming and to a release). Keep in sync with CI.
 readonly EXPECTED_FILES=(compose.yml telegraf/telegraf.conf)
 readonly EXPECTED_DIRS=(telegraf)
 readonly MAX_FILE_BYTES=1048576
 readonly FORBIDDEN_WORDS_RE='env_file|label_file|include|extends'
-readonly SECRET_KEY_RE='(TOKEN|PASS|SECRET|KEY|DSN|AUTH|CRED)'
 readonly HEALTH_TIMEOUT=120
 readonly HEALTH_POLL=5
 readonly LOCK_TIMEOUT=600
 readonly ARG_RE='^(none|[0-9a-f]{40})$'
+readonly RELEASE_RE='^releases/[0-9]{8}T[0-9]{6}Z-[0-9]+$'
+
+# ---- output (never fatal) -----------------------------------------------------
+say() { printf '%s\n' "$*" 2>/dev/null || true; }
+err() { printf '%s\n' "$*" >&2 2>/dev/null || true; }
 
 # ---- path setup (test prefix only for non-root) ----------------------------
 prefix=""
@@ -87,14 +111,14 @@ docker_home=$ROOT_HOME
 test_mode=0
 if [ -n "${SENTINELA_DEPLOY_ROOT:-}" ]; then
   if [ "$(id -u)" -eq 0 ]; then
-    echo "stack-deploy: SENTINELA_DEPLOY_ROOT ignored when running as root" >&2
+    err "stack-deploy: SENTINELA_DEPLOY_ROOT ignored when running as root"
   else
     case "$SENTINELA_DEPLOY_ROOT" in
       /*) ;;
-      *) echo "stack-deploy: SENTINELA_DEPLOY_ROOT must be absolute" >&2; exit 2 ;;
+      *) err "stack-deploy: SENTINELA_DEPLOY_ROOT must be absolute"; exit 2 ;;
     esac
     case "/$SENTINELA_DEPLOY_ROOT/" in
-      */../*) echo "stack-deploy: SENTINELA_DEPLOY_ROOT must not contain '..'" >&2; exit 2 ;;
+      */../*) err "stack-deploy: SENTINELA_DEPLOY_ROOT must not contain '..'"; exit 2 ;;
     esac
     prefix=${SENTINELA_DEPLOY_ROOT%/}
     project=$TEST_PROJECT_NAME
@@ -104,7 +128,7 @@ if [ -n "${SENTINELA_DEPLOY_ROOT:-}" ]; then
 fi
 unset SENTINELA_DEPLOY_ROOT
 if [ "$test_mode" -eq 0 ] && [ "$(id -u)" -ne 0 ]; then
-  echo "stack-deploy: must run as root (via sudo)" >&2
+  err "stack-deploy: must run as root (via sudo)"
   exit 2
 fi
 readonly prefix project docker_home test_mode
@@ -115,35 +139,30 @@ readonly ALLOWED_IMAGES=$prefix$ALLOWED_IMAGES_PATH
 readonly LOG=$prefix$LOG_PATH
 readonly LOCK=$prefix$LOCK_PATH
 readonly ENV_FILE=$LIVE/.env
-readonly DEPLOYED_FILE=$LIVE/DEPLOYED
-readonly PREVIOUS=$LIVE/.previous
+readonly RELEASES=$LIVE/releases
 readonly STAGING_ROOT=$LIVE/.staging
 my_uid=$(id -u)
 readonly my_uid
 
 # ---- logging ----------------------------------------------------------------
-secrets=()
-redact() {
-  local s=$1 v
-  for v in "${secrets[@]+"${secrets[@]}"}"; do
-    s=${s//"$v"/[REDACTED]}
-  done
-  printf '%s' "$s"
-}
 log_ready=0
+ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+# log: stdout (CI) + host log. Callers pass only value-free text.
 log() {
   local line
-  line="$(date -u +%Y-%m-%dT%H:%M:%SZ) [$$] $(redact "$*")"
-  printf '%s\n' "$line"
-  if [ "$log_ready" -eq 1 ]; then printf '%s\n' "$line" >>"$LOG"; fi
+  line="$(ts) [$$] $*"
+  say "$line"
+  if [ "$log_ready" -eq 1 ]; then printf '%s\n' "$line" >>"$LOG" 2>/dev/null || true; fi
 }
-# Command output: log file only (may echo compose internals), redacted.
-log_file_only() { # <label> <file>
+# log_host: host log only (may contain rendered values, i.e. .env content).
+log_host() {
+  [ "$log_ready" -eq 1 ] || return 0
+  printf '%s\n' "$(ts) [$$]   $*" >>"$LOG" 2>/dev/null || true
+}
+log_host_file() { # <label> <file>
   [ "$log_ready" -eq 1 ] || return 0
   [ -s "$2" ] || return 0
-  local content
-  content=$(head -c 65536 -- "$2")
-  printf '%s\n' "$(redact "$content")" | sed "s/^/$(date -u +%Y-%m-%dT%H:%M:%SZ) [$$]   $1| /" >>"$LOG"
+  head -c 65536 -- "$2" | sed "s/^/$(ts) [$$]   $1| /" >>"$LOG" 2>/dev/null || true
 }
 
 stages=()
@@ -153,6 +172,7 @@ cleanup() {
   for d in "${stages[@]+"${stages[@]}"}"; do
     [ -n "$d" ] && [ -d "$d" ] && rm -rf --one-file-system -- "$d"
   done
+  rm -f -- "$LIVE/.link.$$" 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -194,6 +214,23 @@ check_trusted() { # <path> <kind: file|dir>
   if (( 8#$mode & 8#022 )); then log "FATAL: $p is group/other writable ($mode)"; exit 1; fi
 }
 
+# check_link <name> <expected target|RELEASE>: absent, or a symlink with exactly
+# that target (RELEASE: any releases/<id> that is a trusted directory).
+check_link() {
+  local p=$LIVE/$1 want=$2 got
+  if ! [ -L "$p" ]; then
+    [ -e "$p" ] && { log "FATAL: $p exists and is not a symlink (unexpected layout)"; exit 1; }
+    return 0
+  fi
+  got=$(readlink -- "$p")
+  if [ "$want" = RELEASE ]; then
+    [[ $got =~ $RELEASE_RE ]] || { log "FATAL: $p points outside releases/"; exit 1; }
+    check_trusted "$LIVE/$got" dir
+  elif [ "$got" != "$want" ]; then
+    log "FATAL: $p must point to $want"; exit 1
+  fi
+}
+
 # The parent too: whoever can write it can swap $LIVE or $INCOMING.
 check_trusted "$(dirname -- "$LIVE")" dir
 check_trusted "$LIVE" dir
@@ -204,14 +241,15 @@ if (( 8#$(stat -c '%a' -- "$ENV_FILE") & 8#077 )); then
   log "FATAL: $ENV_FILE must be mode 600"
   exit 1
 fi
-for p in "$LIVE/telegraf" "$PREVIOUS" "$STAGING_ROOT" "$DEPLOYED_FILE"; do
-  if [ -e "$p" ] || [ -L "$p" ]; then
-    case "$p" in
-      "$DEPLOYED_FILE") check_trusted "$p" file ;;
-      *) check_trusted "$p" dir ;;
-    esac
-  fi
+for p in "$RELEASES" "$STAGING_ROOT"; do
+  if [ -e "$p" ] || [ -L "$p" ]; then check_trusted "$p" dir; fi
 done
+check_link current RELEASE
+check_link .current RELEASE
+check_link .previous RELEASE
+check_link compose.yml current/compose.yml
+check_link telegraf current/telegraf
+check_link DEPLOYED .current/DEPLOYED
 command -v jq >/dev/null || { log "FATAL: jq not found"; exit 1; }
 command -v docker >/dev/null || { log "FATAL: docker not found"; exit 1; }
 
@@ -223,7 +261,7 @@ if ! flock -w "$LOCK_TIMEOUT" 9; then
   exit 1
 fi
 
-# ---- .env (parsed, never sourced) --------------------------------------------
+# ---- .env (parsed, never sourced; only SUPABASE_NETWORK is read) -------------
 env_value() { # <key>  -> last KEY=value, quotes stripped
   local line v=""
   while IFS= read -r line || [ -n "$line" ]; do
@@ -237,13 +275,6 @@ while IFS= read -r line || [ -n "$line" ]; do
   if [[ $line =~ ^[[:space:]]*(export[[:space:]]+)?(COMPOSE_|DOCKER_) ]]; then
     log "FATAL: $ENV_FILE must not set COMPOSE_* or DOCKER_* variables"
     exit 1
-  fi
-  if [[ $line =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*= ]]; then
-    key=${BASH_REMATCH[2]}
-    if [[ ${key^^} =~ $SECRET_KEY_RE ]]; then
-      val=$(env_value "$key")
-      [ "${#val}" -ge 4 ] && secrets+=("$val")
-    fi
   fi
 done <"$ENV_FILE"
 supabase_net=$(env_value SUPABASE_NETWORK)
@@ -276,14 +307,15 @@ if dk compose pull --help 2>/dev/null | grep -q -- '--policy'; then
   pull_policy=(--policy missing)
 fi
 
-# run_logged <stage> <label> <timeout> <cmd...>: output to log file only.
+# run_logged <outdir> <label> <timeout> <cmd...>: output to the host log only.
 run_logged() {
-  local stage=$1 label=$2 to=$3 out rc
+  local dir=$1 label=$2 to=$3 out rc
   shift 3
-  out="$stage/$label.out"
+  out=$(mktemp "$dir/.$label.XXXXXX") || return 1
   timeout "$to" "$@" >"$out" 2>&1
   rc=$?
-  log_file_only "$label" "$out"
+  log_host_file "$label" "$out"
+  rm -f -- "$out"
   return "$rc"
 }
 
@@ -298,10 +330,19 @@ new_stage() {
   stages+=("$stage_dir")
 }
 
+# set_link <name> <target>: atomically (re)point $LIVE/<name> (rename over it).
+set_link() {
+  local tmp=$LIVE/.link.$$
+  rm -f -- "$tmp"
+  ln -s -- "$2" "$tmp" && mv -f -T -- "$tmp" "$LIVE/$1"
+}
+link_target() { [ -L "$LIVE/$1" ] && readlink -- "$LIVE/$1"; }
+
 # ---- tree checks ------------------------------------------------------------
 in_list() { local x=$1; shift; local e; for e in "$@"; do [ "$e" = "$x" ] && return 0; done; return 1; }
 
-# check_tree <dir> <label>: 0 ok, 1 rejected (reasons logged).
+# check_tree <dir> <label>: 0 ok, 1 rejected (reasons logged). Names printed
+# are file names from the incoming tree (CI's own data, not .env values).
 check_tree() {
   local d=$1 label=$2 bad=0 rec type nlink mode size rel f
   if ! [ -d "$d" ] || [ -L "$d" ]; then log "$label: $d missing or not a directory"; return 1; fi
@@ -380,50 +421,115 @@ render() { # <stage> <compose> <out json> <tag-or-empty>
   ( cd -- "$stage" && timeout 60 env -i PATH="$PATH" HOME="$docker_home" LC_ALL=C WORKER_TAG="$tag" \
       docker "${args[@]}" >"$out" 2>"$stage/render.err" )
   rc=$?
-  log_file_only render "$stage/render.err"
+  log_host_file render "$stage/render.err"
   [ "$rc" -eq 0 ] || { log "render failed (exit $rc; details in $LOG on the host)"; return 1; }
   chmod 600 -- "$out"
 }
 
+# safe_name <text>: a compose key (service/network/volume name) or "?".
+# Keys are never interpolated by compose, so they cannot carry .env values.
+safe_name() { if [[ $1 =~ ^[A-Za-z0-9._()/-]{1,64}$ ]]; then printf '%s' "$1"; else printf '?'; fi; }
+
+# deny_rule <validator reason>: a fixed rule label for stdout. Only strings
+# from this table reach stdout; the reason itself (which may contain rendered
+# values) goes to the host log.
+deny_rule() {
+  local r=$1 k
+  case "$r" in
+    "unknown service" | "image missing" | "labels must be a map" | "mac_address not allowed" | \
+    "external not allowed" | "external volume not allowed" | "network driver_opts not allowed" | \
+    "volume driver_opts not allowed" | "network ipam not allowed" | "com.docker.* label not allowed" | \
+    "service on external network must cap_drop ALL or NET_RAW")
+      printf '%s' "$r"; return ;;
+  esac
+  for k in devices device_cgroup_rules gpus runtime build volumes_from cgroup_parent sysctls \
+           use_api_socket post_start pre_stop cap_add userns_mode uts cgroup pid privileged; do
+    [ "$r" = "$k not allowed" ] && { printf '%s' "$r"; return; }
+  done
+  case "$r" in
+    "key not allowed: "*) printf 'key not allowed: %s' "$(safe_name "${r#key not allowed: }")" ;;
+    "attachment options not allowed on external network "*) printf 'attachment options on external network not allowed' ;;
+    "network_mode not allowed"*) printf 'network_mode not allowed' ;;
+    "ipc not allowed"*) printf 'ipc not allowed' ;;
+    "security_opt not allowed"*) printf 'security_opt not allowed' ;;
+    "port "*" published on "*) printf 'port not published on 127.0.0.1' ;;
+    "mount type not allowed"*) printf 'mount type not allowed' ;;
+    "docker.sock mount"*) printf 'docker.sock mount' ;;
+    "bind outside "*) printf 'bind outside the stack dir' ;;
+    "bind propagation not allowed"*) printf 'bind propagation not allowed' ;;
+    "telegraf extra mount"*) printf 'telegraf extra mount' ;;
+    "container_name must start with"*) printf 'container_name must start with sentinela-' ;;
+    "hostname must start with"*) printf 'hostname must start with sentinela-' ;;
+    "domainname must start with"*) printf 'domainname must start with sentinela-' ;;
+    "label not allowed"*) printf 'com.docker.* label not allowed' ;;
+    "logging driver not allowed"*) printf 'logging driver not allowed' ;;
+    "logging.options requires"*) printf 'logging.options requires driver json-file or local' ;;
+    "deploy key not allowed"* | "deploy.resources"*) printf 'deploy key not allowed' ;;
+    "image not allowed (no tag)"*) printf 'image not allowed (no tag)' ;;
+    "image not allowed (latest)"*) printf 'image not allowed (latest)' ;;
+    "image not allowed"*) printf 'image not allowed' ;;
+    "project name must be"*) printf 'project name mismatch' ;;
+    "external network not allowed"*) printf 'external network not allowed' ;;
+    "network driver not allowed"*) printf 'network driver not allowed' ;;
+    "network name must be"* | "network name not allowed"*) printf 'network name not allowed' ;;
+    "volume driver not allowed"*) printf 'volume driver not allowed' ;;
+    "volume name must be"*) printf 'volume name not allowed' ;;
+    "file outside "*) printf 'file source outside the stack dir' ;;
+    *) printf 'unclassified rule' ;;
+  esac
+}
+
 # Deploy-side policy, on top of the validator: binds and file-backed
 # secrets/configs only from the live EXPECTED_FILES, binds read-only, and no
-# file-reading keys survived the render.
+# file-reading keys survived the render. jq emits "<scope>\t<rule>\t<detail>".
 extra_policy() { # <json>
-  local json=$1 files out f
+  local json=$1 files out f scope rule detail
   files=$(for f in "${EXPECTED_FILES[@]}"; do printf '%s\n' "$LIVE/$f"; done | jq -R . | jq -cs .)
   # shellcheck disable=SC2016  # jq program
   out=$(jq -r --argjson files "$files" '
     (.services // {} | to_entries[] | .key as $n | .value as $v
-      | ((["env_file", "label_file", "extends"][] as $k | select($v[$k] != null) | "\($n): \($k) not allowed"),
+      | ((["env_file", "label_file", "extends"][] as $k | select($v[$k] != null) | [$n, "\($k) not allowed", ""]),
          (($v.volumes // [])[] | select(.type == "bind")
-           | (.source as $s | if ($files | index($s)) == null then "\($n): bind source not allowed: \($s)" else empty end),
-             (if .read_only != true then "\($n): bind must be read_only: \(.source)" else empty end)))),
+           | (.source as $s | if ($files | index($s)) == null then [$n, "bind source not allowed", $s] else empty end),
+             (if .read_only != true then [$n, "bind must be read_only", .source] else empty end)))),
     (((.secrets // {}) + (.configs // {})) | to_entries[] | select(.value.file != null)
-      | select(.value.file as $f | ($files | index($f)) == null) | "secrets/configs \(.key): file source not allowed: \(.value.file)"),
-    (["include", "extends"][] as $k | select(has($k)) | "(top-level): \($k) not allowed")
+      | select(.value.file as $f | ($files | index($f)) == null) | ["secrets/configs." + .key, "file source not allowed", .value.file]),
+    (["include", "extends"][] as $k | select(has($k)) | ["(top-level)", "\($k) not allowed", ""])
+    | map(tostring | gsub("[\t\n]"; " ")) | join("\t")
   ' "$json" 2>&1) || { log "deploy policy: cannot evaluate rendered JSON"; return 1; }
-  if [ -n "$out" ]; then
-    while IFS= read -r f; do log "DENY (deploy policy): $f"; done <<<"$out"
-    return 1
-  fi
+  [ -n "$out" ] || return 0
+  while IFS=$'\t' read -r scope rule detail; do
+    log "DENY (deploy policy): $(safe_name "$scope"): $rule"
+    log_host "deploy policy detail: $scope: $rule: $detail"
+  done <<<"$out"
+  return 1
 }
 
 validate() { # <stage> <json>
-  local stage=$1 json=$2 rc
+  local stage=$1 json=$2 rc l scope reason
   timeout 60 env -i PATH="$PATH" LC_ALL=C ALLOWED_BIND_ROOT="$LIVE" EXPECTED_PROJECT="$project" \
     SUPABASE_NETWORK="$supabase_net" /bin/bash "$VALIDATOR" "$json" "$ALLOWED_IMAGES" \
     >"$stage/validate.out" 2>&1
   rc=$?
-  log_file_only validate "$stage/validate.out"
+  log_host_file validate "$stage/validate.out"
   case "$rc" in
     0) log "validator: OK"; return 0 ;;
-    1) while IFS= read -r l; do log "validator: $l"; done <"$stage/validate.out"; return 1 ;;
+    1)
+      while IFS= read -r l; do
+        if [[ $l =~ ^DENY:\ ([^:]+):\ (.*)$ ]]; then
+          scope=${BASH_REMATCH[1]}; reason=${BASH_REMATCH[2]}
+          log "validator: DENY: $(safe_name "$scope"): $(deny_rule "$reason")"
+        else
+          log "validator: DENY (unparsed line; see host log)"
+        fi
+      done <"$stage/validate.out"
+      return 1 ;;
     *) log "validator: bad input (exit $rc)"; return 1 ;;
   esac
 }
 
 # prepare <stage> <source dir> <untrusted 0|1> <tag>: copy, check, render,
-# validate. Leaves $stage/rendered.json on success.
+# validate. Leaves $stage/in (the release content) and $stage/rendered.json.
 prepare() {
   local stage=$1 src=$2 untrusted=$3 tag=$4
   fill_stage "$stage" "$src" "$untrusted" || return 1
@@ -434,61 +540,51 @@ prepare() {
   validate "$stage" "$stage/rendered.json" || return 1
 }
 
-# Services whose bind source content will change with this swap.
-changed_bind_services() { # <stage> <json>
-  local stage=$1 json=$2 f changed=()
+# changed_bind_services <release dir> <json>: services whose bind source would
+# get different content when `current` moves to <release dir>.
+changed_bind_services() {
+  local rel=$1 json=$2 f changed=()
   for f in "${EXPECTED_FILES[@]}"; do
-    if ! cmp -s -- "$stage/in/$f" "$LIVE/$f"; then changed+=("$LIVE/$f"); fi
+    if ! cmp -s -- "$rel/$f" "$LIVE/$f"; then changed+=("$LIVE/$f"); fi
   done
   [ "${#changed[@]}" -gt 0 ] || return 0
-  printf '%s\n' "${changed[@]}" | jq -R . | jq -cs . >"$stage/changed.json"
-  jq -r --slurpfile ch "$stage/changed.json" '
+  jq -r --argjson ch "$(printf '%s\n' "${changed[@]}" | jq -R . | jq -cs .)" '
     .services | to_entries[]
-    | select(any((.value.volumes // [])[]; .type == "bind" and (.source as $s | $ch[0] | index($s)) != null))
+    | select(any((.value.volumes // [])[]; .type == "bind" and (.source as $s | $ch | index($s)) != null))
     | .key' "$json"
 }
 
-install_live() { # <stage>: rename staged files into live (same filesystem).
-  local stage=$1 f
-  for f in "${EXPECTED_DIRS[@]}"; do
-    if ! [ -d "$LIVE/$f" ]; then mkdir -m 755 -- "$LIVE/$f" || return 1; fi
-    check_trusted "$LIVE/$f" dir
-  done
-  for f in "${EXPECTED_FILES[@]}"; do
-    if [ -L "$LIVE/$f" ] || { [ -e "$LIVE/$f" ] && ! [ -f "$LIVE/$f" ]; }; then
-      log "FATAL: live $f is not a regular file"; return 1
-    fi
-    mv -f -T -- "$stage/in/$f" "$LIVE/$f" || return 1
-  done
+# ensure_static_links: the fixed paths that resolve through `current`/.current.
+ensure_static_links() {
+  [ -L "$LIVE/compose.yml" ] || set_link compose.yml current/compose.yml || return 1
+  [ -L "$LIVE/telegraf" ] || set_link telegraf current/telegraf || return 1
+  [ -L "$LIVE/DEPLOYED" ] || set_link DEPLOYED .current/DEPLOYED || return 1
 }
 
-snapshot_previous() {
-  local f
-  if ! [ -f "$DEPLOYED_FILE" ]; then log "no DEPLOYED yet: nothing to snapshot (first deploy)"; return 0; fi
-  rm -rf --one-file-system -- "$PREVIOUS.new"
-  mkdir -m 700 -- "$PREVIOUS.new" || return 1
-  for f in "${EXPECTED_DIRS[@]}"; do mkdir -m 700 -- "$PREVIOUS.new/$f" || return 1; done
-  for f in "${EXPECTED_FILES[@]}" DEPLOYED; do
-    if ! [ -f "$LIVE/$f" ] || [ -L "$LIVE/$f" ]; then log "snapshot: live $f missing"; return 1; fi
-    cp -P -- "$LIVE/$f" "$PREVIOUS.new/$f" || return 1
+# Remove releases nothing points to (keeps current, .current, .previous).
+prune_releases() {
+  local keep=() t d
+  for t in current .current .previous; do
+    t=$(link_target "$t") && keep+=("${t#releases/}")
   done
-  rm -rf --one-file-system -- "$PREVIOUS"
-  mv -T -- "$PREVIOUS.new" "$PREVIOUS" || return 1
-  log "snapshot: live saved to $PREVIOUS ($(cat -- "$PREVIOUS/DEPLOYED"))"
+  while IFS= read -r -d '' d; do
+    d=${d##*/}
+    in_list "$d" "${keep[@]+"${keep[@]}"}" || rm -rf --one-file-system -- "${RELEASES:?}/$d"
+  done < <(find -P "$RELEASES" -mindepth 1 -maxdepth 1 -print0 2>/dev/null)
 }
 
-compose_up() { # <stage> <json> <recreate services...>
-  local stage=$1 json=$2
+compose_up() { # <release dir> <json> <recreate services...>
+  local rel=$1 json=$2
   shift 2
-  ( cd -- "$stage" && run_logged "$stage" up 600 \
+  ( cd -- "$rel" && run_logged "$rel" up 600 \
       env -i PATH="$PATH" HOME="$docker_home" LC_ALL=C \
-      docker compose -p "$project" --project-directory "$stage" -f "$json" up -d --remove-orphans ) \
+      docker compose -p "$project" --project-directory "$rel" -f "$json" up -d --remove-orphans ) \
     || { log "compose up failed (details in $LOG on the host)"; return 1; }
   if [ "$#" -gt 0 ]; then
     log "force-recreate (bind source changed): $*"
-    ( cd -- "$stage" && run_logged "$stage" recreate 300 \
+    ( cd -- "$rel" && run_logged "$rel" recreate 300 \
         env -i PATH="$PATH" HOME="$docker_home" LC_ALL=C \
-        docker compose -p "$project" --project-directory "$stage" -f "$json" up -d --no-deps --force-recreate "$@" ) \
+        docker compose -p "$project" --project-directory "$rel" -f "$json" up -d --no-deps --force-recreate "$@" ) \
       || { log "compose force-recreate failed"; return 1; }
   fi
 }
@@ -511,12 +607,12 @@ wait_healthy() {
     for svc in "${svcs[@]}"; do
       ids=$(dk ps -a -q --filter "label=com.docker.compose.project=$project" \
         --filter "label=com.docker.compose.service=$svc" --filter "label=com.docker.compose.oneoff=False")
-      if [ -z "$ids" ]; then ok=0; report+=" $svc=missing"; continue; fi
+      if [ -z "$ids" ]; then ok=0; report+=" $(safe_name "$svc")=missing"; continue; fi
       for id in $ids; do
         read -r st health rc <<<"$(dk inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} {{.RestartCount}}' "$id" 2>/dev/null)"
-        report+=" $svc=${st:-?}/${health:-?}/restarts:${rc:-?}"
+        report+=" $(safe_name "$svc")=${st:-?}/${health:-?}/restarts:${rc:-?}"
         if [ "${health:-}" = unhealthy ]; then
-          log "health: $svc is unhealthy;$report"
+          log "health: $(safe_name "$svc") is unhealthy;$report"
           return 1
         fi
         if [ "${st:-}" != running ] || { [ "${health:-}" != none ] && [ "${health:-}" != healthy ]; }; then ok=0; fi
@@ -537,30 +633,32 @@ wait_healthy() {
   done
 }
 
+# Back to the last-known-good release (.current), never to whatever is live.
 rollback() {
-  local stage tag recreate=()
+  local stage tag lkg recreate=()
   log "ROLLBACK: starting"
-  if ! [ -d "$PREVIOUS" ] || ! [ -f "$PREVIOUS/DEPLOYED" ]; then
-    log "ROLLBACK: no previous version (first deploy); failed containers left as they are"
+  if ! lkg=$(link_target .current) || ! [ -f "$LIVE/$lkg/DEPLOYED" ]; then
+    log "ROLLBACK: no last-known-good release (first deploy); failed containers left as they are"
     return 1
   fi
-  deployed_tag "$PREVIOUS/DEPLOYED"
+  deployed_tag "$LIVE/$lkg/DEPLOYED"
   tag=$dtag
   [ "$tag" = none ] && tag=""
   new_stage
   stage=$stage_dir
-  # .previous is root-written; it is still re-checked, re-rendered and
+  # The release is root-written; it is still re-checked, re-rendered and
   # re-validated against the current .env and policy.
-  if ! prepare "$stage" "$PREVIOUS" 0 "$tag"; then
-    log "ROLLBACK: previous version no longer passes validation; NOT starting it. Manual action needed."
+  if ! prepare "$stage" "$LIVE/$lkg" 0 "$tag"; then
+    log "ROLLBACK: last-known-good no longer passes validation; NOT starting it. Manual action needed."
     return 1
   fi
-  mapfile -t recreate < <(changed_bind_services "$stage" "$stage/rendered.json")
-  install_live "$stage" || { log "ROLLBACK: restoring files failed"; return 1; }
-  compose_up "$stage" "$stage/rendered.json" "${recreate[@]+"${recreate[@]}"}" || { log "ROLLBACK: up failed"; return 1; }
-  if ! wait_healthy "$stage/rendered.json"; then log "ROLLBACK: previous version is not healthy either"; return 1; fi
-  cp -- "$stage/rendered.json" "$LIVE/.deployed.json"
-  log "ROLLBACK: previous version running ($(cat -- "$DEPLOYED_FILE"))"
+  mapfile -t recreate < <(changed_bind_services "$LIVE/$lkg" "$stage/rendered.json")
+  mv -f -T -- "$stage/rendered.json" "$LIVE/$lkg/rendered.json" || { log "ROLLBACK: cannot store rendered config"; return 1; }
+  set_link current "$lkg" || { log "ROLLBACK: cannot move current"; return 1; }
+  compose_up "$LIVE/$lkg" "$LIVE/$lkg/rendered.json" "${recreate[@]+"${recreate[@]}"}" || { log "ROLLBACK: up failed"; return 1; }
+  if ! wait_healthy "$LIVE/$lkg/rendered.json"; then log "ROLLBACK: last-known-good is not healthy either"; return 1; fi
+  prune_releases
+  log "ROLLBACK: last-known-good running ($(cat -- "$LIVE/$lkg/DEPLOYED"))"
 }
 
 # ---- main -------------------------------------------------------------------
@@ -568,9 +666,15 @@ log "deploy start: arg=$arg project=$project user=$(id -un) no-env-resolution=$s
 
 # Stale staging from an interrupted run (we hold the lock).
 find -P "$STAGING_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf --one-file-system -- {} + 2>/dev/null
+rm -f -- "$LIVE"/.link.* 2>/dev/null
 
-deployed_tag "$DEPLOYED_FILE"
-current_tag=$dtag
+cur=$(link_target current) || cur=""
+lkg=$(link_target .current) || lkg=""
+if [ -n "$cur" ] && [ "$cur" != "$lkg" ]; then
+  log "warning: an earlier deploy did not finish (current != .current); proceeding"
+fi
+current_tag=""
+if [ -n "$lkg" ]; then deployed_tag "$LIVE/$lkg/DEPLOYED"; current_tag=$dtag; fi
 if [ "$arg" = none ]; then tag=${current_tag:-none}; else tag=$arg; fi
 render_tag=$tag
 [ "$render_tag" = none ] && render_tag=""
@@ -582,27 +686,37 @@ check_tree "$INCOMING" incoming || deny "incoming tree rejected"
 new_stage
 stage=$stage_dir
 prepare "$stage" "$INCOMING" 1 "$render_tag" || deny "staged compose rejected"
-json=$stage/rendered.json
 log "staged compose validated"
 
-compose_pull "$stage" "$json" || deny "image pull failed (details in $LOG on the host)"
+compose_pull "$stage" "$stage/rendered.json" || deny "image pull failed (details in $LOG on the host)"
 log "images present"
 
-mapfile -t recreate < <(changed_bind_services "$stage" "$json")
-
 # ---- point of no return ----
-snapshot_previous || deny "snapshot of live failed"
-install_live "$stage" || { log "FATAL: installing staged files failed"; rollback; exit 1; }
-log "live files updated"
+if ! [ -d "$RELEASES" ]; then mkdir -m 700 -- "$RELEASES" || deny "cannot create $RELEASES"; fi
+rel_name=$(date -u +%Y%m%dT%H%M%SZ)-$$
+rel=$RELEASES/$rel_name
+if ! { mv -T -- "$stage/in" "$rel" && mv -T -- "$stage/rendered.json" "$rel/rendered.json"; }; then
+  deny "cannot create release $rel_name"
+fi
+json=$rel/rendered.json
+mapfile -t recreate < <(changed_bind_services "$rel" "$json")
+ensure_static_links || { log "FATAL: cannot create static links"; rollback; exit 1; }
+set_link current "releases/$rel_name" || { log "FATAL: cannot move current"; rollback; exit 1; }
+log "current -> releases/$rel_name"
 
-if compose_up "$stage" "$json" "${recreate[@]+"${recreate[@]}"}" && wait_healthy "$json"; then
-  printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$tag" >"$DEPLOYED_FILE.new" \
-    && chmod 644 -- "$DEPLOYED_FILE.new" && mv -f -T -- "$DEPLOYED_FILE.new" "$DEPLOYED_FILE"
-  cp -- "$json" "$LIVE/.deployed.json"
-  log "result: deployed $(cat -- "$DEPLOYED_FILE")"
+if compose_up "$rel" "$json" "${recreate[@]+"${recreate[@]}"}" && wait_healthy "$json"; then
+  if ! { printf '%s %s\n' "$(ts)" "$tag" >"$rel/DEPLOYED.new" && chmod 644 -- "$rel/DEPLOYED.new" \
+          && mv -f -T -- "$rel/DEPLOYED.new" "$rel/DEPLOYED"; }; then
+    log "FATAL: cannot write DEPLOYED"; rollback; exit 1
+  fi
+  old=$(link_target .current) || old=""
+  if [ -n "$old" ] && [ "$old" != "releases/$rel_name" ]; then set_link .previous "$old"; fi
+  set_link .current "releases/$rel_name" || { log "FATAL: cannot move .current"; exit 1; }
+  prune_releases
+  log "result: deployed $(cat -- "$rel/DEPLOYED")"
   exit 0
 fi
 
 log "deploy failed: rolling back"
-if rollback; then log "result: failed, rolled back to previous"; else log "result: failed, rollback incomplete"; fi
+if rollback; then log "result: failed, rolled back to last-known-good"; else log "result: failed, rollback incomplete"; fi
 exit 1

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2015,SC2317  # `cond && pass || fail` (pass never fails); trap fn
+# shellcheck disable=SC2015,SC2016,SC2317  # literal ${} in fixtures; `cond && pass || fail` (pass never fails); trap fn
 # Test for infra/bin/stack-deploy.sh, run as a normal user with local docker.
 # Uses SENTINELA_DEPLOY_ROOT (test prefix) => compose project sentinela-stack-test.
 # Volumes are project-scoped (sentinela-stack-test_*): the `name:` lines of the
@@ -61,7 +61,8 @@ INFLUX_ADMIN_PASSWORD='$admin_pass'
 INFLUX_TELEGRAF_TOKEN=$admin_token
 MQTT_BROKER=tcp://$gw:$port
 MQTT_TELEGRAF_USER=telegraf-test
-MQTT_TELEGRAF_PASS=test-mqtt-pass-123
+MQTT_TELEGRAF_PASS=mqttsecret999 # rotated 2026-11
+PG_WORKER_DSN="postgres://w:dq\"x@h/db"
 SUPABASE_NETWORK=
 EOF
 chmod 600 "$LIVE/.env"
@@ -173,6 +174,34 @@ run_deploy none
 expect_rc "include (even in comment) rejected" 1 "forbidden word"
 [ ! -e "$LIVE/compose.yml" ] && pass "rejections left live empty" || fail "rejection touched live"
 
+# ---- C1: rendered .env values never reach stdout ----------------------------
+# Probe values: '$' doubled by the render, inline comment, escaped quote.
+probe_secrets=(mqttsecret999 'sw0rd' 'dq"x' 'dq\"x' 'postgres://' "$admin_token")
+no_secret_on_stdout() { # <name>
+  local s leaked=""
+  for s in "${probe_secrets[@]}"; do [[ $out == *"$s"* ]] && leaked+=" $s"; done
+  if [ -n "$leaked" ]; then fail "$1: secret on stdout:$leaked"; else pass "$1: no secret on stdout"; fi
+}
+reset_incoming "$base"
+cat >"$INC/compose.yml" <<'EOF'
+services:
+  telegraf:
+    image: ${INFLUX_ADMIN_PASSWORD}
+    network_mode: ${MQTT_TELEGRAF_PASS}
+    hostname: ${PG_WORKER_DSN}
+    environment:
+      A: x
+EOF
+run_deploy none
+expect_rc "C1 probe compose denied" 1 "validator: DENY: telegraf: network_mode not allowed"
+no_secret_on_stdout "C1 validator DENY"
+grep -qF mqttsecret999 "$LOGF" && pass "C1 full detail kept in host log" || fail "C1 probe not rendered (test not meaningful)"
+reset_incoming "$base"
+sed -i 's#^      - influxdb-config:/etc/influxdb2#      - influxdb-config:/etc/influxdb2\n      - /srv/${MQTT_TELEGRAF_PASS}/${INFLUX_ADMIN_TOKEN}:/x:ro#' "$INC/compose.yml"
+run_deploy none
+expect_rc "C1 policy DENY with interpolated bind" 1 "DENY (deploy policy): influxdb: bind source not allowed"
+no_secret_on_stdout "C1 deploy policy DENY"
+
 # ---- happy path (first deploy) ----------------------------------------------
 reset_incoming "$base"
 run_deploy none
@@ -188,11 +217,15 @@ tele_id=$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --fi
 if docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$influx_id" | grep -qxF "DOCKER_INFLUXDB_INIT_PASSWORD=$admin_pass"; then
   pass "'\$' in .env value survives render -> up"
 else fail "INIT_PASSWORD changed by re-interpolation"; fi
-if [[ $out == *"$admin_token"* ]] || grep -qF "$admin_token" "$LOGF" || grep -qF "test-mqtt-pass-123" "$LOGF"; then
-  fail "secret leaked to stdout/log"
-else pass "no secret in stdout/log"; fi
+if [[ $out == *"$admin_token"* ]] || [[ $out == *mqttsecret999* ]] || [[ $out == *sw0rd* ]]; then
+  fail "secret leaked to stdout"
+else pass "no secret in stdout"; fi
 [ "$(stat -c %a "$LOGF")" = 600 ] && pass "log mode 600" || fail "log mode"
-[ "$(stat -c %a "$LIVE/.deployed.json")" = 600 ] && pass ".deployed.json mode 600" || fail ".deployed.json mode"
+[ "$(stat -c %a "$LIVE/current/rendered.json")" = 600 ] && pass "rendered.json mode 600" || fail "rendered.json mode"
+for l in current .current compose.yml telegraf DEPLOYED; do [ -L "$LIVE/$l" ] || fail "layout: $l is not a symlink"; done
+[ "$(readlink "$LIVE/current")" = "$(readlink "$LIVE/.current")" ] && pass "layout: current == .current after success" || fail "layout pointers"
+cmp -s <(docker exec "$tele_id" cat /etc/telegraf/telegraf.conf) "$conf" && pass "telegraf sees the release conf through the symlinks" \
+  || fail "telegraf conf inside container differs"
 [ -z "$(ls -A "$LIVE/.staging")" ] && pass "staging cleaned" || fail "staging left behind"
 
 # ---- explicit sha, then none keeps it ---------------------------------------
@@ -232,7 +265,7 @@ conf2=$tmp/telegraf.conf
 { cat "$conf"; echo "# changed for the rollback test"; } >"$conf2"
 reset_incoming "$bad" "$conf2"
 run_deploy none
-expect_rc "health failure -> rollback" 1 "result: failed, rolled back to previous"
+expect_rc "health failure -> rollback" 1 "result: failed, rolled back to last-known-good"
 [ -f "$LIVE/compose.yml" ] && [ "$(sha256sum <"$LIVE/compose.yml")" = "$prev_compose" ] && pass "live compose restored" || fail "live compose not restored"
 cmp -s "$LIVE/telegraf/telegraf.conf" "$conf" && pass "live telegraf.conf restored" || fail "telegraf.conf not restored"
 [ -n "$prev_deployed" ] && [ "$(cat "$LIVE/DEPLOYED")" = "$prev_deployed" ] && pass "DEPLOYED unchanged after rollback" || fail "DEPLOYED changed"
@@ -246,12 +279,56 @@ sed 's/^    mem_limit: 128m/    mem_limit: 128m\n    healthcheck:\n      test: [
 reset_incoming "$tmp/compose.unhealthy.yml"
 run_deploy none
 expect_rc "unhealthy after up -> rollback" 1 "health: telegraf is unhealthy"
-[[ $out == *"result: failed, rolled back to previous"* ]] && pass "rolled back after health wait" || fail "no rollback after health wait: $out"
+[[ $out == *"result: failed, rolled back to last-known-good"* ]] && pass "rolled back after health wait" || fail "no rollback after health wait: $out"
 [ "$(sha256sum <"$LIVE/compose.yml")" = "$prev_compose" ] && [ "$(cat "$LIVE/DEPLOYED")" = "$prev_deployed" ] \
   && pass "live + DEPLOYED restored after health wait" || fail "state not restored after health wait"
 tele_id=$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=telegraf)
 [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$tele_id" 2>/dev/null)" = none ] \
   && pass "telegraf back to previous definition" || fail "telegraf still has the failing healthcheck"
+
+# ---- I2: stdout closed / SIGHUP / kill -9 after the point of no return -------
+lkg_before=$(readlink "$LIVE/.current")
+conf3=$tmp/telegraf3.conf
+{ cat "$conf"; echo "# I2 stdout-closed deploy"; } >"$conf3"
+reset_incoming "$base" "$conf3"
+sha2=$(printf 'b%.0s' {1..40})
+SENTINELA_DEPLOY_ROOT="$R" bash "$script" "$sha2" 2>/dev/null | head -n 1 >/dev/null
+rc=${PIPESTATUS[0]}
+[ "$rc" -eq 0 ] && pass "stdout closed after first line: deploy completed" || fail "stdout closed: exit $rc"
+grep -q " $sha2\$" "$LIVE/DEPLOYED" && pass "stdout closed: DEPLOYED consistent" || fail "stdout closed: DEPLOYED $(cat "$LIVE/DEPLOYED")"
+[ "$(readlink "$LIVE/.previous")" = "$lkg_before" ] && pass ".previous rotated to the old .current" || fail ".previous not rotated"
+cmp -s "$LIVE/telegraf/telegraf.conf" "$conf3" && pass "telegraf.conf from the new release" || fail "telegraf.conf not updated"
+
+reset_incoming "$base"
+sha3=$(printf 'c%.0s' {1..40})
+SENTINELA_DEPLOY_ROOT="$R" bash "$script" "$sha3" >"$tmp/hup.out" 2>&1 &
+pid=$!
+sleep 3
+kill -HUP "$pid" 2>/dev/null
+wait "$pid"; rc=$?
+[ "$rc" -eq 0 ] && grep -q " $sha3\$" "$LIVE/DEPLOYED" && pass "SIGHUP ignored: deploy completed" || fail "SIGHUP: exit $rc"
+
+# kill -9 the whole deploy right after `current` moved: .current/DEPLOYED stay
+# on the last healthy release; the next deploy warns and recovers.
+lkg_before=$(readlink "$LIVE/.current"); dep_before=$(cat "$LIVE/DEPLOYED")
+conf4=$tmp/telegraf4.conf
+{ cat "$conf"; echo "# I2 crash"; } >"$conf4"
+reset_incoming "$base" "$conf4"
+sha4=$(printf 'd%.0s' {1..40})
+setsid env SENTINELA_DEPLOY_ROOT="$R" bash "$script" "$sha4" >"$tmp/crash.out" 2>&1 &
+pid=$!
+for _ in $(seq 100); do grep -q 'current -> releases/' "$tmp/crash.out" && break; sleep 0.1; done
+kill -9 -- "-$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+sleep 2
+[ "$(readlink "$LIVE/.current")" = "$lkg_before" ] && [ "$(cat "$LIVE/DEPLOYED")" = "$dep_before" ] \
+  && pass "crash after point of no return: .current and DEPLOYED unchanged" || fail "crash left .current/DEPLOYED inconsistent"
+[ "$(readlink "$LIVE/current")" != "$lkg_before" ] && pass "crash: current pointed at the unfinished release" || fail "crash test did not reach the swap"
+reset_incoming "$base"
+run_deploy none
+expect_rc "deploy after crash recovers" 0 "an earlier deploy did not finish"
+grep -q " $sha3\$" "$LIVE/DEPLOYED" && pass "none after crash keeps last healthy tag" || fail "tag after crash: $(cat "$LIVE/DEPLOYED")"
+n=$(find "$LIVE/releases" -mindepth 1 -maxdepth 1 | wc -l)
+[ "$n" -le 3 ] && pass "releases pruned ($n kept)" || fail "releases not pruned ($n)"
 
 [ -n "${SHOW_LOG:-}" ] && { echo "--- deploy log"; cat "$LOGF"; }
 echo
