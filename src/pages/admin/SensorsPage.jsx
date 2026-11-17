@@ -22,6 +22,8 @@ import {
   buoyStatus, STATUS_LABEL, formatCoords, formatAge, formatInterval,
   sensorDiagnosis, readingsToCsv,
 } from '../../utils/buoyRuntime';
+import { fetchSensorHealth, fetchWorkerJobs, healthForDevice } from '../../services/sensorHealth';
+import { SensorHealthBadges, HealthEvents, CollectionHealth } from '../../components/admin/SensorHealth';
 import './SensorsPage.css';
 
 // Sensores que o firmware publica em <deviceId>/sensores. `name` é também a
@@ -60,6 +62,32 @@ const SensorsPage = () => {
   const { currentUser } = useAuth();
   const readOnly = useReadOnly();
   const { addToast } = useToast();
+
+  // Saúde (detector do worker): polling de 60 s, pausado com a aba oculta.
+  const [healthRows, setHealthRows] = useState([]);
+  const [workerJobs, setWorkerJobs] = useState([]);
+  const [healthError, setHealthError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (document.visibilityState === 'hidden') return;
+      try {
+        const [rows, jobs] = await Promise.all([fetchSensorHealth(), fetchWorkerJobs()]);
+        if (cancelled) return;
+        setHealthRows(rows); setWorkerJobs(jobs); setHealthError(false);
+      } catch {
+        if (!cancelled) setHealthError(true);
+      }
+    };
+    load();
+    const timer = setInterval(load, 60_000);
+    document.addEventListener('visibilitychange', load);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', load);
+    };
+  }, []);
 
   const { messages, receivedAt, connected, addTopics } = useMqtt(getMqttTopics());
 
@@ -402,6 +430,7 @@ const SensorsPage = () => {
         </div>
         
         <div className="header-actions">
+          <CollectionHealth jobs={workerJobs} unavailable={healthError} />
           <span className={`badge badge-${connected ? 'online' : 'offline'}`} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
             MQTT {connected ? 'Online' : 'Offline'}
@@ -576,6 +605,9 @@ const SensorsPage = () => {
                     <span className={`badge ${buoy.modo === 'campo' ? 'badge-online' : 'badge-planejada'}`} style={{ marginLeft: '8px' }}>
                       {buoy.modo === 'campo' ? 'Campo' : 'Bancada'}
                     </span>
+                    {buoy.deviceId && (
+                      <SensorHealthBadges health={healthForDevice(healthRows, buoy.deviceId, buoy.modo)} />
+                    )}
                   </td>
                   <td onClick={() => toggleRow(buoy.id)}>
                     <span
@@ -612,6 +644,13 @@ const SensorsPage = () => {
                       <div className="details-container animate-fade-in">
                         
                         {/* Info Header Row moved up since Control Actions is removed */}
+
+                        {buoy.deviceId && (
+                          <div className="mt-2">
+                            <span className="info-label">Saúde dos sensores</span>
+                            <HealthEvents deviceId={buoy.deviceId} />
+                          </div>
+                        )}
 
                         <div className="details-info-grid mt-2">
                           {buoy.deviceId && (
