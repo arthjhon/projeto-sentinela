@@ -25,8 +25,14 @@ class Flag:
 
 
 def coerce(s: pd.Series) -> pd.Series:
-    out = pd.to_numeric(s, errors="coerce").astype(float)
+    out = _normalize_index(pd.to_numeric(s, errors="coerce").astype(float))
     return out[np.isfinite(out.to_numpy())]
+
+
+def _normalize_index(s: pd.Series) -> pd.Series:
+    """Sorted index, duplicate timestamps dropped (keep last)."""
+    s = s.sort_index(kind="stable")
+    return s[~s.index.duplicated(keep="last")]
 
 
 def _flags(s: pd.Series, mask, regra: str, severidade: str, detalhe: str) -> list[Flag]:
@@ -64,20 +70,23 @@ def check_salto(s: pd.Series, r: SensorRules, step: timedelta = NOMINAL_STEP) ->
 
 
 def check_travado(s: pd.Series, r: SensorRules, step: timedelta = NOMINAL_STEP) -> list[Flag]:
-    """Rolling std over travado_min below travado_eps. One flag per stuck run, at the window start.
-    Stuck exactly at the sensor floor (turbidez 0.00) is only 'suspeito'."""
+    """Rolling (max - min) over travado_min below travado_eps, i.e. no change at all (eps should be
+    under half the 0.01 firmware LSB, so quantized live signals never trip it). One flag per stuck
+    run, at the first sample of the run. Stuck exactly at the sensor floor (turbidez 0.00) is only
+    'suspeito'."""
     s = coerce(s)
     win = pd.Timedelta(r.travado_min)
     expected = win / pd.Timedelta(step)
     roll = s.rolling(win)
-    mask = ((roll.std() < r.travado_eps) & (roll.count() >= 0.8 * expected)).fillna(False)
+    mask = (((roll.max() - roll.min()) < r.travado_eps) & (roll.count() >= 0.8 * expected)).fillna(False)
     starts = mask & ~mask.shift(1, fill_value=False)
     flags = []
     for end in s.index[starts.to_numpy()]:
         v = float(s[end])
+        first = s.index[s.index.searchsorted(end - win, side="right")]
         at_piso = r.piso is not None and abs(v - r.piso) <= r.travado_eps
         flags.append(Flag(
-            "travado", "suspeito" if at_piso else "falha", (end - win).to_pydatetime(), v,
+            "travado", "suspeito" if at_piso else "falha", first.to_pydatetime(), v,
             f"valor constante por {int(win.total_seconds() // 60)} min"
             + (" no piso do sensor" if at_piso else "")))
     return flags
@@ -95,7 +104,7 @@ def check_sem_dados(last_seen: datetime | None, now: datetime, cfg: DetectorConf
 
 def check_campo_ausente(present: pd.Series) -> list[Flag]:
     """present: bool Series aligned to payload timestamps. One flag per contiguous missing run."""
-    miss = ~present.astype(bool)
+    miss = ~_normalize_index(present).astype(bool)
     starts = miss & ~miss.shift(1, fill_value=False)
     run_id = starts.cumsum()
     sizes = miss.groupby(run_id).sum()

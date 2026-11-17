@@ -108,6 +108,7 @@ def test_layer1_performance_week():
 
 def test_config_loads_expected_values():
     t = CFG.sensores["turbidez"]
+    assert CFG.sensores["ph"].travado_eps == 0.005
     assert t.piso == 0 and t.faixa[0] == 0 and t.travado_min == timedelta(minutes=30)
     assert CFG.sensores["ph"].piso is None
     assert CFG.sem_dados_max == timedelta(minutes=10) and CFG.janela == timedelta(days=7)
@@ -119,6 +120,8 @@ def test_config_loads_expected_values():
     ("faixa: [0, 14]", "faixa: [14, 0]", "sensores.ph.faixa"),
     ("hampel_k: 3.0", "hampel_k: -1", "stats.hampel_k"),
     ("stl_min_days: 3", "stl_min_days: 1.5", "stats.stl_min_days"),
+    ("    piso: null", "    pisso: null", "sensores.ph.pisso"),
+    ("janela_dias: 7 ", "janela_dia: 7 ", "janela_dia"),
 ])
 def test_config_rejects_bad_values_naming_key(tmp_path, old, new, key):
     txt = CFG_PATH.read_text()
@@ -127,3 +130,40 @@ def test_config_rejects_bad_values_naming_key(tmp_path, old, new, key):
     p.write_text(txt.replace(old, new, 1))
     with pytest.raises(ConfigError, match=key.replace(".", r"\.")):
         load_detector_config(p)
+
+
+def _night_ph(values):
+    idx = pd.date_range(T0, periods=len(values), freq="5s", tz="UTC")
+    return pd.Series(values, index=idx)
+
+
+def test_quantized_live_ph_is_not_stuck():
+    r = CFG.sensores["ph"]
+    n = 2 * 720 * 6
+    v = np.full(n, 7.80)
+    v[::300] = 7.81                       # one LSB blip every 25 min
+    assert rules.check_travado(_night_ph(v), r) == []
+    v = np.round(7.80 + 0.01 * (np.arange(n) // 240), 2)   # +0.01 every 20 min
+    assert rules.check_travado(_night_ph(v), r) == []
+
+
+def test_truly_constant_series_is_falha_and_time_is_first_sample():
+    r = CFG.sensores["ph"]
+    s = _night_ph(np.full(720 * 2, 7.80))   # 2 h constant
+    f = rules.check_travado(s, r)
+    assert len(f) == 1 and f[0].severidade == "falha" and f[0].time == T0
+
+
+def test_unsorted_and_duplicate_index_do_not_raise():
+    r = CFG.sensores["ph"]
+    s = _night_ph(np.full(720, 7.80))
+    shuffled = s.sample(frac=1, random_state=0)
+    assert len(rules.check_travado(shuffled, r)) == 1
+    dup = pd.concat([s, s.iloc[:10]])
+    assert len(rules.check_travado(dup, r)) == 1
+    assert rules.check_salto(shuffled, r) == [] and rules.check_faixa(dup, r) == []
+    present = pd.Series(True, index=s.index[:5])
+    present.iloc[2] = False
+    dpresent = pd.concat([present, present])
+    f = rules.check_campo_ausente(dpresent.sample(frac=1, random_state=1))
+    assert len(f) == 1 and f[0].time == s.index[2].to_pydatetime()

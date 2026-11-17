@@ -74,9 +74,20 @@ def _section(d, key: str) -> dict:
     return d
 
 
+_SENSOR_KEYS = {"faixa", "plausivel", "salto_max", "travado_min_min", "travado_eps", "piso"}
+_TOP_KEYS = {"sem_dados_max_min", "estabilizacao_min", "janela_dias", "sensores", "stats"}
+
+
+def _no_unknown(d: dict, prefix: str, allowed: set) -> None:
+    for k in d:
+        if k not in allowed:
+            raise ConfigError(f"{prefix}.{k}: unknown key" if prefix else f"{k}: unknown key")
+
+
 def _sensor(d: dict, name: str) -> SensorRules:
     p = f"sensores.{name}"
     d = _section(d, p)
+    _no_unknown(d, p, _SENSOR_KEYS)
     for k in ("faixa", "plausivel", "salto_max", "travado_min_min", "travado_eps"):
         if k not in d:
             raise ConfigError(f"{p}.{k}: missing")
@@ -118,7 +129,9 @@ def load_detector_config(path: str | Path) -> DetectorConfig:
     except yaml.YAMLError as e:
         raise ConfigError(f"{path}: invalid YAML: {e}") from e
     raw = _section(raw, "root")
+    _no_unknown(raw, "", _TOP_KEYS)
     sensores = _section(raw.get("sensores"), "sensores")
+    _no_unknown(sensores, "sensores", set(SENSORS))
     missing = [s for s in SENSORS if s not in sensores]
     if missing:
         raise ConfigError(f"sensores.{missing[0]}: missing")
