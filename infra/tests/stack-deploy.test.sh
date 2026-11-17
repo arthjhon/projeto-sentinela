@@ -72,8 +72,12 @@ chmod 600 "$LIVE/.env"
 # The real compose, minus fixed volume names (=> project-scoped test volumes)
 # and on a test port.
 base=$tmp/compose.base.yml
+# The worker service and the external supabase network are dropped: the worker
+# image lives in GHCR (not pullable here) and the network does not exist.
 sed -e '/^    name: sentinela-influxdb-/d' -e 's/127\.0\.0\.1:8086:8086/127.0.0.1:18086:8086/' \
-  "$repo/infra/stack/compose.yml" >"$base"
+  "$repo/infra/stack/compose.yml" \
+  | awk '/^  worker:/ {skip=1; next} /^networks:/ {skip=1; next} /^[^ #]/ {skip=0} !skip' >"$base"
+if grep -q -e 'worker:' -e 'supabase' "$base"; then echo "test compose still has worker/supabase"; exit 1; fi
 if grep -q 'sentinela-influxdb-' "$base"; then echo "test compose still names real volumes"; exit 1; fi
 conf=$repo/infra/stack/telegraf/telegraf.conf
 

@@ -1,5 +1,5 @@
-# Stack de producao do Sentinela (VM Debian). Servicos: influxdb + telegraf.
-# O worker entra em task posterior. Valores vem do .env (nunca versionado).
+# Stack de producao do Sentinela (VM Debian). Servicos: influxdb + telegraf + worker.
+# Valores vem do .env (nunca versionado).
 services:
   influxdb:
     image: influxdb:2.7.12
@@ -44,6 +44,36 @@ services:
       MQTT_TELEGRAF_USER: ${MQTT_TELEGRAF_USER:?MQTT_TELEGRAF_USER is required}
       MQTT_TELEGRAF_PASS: ${MQTT_TELEGRAF_PASS:?MQTT_TELEGRAF_PASS is required}
     mem_limit: 128m
+
+  # Coletores (Open-Meteo, ANA). Sem portas, sem volumes, raiz somente leitura.
+  # A rede externa do Supabase serve so para o worker alcancar o Postgres.
+  worker:
+    image: ghcr.io/arthjhon/sentinela-worker:${WORKER_TAG:?WORKER_TAG is required}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    environment:
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_ORG: sentinela
+      INFLUX_WORKER_TOKEN: ${INFLUX_WORKER_TOKEN:?INFLUX_WORKER_TOKEN is required}
+      PG_WORKER_DSN: ${PG_WORKER_DSN:?PG_WORKER_DSN is required}
+    networks:
+      default: {}
+      supabase: {}
+    mem_limit: 384m
+
+networks:
+  supabase:
+    external: true
+    name: ${SUPABASE_NETWORK:?SUPABASE_NETWORK is required}
 
 volumes:
   influxdb-data:

@@ -27,6 +27,9 @@ def test_run_writes_tick_and_stops_on_sigterm(tmp_path):
         "INFLUX_ORG": "o",
         "INFLUX_WORKER_TOKEN": "t",
         "PG_WORKER_DSN": "postgresql://x",
+        # startup jobs must fail fast and never reach the real internet
+        "HTTP_PROXY": "http://127.0.0.1:1",
+        "HTTPS_PROXY": "http://127.0.0.1:1",
     }
     proc = subprocess.Popen(
         [sys.executable, "-m", "sentinela_worker", "run"], env=env, stdout=subprocess.PIPE, text=True
@@ -38,7 +41,7 @@ def test_run_writes_tick_and_stops_on_sigterm(tmp_path):
             time.sleep(0.1)
         assert tick.exists()
         proc.send_signal(signal.SIGTERM)
-        out, _ = proc.communicate(timeout=10)
+        out, _ = proc.communicate(timeout=30)
     finally:
         if proc.poll() is None:
             proc.kill()
@@ -65,3 +68,34 @@ def test_backfill_openmeteo_cli_wiring(monkeypatch):
     assert calls["args"] == (dt.date(2024, 6, 1), dt.date(2024, 6, 3))
     assert cli.main(["backfill-openmeteo", "--start", "2024-06-01"]) == 0
     assert calls["args"][1] == dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=1)
+
+
+def test_build_jobs_registers_openmeteo_and_ana():
+    jobs, closers = cli.build_jobs(object())
+    try:
+        assert [(j.name, j.interval_s) for j in jobs] == [("openmeteo", 3600), ("ana", 900)]
+        assert len(closers) == 2
+    finally:
+        for c in closers:
+            c.close()
+
+
+def test_cmd_run_uses_factory_and_closes_clients(monkeypatch):
+    monkeypatch.setenv("INFLUX_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("INFLUX_ORG", "o")
+    monkeypatch.setenv("INFLUX_WORKER_TOKEN", "t")
+    monkeypatch.setenv("PG_WORKER_DSN", "postgresql://x")
+    closed = []
+
+    class Closer:
+        def close(self):
+            closed.append(1)
+
+    seen = {}
+
+    def fake_run_forever(jobs, status, **kw):
+        seen["jobs"] = jobs
+
+    monkeypatch.setattr(cli.scheduler, "run_forever", fake_run_forever)
+    assert cli.cmd_run(lambda sink: ([], [Closer(), Closer()])) == 0
+    assert seen["jobs"] == [] and len(closed) == 2

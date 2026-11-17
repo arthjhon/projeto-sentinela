@@ -40,7 +40,21 @@ def healthcheck(path: str | None = None, max_age_s: int = HEALTHCHECK_MAX_AGE_S)
     return 0 if age < max_age_s else 1
 
 
-def cmd_run() -> int:
+def build_jobs(sink) -> tuple[list[scheduler.Job], list]:
+    """Return the production jobs and the long-lived clients to close on shutdown."""
+    from .collectors import ana, openmeteo
+
+    om_client = openmeteo.make_client()
+    ana_client = ana.make_client()
+    source = ana.AnaLegacySource(ana_client)
+    jobs = [
+        scheduler.Job("openmeteo", 3600, lambda now: openmeteo.collect_openmeteo(om_client, sink, now)),
+        scheduler.Job("ana", 900, lambda now: ana.collect_ana(source, sink, now)),
+    ]
+    return jobs, [om_client, ana_client]
+
+
+def cmd_run(jobs_factory=build_jobs) -> int:
     from .sinks.influx import InfluxSink
     from .sinks.status import InfluxJobStatus
 
@@ -55,13 +69,15 @@ def cmd_run() -> int:
 
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    jobs: list[scheduler.Job] = []  # later tasks register jobs here
+    jobs, closers = jobs_factory(sink)
     log("INFO", "worker", "started", jobs=len(jobs))
     try:
         scheduler.run_forever(
             jobs, InfluxJobStatus(sink), sleep=_interruptible_sleep(lambda: stopping), stop=lambda: stopping
         )
     finally:
+        for c in closers:
+            c.close()
         sink.close()
     log("INFO", "worker", "stopped")
     return 0

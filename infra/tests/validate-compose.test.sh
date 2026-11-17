@@ -172,7 +172,8 @@ if [ "$rc" -eq 2 ]; then pass "relative ALLOWED_BIND_ROOT rejected"; else fail "
 # Real production compose, dummy env, real allowed-images: must be OK.
 real="$here/../stack/compose.yml"
 if INFLUX_ADMIN_PASSWORD=x INFLUX_ADMIN_TOKEN=x INFLUX_TELEGRAF_TOKEN=x MQTT_BROKER=tcp://h:1883 \
-  MQTT_TELEGRAF_USER=u MQTT_TELEGRAF_PASS=p render "$real" "$tmp/real.json"; then
+  MQTT_TELEGRAF_USER=u MQTT_TELEGRAF_PASS=p INFLUX_WORKER_TOKEN=x PG_WORKER_DSN=postgres://x \
+  WORKER_TAG=0123456789abcdef0123456789abcdef01234567 render "$real" "$tmp/real.json"; then
   expect "real infra/stack/compose.yml" 0 "OK" "$tmp/real.json" "$here/../stack/allowed-images"
 else
   fail "real compose failed to render"

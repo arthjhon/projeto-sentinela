@@ -473,10 +473,13 @@ gh api repos/arthjhon/projeto-sentinela/branches/main/protection --jq '{enforce_
 PR obrigatório também para admin, sem force push nem deleção. Quando o `stack.yml` existir, exigir
 o job de teste: `"required_status_checks": {"strict": true, "contexts": ["test"]}`.
 
-### 13. Worker (tarefa futura): restrições que o deploy exige
+### 13. Worker: restrições que o deploy exige
 
 - Imagem só `ghcr.io/arthjhon/sentinela-worker:${WORKER_TAG}` (40-hex; o CI passa o SHA como
-  argumento, `none` mantém o implantado).
+  argumento, `none` mantém o implantado). O compose usa `${WORKER_TAG:?}`: sem tag implantada
+  ainda, `none` falha no render (fail-closed); o primeiro deploy do worker precisa do SHA.
+- O `.env` da VM precisa de `INFLUX_WORKER_TOKEN` e `PG_WORKER_DSN`; o worker entra na rede
+  `SUPABASE_NETWORK` (anexo vazio, `cap_drop: [ALL]`) só para alcançar o Postgres.
 - Pull do GHCR: pacote público dispensa credencial (preferível; a imagem não deve conter segredo).
   Se for privado, `docker login ghcr.io` como root com um token **só de leitura de pacotes** e com
   validade: fine-grained PAT com permissão Packages: read, se o GHCR já aceitar fine-grained na

@@ -64,10 +64,12 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Task 10: pytest do worker entra aqui quando worker/ existir.
+      # Imagem python pinada, rodando em container; sem segredo nem rede externa.
+      - name: Worker tests (pytest)
+        run: bash worker/scripts/test.sh
 
-  # Só roda depois que worker/Dockerfile existir (Task 10); até lá fica skipped
-  # e o deploy passa `none`.
+  # Publica a imagem do worker (tag = sha do commit) só na main; o deploy passa
+  # esse sha à VM, que o exporta como WORKER_TAG.
   image:
     needs: test
     if: >-
