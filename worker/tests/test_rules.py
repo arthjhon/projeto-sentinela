@@ -113,13 +113,13 @@ def test_config_loads_expected_values():
     assert CFG.sensores["temperatura"].travado_min == timedelta(minutes=360)
     assert CFG.sensores["ph"].piso is None
     assert CFG.sem_dados_max == timedelta(minutes=10) and CFG.janela == timedelta(days=7)
-    assert CFG.stats.hampel_window == 21 and CFG.stats.cusum_h == 8.0
+    assert CFG.stats.hampel_window == 121 and CFG.stats.cusum_h == 8.0
 
 
 @pytest.mark.parametrize("old,new,key", [
     ("salto_max: 1.0", "salto_max: abc", "sensores.ph.salto_max"),
     ("faixa: [0, 14]", "faixa: [14, 0]", "sensores.ph.faixa"),
-    ("hampel_k: 6.0", "hampel_k: -1", "stats.hampel_k"),
+    ("hampel_k: 5.0", "hampel_k: -1", "stats.hampel_k"),
     ("stl_min_days: 3", "stl_min_days: 1.5", "stats.stl_min_days"),
     ("    piso: null", "    pisso: null", "sensores.ph.pisso"),
     ("janela_dias: 7 ", "janela_dia: 7 ", "janela_dia"),

@@ -11,7 +11,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 from scipy.stats import theilslopes
 from statsmodels.tsa.seasonal import STL
 
-from sentinela_worker.detector.config import DetectorConfig, StatsConfig
+from sentinela_worker.detector.config import DerivaRules, DetectorConfig, StatsConfig
 from sentinela_worker.detector.rules import Flag, coerce
 
 MAD_TO_SIGMA = 1.4826
@@ -33,27 +33,26 @@ def _mad(x: np.ndarray) -> float:
 
 
 def hampel(s: pd.Series, window: int | None = None, k: float | None = None,
-           cfg: StatsConfig | None = None) -> pd.Series:
-    """Boolean mask of isolated spikes: |x - rolling median| > k * 1.4826 * rolling MAD.
+           cfg: StatsConfig | None = None, mad_min: float = 0.0) -> pd.Series:
+    """Boolean mask of isolated spikes: |x - rolling median| > k * max(1.4826*MAD, mad_min).
 
-    Centered window of `window` samples (edges reflected). A window with MAD == 0 (flat
-    signal) never flags: that is the `travado` rule's territory.
+    Centered window of `window` samples (shrinking at the edges); the MAD is the rolling
+    median of the deviations from each sample's own rolling median (standard fast
+    approximation). `mad_min` keeps flat or clamped windows (MAD == 0) able to flag a spike.
+    Needs at least `window` samples, otherwise nothing is flagged.
     """
     cfg = cfg or StatsConfig()
     window = cfg.hampel_window if window is None else window
     k = cfg.hampel_k if k is None else k
     s = coerce(s)
-    n = len(s)
-    if n < 3 or window < 3:
+    if len(s) < window:
         return pd.Series(False, index=s.index)
-    window = min(window | 1, n if n % 2 else n - 1)        # odd, never longer than the data
-    x = s.to_numpy()
-    padded = np.pad(x, window // 2, mode="reflect")
-    win = sliding_window_view(padded, window)
-    med = np.median(win, axis=1)
-    mad = MAD_TO_SIGMA * np.median(np.abs(win - med[:, None]), axis=1)
-    flagged = (mad > 0) & (np.abs(x - med) > k * mad)
-    return pd.Series(flagged, index=s.index)
+    roll = dict(window=window, center=True, min_periods=window // 2 + 1)
+    med = s.rolling(**roll).median()
+    dev = (s - med).abs()
+    scale = np.maximum(MAD_TO_SIGMA * dev.rolling(**roll).median(), mad_min)
+    flagged = (scale > 0) & (dev > k * scale)
+    return pd.Series(flagged.to_numpy(), index=s.index)
 
 
 def _deseasonalized(s: pd.Series, cfg: StatsConfig) -> pd.Series | None:
@@ -79,47 +78,68 @@ def _deseasonalized(s: pd.Series, cfg: StatsConfig) -> pd.Series | None:
 
 
 def stl_residual(s: pd.Series, cfg: StatsConfig | None = None) -> pd.Series | None:
-    """Deseasonalized 5-min series, centered on its own baseline; None if data is insufficient.
+    """Deseasonalized 5-min series (level), or None when data is insufficient.
 
     The STL trend is deliberately NOT removed: it carries the slow drift the CUSUM must see.
-    The baseline is the median of the first `stl_min_days` of data.
+    """
+    return _deseasonalized(s, cfg or StatsConfig())
+
+
+@dataclass(frozen=True)
+class DerivaAlarm:
+    time: datetime      # when the CUSUM crossed h
+    start: datetime     # change-point estimate: last time the active side was at 0
+    shift: float        # mean offset from baseline between start and alarm, sensor units
+
+
+def cusum_alarms(level: pd.Series, cfg: StatsConfig | None = None,
+                 rules: DerivaRules | None = None) -> list[DerivaAlarm]:
+    """Two-sided CUSUM on the hourly level against a fixed baseline (statistic resets after each alarm).
+
+    Baseline = median of the first `stl_min_days` of `level`; the CUSUM only runs after that
+    phase. z = (x - baseline) / sigma_eff with sigma_eff = max(robust scale of the baseline
+    phase, sigma_min) and reference k = (delta_min / 2) / sigma_eff, so shifts smaller than
+    `delta_min` never accumulate however clean the signal is. Threshold h = cfg.cusum_h.
     """
     cfg = cfg or StatsConfig()
-    d = _deseasonalized(s, cfg)
-    if d is None:
-        return None
-    head = d[d.index < d.index[0] + pd.Timedelta(days=cfg.stl_min_days)]
-    return d - float(np.median(head))
-
-
-def cusum_alarms(resid: pd.Series, cfg: StatsConfig | None = None) -> list[datetime]:
-    """Two-sided CUSUM alarm times (statistic resets after each alarm).
-
-    The residual is averaged to hourly bins and standardized by a robust noise scale (MAD of
-    successive differences / sqrt 2: unlike the MAD of the level it is not inflated by the
-    drift being sought). Returns [] when the scale is zero.
-    """
-    cfg = cfg or StatsConfig()
-    r = coerce(resid)
-    r = r.resample(CUSUM_BIN).mean().dropna()
-    if len(r) < 3:
+    rules = rules or DerivaRules()
+    h = coerce(level).resample(CUSUM_BIN).mean().dropna()
+    if h.empty:
         return []
-    x = r.to_numpy()
-    sigma = _mad(np.diff(x)) / np.sqrt(2)
-    if not np.isfinite(sigma) or sigma <= 0:
+    base = h[h.index < h.index[0] + pd.Timedelta(days=cfg.stl_min_days)]
+    rest = h[h.index >= h.index[0] + pd.Timedelta(days=cfg.stl_min_days)]
+    if len(base) < 12 or rest.empty:
         return []
-    out, hi, lo = [], 0.0, 0.0
-    for t, z in zip(r.index, x / sigma):
-        hi = max(0.0, hi + z - cfg.cusum_k)
-        lo = max(0.0, lo - z - cfg.cusum_k)
+    baseline = float(np.median(base))
+    sigma = max(_mad(base.to_numpy()), rules.sigma_min)
+    k = (rules.delta_min / 2) / sigma
+    dev = rest.to_numpy() - baseline
+    out: list[DerivaAlarm] = []
+    hi = lo = 0.0
+    zero_hi = zero_lo = base.index[-1]
+    i0 = 0                                    # first sample after the last reset
+    for i, (t, d) in enumerate(zip(rest.index, dev)):
+        z = d / sigma
+        hi = max(0.0, hi + z - k)
+        lo = max(0.0, lo - z - k)
+        if hi == 0.0:
+            zero_hi = t
+        if lo == 0.0:
+            zero_lo = t
         if hi > cfg.cusum_h or lo > cfg.cusum_h:
-            out.append(t.to_pydatetime())
+            start = zero_hi if hi > cfg.cusum_h else zero_lo
+            seg = dev[max(i0, int(rest.index.searchsorted(start, side="right"))):i + 1]
+            out.append(DerivaAlarm(t.to_pydatetime(), start.to_pydatetime(),
+                                   float(seg.mean()) if len(seg) else float(d)))
             hi = lo = 0.0
+            zero_hi = zero_lo = t
+            i0 = i + 1
     return out
 
 
-def cusum_alarm(resid: pd.Series, cfg: StatsConfig | None = None) -> datetime | None:
-    alarms = cusum_alarms(resid, cfg)
+def cusum_alarm(level: pd.Series, cfg: StatsConfig | None = None,
+                rules: DerivaRules | None = None) -> DerivaAlarm | None:
+    alarms = cusum_alarms(level, cfg, rules)
     return alarms[0] if alarms else None
 
 
@@ -134,31 +154,36 @@ def theil_sen_per_day(s: pd.Series) -> float:
 
 def layer2_flags(s: pd.Series, sensor: str, cfg: DetectorConfig,
                  since: datetime | None) -> Layer2Result:
-    """Adapter for the runner. `since` is the last reset point (maintenance/mode change)."""
-    st = cfg.stats
+    """Adapter for the runner. `since` is the last reset point (maintenance/mode change):
+    every statistic uses only data from `since` on."""
+    st, rules = cfg.stats, cfg.sensores[sensor]
     s = coerce(s)
-    d = _deseasonalized(s, st)
-    if d is None:
-        return Layer2Result([], False)
+    if since is not None:
+        s = s[s.index >= pd.Timestamp(since)]
     flags: list[Flag] = []
 
-    spikes = s[hampel(s, cfg=st).to_numpy()]
+    spikes = s[hampel(s, cfg=st, mad_min=rules.mad_min).to_numpy()]
     flags += [Flag("pico", "suspeito", t.to_pydatetime(), float(v),
                    f"pico isolado (Hampel, janela {st.hampel_window}, k={st.hampel_k:g})")
               for t, v in zip(spikes.index, spikes.to_numpy())]
 
-    head = d[d.index < d.index[0] + pd.Timedelta(days=st.stl_min_days)]
-    alarm = cusum_alarm(d - float(np.median(head)), st)
-    if alarm is not None:
-        flags.append(Flag("deriva", "suspeito", alarm, None,
-                          "deriva lenta fora do ciclo diario (CUSUM no residuo STL)"))
+    d = _deseasonalized(s, st)
+    if d is None:
+        return Layer2Result(flags, False)
 
-    if sensor == "turbidez":
-        w = d if since is None else d[d.index >= pd.Timestamp(since)]
-        if len(w) and w.index[-1] - w.index[0] >= pd.Timedelta(days=INCRUSTACAO_MIN_DAYS):
-            slope = theil_sen_per_day(w)
+    if rules.deriva.habilitado:
+        alarm = cusum_alarm(d, st, rules.deriva)
+        if alarm is not None:
+            flags.append(Flag("deriva", "suspeito", alarm.start, alarm.shift,
+                              f"deriva lenta: nivel {alarm.shift:+.3g} (unidades do sensor) em relacao "
+                              f"ao baseline; inicio estimado {alarm.start:%Y-%m-%d %H:%M}, "
+                              f"alarme {alarm.time:%Y-%m-%d %H:%M} (CUSUM)"))
+
+    if sensor == "turbidez" and len(d):
+        if d.index[-1] - d.index[0] >= pd.Timedelta(days=INCRUSTACAO_MIN_DAYS):
+            slope = theil_sen_per_day(d)
             if slope > st.incrustacao_ntu_dia:
-                flags.append(Flag("incrustacao", "suspeito", w.index[-1].to_pydatetime(), slope,
+                flags.append(Flag("incrustacao", "suspeito", d.index[-1].to_pydatetime(), slope,
                                   f"turbidez subindo {slope:.1f} NTU/dia desde a ultima manutencao "
                                   f"(limite {st.incrustacao_ntu_dia:g})"))
     return Layer2Result(flags, True)

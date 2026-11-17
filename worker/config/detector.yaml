@@ -12,6 +12,11 @@ sensores:
     travado_min_min: 120  # fonte: valor inicial de bancada; plateaus reais longos a noite; recalibrar em campo
     travado_eps: 0.005    # fonte: metade do LSB de 0.01 (firmware serializa 2 casas); travado = max-min na janela < eps, i.e. nenhuma variacao; recalibrar em campo
     piso: null
+    mad_min: 0.01         # fonte: LSB de 0.01 do firmware; piso da escala do Hampel em janela plana; recalibrar em campo
+    deriva:
+      habilitado: true    # fonte: valor inicial; deriva lenta so e separavel de mudanca ambiental com referencia - recalibrar em campo
+      delta_min: 0.3      # fonte: menor deslocamento de pH que interessa (unidades de pH); recalibrar em campo
+      sigma_min: 0.05     # fonte: piso do ruido de nivel (variacao dia-a-dia plausivel); recalibrar em campo
   temperatura:
     faixa: [-10, 60]      # fonte: DS18B20 datasheet (-55 a 125 C), estreitado para agua
     plausivel: [15, 40]   # fonte: valor inicial de bancada; recalibrar em campo
@@ -19,6 +24,11 @@ sensores:
     travado_min_min: 360  # fonte: valor inicial de bancada; plateaus reais longos a noite; recalibrar em campo
     travado_eps: 0.005    # fonte: metade do LSB de 0.01 (firmware serializa 2 casas); travado = max-min na janela < eps, i.e. nenhuma variacao; recalibrar em campo
     piso: null
+    mad_min: 0.0625       # fonte: 1 LSB do DS18B20 a 12 bits (0.0625 C); piso da escala do Hampel em janela plana
+    deriva:
+      habilitado: false   # fonte: valor inicial; deriva lenta so e separavel de mudanca ambiental com referencia - recalibrar em campo; temperatura sazonal/ambiental confunde com deriva
+      delta_min: 1.0      # fonte: valor inicial; so vale se habilitado
+      sigma_min: 0.2      # fonte: valor inicial; so vale se habilitado
   turbidez:
     # fonte: a confirmar na folha do TS-300B. Nao ha datasheet do fabricante acessivel;
     # anuncios de revendedores divergem (0-1000 NTU em OFweek/Robozar; 0-3000 NTU em
@@ -29,12 +39,16 @@ sensores:
     travado_min_min: 120  # fonte: valor inicial de bancada; plateaus reais longos a noite; recalibrar em campo
     travado_eps: 0.005    # fonte: metade do LSB de 0.01 (firmware serializa 2 casas); travado = max-min na janela < eps, i.e. nenhuma variacao; recalibrar em campo
     piso: 0               # fonte: firmware faz clamp de turbidez < 0 para 0
+    mad_min: 1.0          # fonte: valor inicial de bancada (ruido ~1 NTU); piso da escala do Hampel em janela plana/clamp no 0; recalibrar em campo
+    deriva:
+      habilitado: false   # fonte: valor inicial; deriva lenta so e separavel de mudanca ambiental com referencia - recalibrar em campo; incrustacao e coberta pelo Theil-Sen
+      delta_min: 5.0      # fonte: valor inicial; so vale se habilitado
+      sigma_min: 2.0      # fonte: valor inicial; so vale se habilitado
 
 stats:
-  hampel_window: 21       # fonte: valor inicial de bancada; recalibrar em campo
-  hampel_k: 6.0          # fonte: k=3 marcava 1.4-2.3% de amostras de ruido puro (janela 21); k=6 marca 0.02-0.08%; recalibrar em campo
+  hampel_window: 121      # fonte: janela 21 marcava 29-99 amostras/semana limpa; 121 reduz a variancia do MAD; recalibrar em campo
+  hampel_k: 5.0           # fonte: com janela 121, 2-5 marcacoes/semana limpa em serie sintetica; recalibrar em campo
   stl_period_s: 86400     # fonte: ciclo diario
-  stl_min_days: 3         # fonte: valor inicial de bancada; recalibrar em campo
-  cusum_k: 1.0            # fonte: calibrado em serie sintetica limpa (0.5 gerava ~2 eventos falsos/sensor/semana sobre residuo horario autocorrelacionado); recalibrar em campo
-  cusum_h: 8.0            # fonte: idem cusum_k (h=5 ainda dava ate 1 falso/semana sem margem); deriva de 10 sigma/dia detectada em ~2-3 h; recalibrar em campo
+  stl_min_days: 3         # fonte: valor inicial de bancada (fase de baseline do CUSUM); recalibrar em campo
+  cusum_h: 8.0            # fonte: valor inicial; k = delta_min/2 por sensor (em sigma_eff); validado em sementes fora da calibracao; recalibrar em campo
   incrustacao_ntu_dia: 3.0  # fonte: valor inicial de bancada; recalibrar em campo

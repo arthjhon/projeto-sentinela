@@ -14,6 +14,14 @@ class ConfigError(ValueError):
 
 
 @dataclass(frozen=True)
+class DerivaRules:
+    """Slow-drift (CUSUM) settings per sensor; disabled unless the sensor opts in."""
+    habilitado: bool = False
+    delta_min: float = 1.0      # smallest level shift worth flagging, in sensor units
+    sigma_min: float = 1.0      # floor for the noise scale, in sensor units
+
+
+@dataclass(frozen=True)
 class SensorRules:
     faixa: tuple[float, float]
     plausivel: tuple[float, float]
@@ -21,15 +29,16 @@ class SensorRules:
     travado_min: timedelta
     travado_eps: float
     piso: float | None
+    mad_min: float = 0.0        # floor for the Hampel scale (flat/clamped windows), sensor units
+    deriva: DerivaRules = DerivaRules()
 
 
 @dataclass(frozen=True)
 class StatsConfig:
-    hampel_window: int = 21
-    hampel_k: float = 6.0
+    hampel_window: int = 121
+    hampel_k: float = 5.0
     stl_period_s: int = 86400
     stl_min_days: int = 3
-    cusum_k: float = 1.0
     cusum_h: float = 8.0
     incrustacao_ntu_dia: float = 3.0
 
@@ -74,7 +83,9 @@ def _section(d, key: str) -> dict:
     return d
 
 
-_SENSOR_KEYS = {"faixa", "plausivel", "salto_max", "travado_min_min", "travado_eps", "piso"}
+_SENSOR_KEYS = {"faixa", "plausivel", "salto_max", "travado_min_min", "travado_eps", "piso",
+                "mad_min", "deriva"}
+_DERIVA_KEYS = {"habilitado", "delta_min", "sigma_min"}
 _TOP_KEYS = {"sem_dados_max_min", "estabilizacao_min", "janela_dias", "sensores", "stats"}
 
 
@@ -82,6 +93,21 @@ def _no_unknown(d: dict, prefix: str, allowed: set) -> None:
     for k in d:
         if k not in allowed:
             raise ConfigError(f"{prefix}.{k}: unknown key" if prefix else f"{k}: unknown key")
+
+
+def _deriva(d, p: str) -> DerivaRules:
+    d = _section(d, p)
+    _no_unknown(d, p, _DERIVA_KEYS)
+    for k in _DERIVA_KEYS:
+        if k not in d:
+            raise ConfigError(f"{p}.{k}: missing")
+    if not isinstance(d["habilitado"], bool):
+        raise ConfigError(f"{p}.habilitado: expected true/false, got {d['habilitado']!r}")
+    return DerivaRules(
+        habilitado=d["habilitado"],
+        delta_min=_num(d["delta_min"], f"{p}.delta_min", positive=True),
+        sigma_min=_num(d["sigma_min"], f"{p}.sigma_min", positive=True),
+    )
 
 
 def _sensor(d: dict, name: str) -> SensorRules:
@@ -102,6 +128,8 @@ def _sensor(d: dict, name: str) -> SensorRules:
         travado_min=timedelta(minutes=_num(d["travado_min_min"], f"{p}.travado_min_min", positive=True)),
         travado_eps=_num(d["travado_eps"], f"{p}.travado_eps", positive=True),
         piso=_num(d.get("piso"), f"{p}.piso", nullable=True),
+        mad_min=_num(d.get("mad_min", 0.0), f"{p}.mad_min"),
+        deriva=_deriva(d["deriva"], f"{p}.deriva") if "deriva" in d else DerivaRules(),
     )
 
 
@@ -116,7 +144,6 @@ def _stats(d: dict) -> StatsConfig:
         hampel_k=_num(d.get("hampel_k", base.hampel_k), "stats.hampel_k", positive=True),
         stl_period_s=_int(d.get("stl_period_s", base.stl_period_s), "stats.stl_period_s"),
         stl_min_days=_int(d.get("stl_min_days", base.stl_min_days), "stats.stl_min_days"),
-        cusum_k=_num(d.get("cusum_k", base.cusum_k), "stats.cusum_k", positive=True),
         cusum_h=_num(d.get("cusum_h", base.cusum_h), "stats.cusum_h", positive=True),
         incrustacao_ntu_dia=_num(d.get("incrustacao_ntu_dia", base.incrustacao_ntu_dia),
                                  "stats.incrustacao_ntu_dia", positive=True),
