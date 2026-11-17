@@ -13,6 +13,7 @@ ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin worker
 COPY --from=build /opt/venv /opt/venv
 WORKDIR /app
+COPY config /app/config
 USER 10001
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
   CMD ["python", "-m", "sentinela_worker", "healthcheck"]

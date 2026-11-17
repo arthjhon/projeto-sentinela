@@ -1,0 +1,40 @@
+# Configuracao do detector (camada 1 + estatistica). Valores iniciais de bancada;
+# recalibrar em campo. Duracoes em minutos/dias conforme o sufixo da chave.
+sem_dados_max_min: 10     # fonte: spec 2026-11-17 §7.4.3 (firmware publica a cada 5 s)
+estabilizacao_min: 30     # fonte: valor inicial de bancada; recalibrar em campo
+janela_dias: 7            # fonte: spec 2026-11-17 §8
+
+sensores:
+  ph:
+    faixa: [0, 14]        # fonte: definicao da escala de pH
+    plausivel: [5, 10]    # fonte: valor inicial de bancada; recalibrar em campo (agua doce/aquicultura)
+    salto_max: 1.0        # fonte: valor inicial de bancada; recalibrar em campo
+    travado_min_min: 30   # fonte: valor inicial de bancada; recalibrar em campo
+    travado_eps: 0.001    # fonte: firmware serializa 2 casas; recalibrar em campo
+    piso: null
+  temperatura:
+    faixa: [-10, 60]      # fonte: DS18B20 datasheet (-55 a 125 C), estreitado para agua
+    plausivel: [15, 40]   # fonte: valor inicial de bancada; recalibrar em campo
+    salto_max: 2.0        # fonte: valor inicial de bancada; recalibrar em campo
+    travado_min_min: 30   # fonte: valor inicial de bancada; recalibrar em campo
+    travado_eps: 0.001    # fonte: firmware serializa 2 casas; recalibrar em campo
+    piso: null
+  turbidez:
+    # fonte: a confirmar na folha do TS-300B. Nao ha datasheet do fabricante acessivel;
+    # anuncios de revendedores divergem (0-1000 NTU em OFweek/Robozar; 0-3000 NTU em
+    # zbotic.in/turbidity-sensor-for-water-quality-arduino-interfacing-guide). Usa-se o maior.
+    faixa: [0, 3000]
+    plausivel: [0, 1000]  # fonte: valor inicial de bancada; recalibrar em campo
+    salto_max: 200        # fonte: valor inicial de bancada; recalibrar em campo
+    travado_min_min: 30   # fonte: valor inicial de bancada; recalibrar em campo
+    travado_eps: 0.001    # fonte: firmware serializa 2 casas; recalibrar em campo
+    piso: 0               # fonte: firmware faz clamp de turbidez < 0 para 0
+
+stats:
+  hampel_window: 21       # fonte: valor inicial de bancada; recalibrar em campo
+  hampel_k: 3.0           # fonte: valor inicial de bancada; recalibrar em campo
+  stl_period_s: 86400     # fonte: ciclo diario
+  stl_min_days: 3         # fonte: valor inicial de bancada; recalibrar em campo
+  cusum_k: 0.5            # fonte: valor inicial de bancada; recalibrar em campo
+  cusum_h: 5.0            # fonte: valor inicial de bancada; recalibrar em campo
+  incrustacao_ntu_dia: 3.0  # fonte: valor inicial de bancada; recalibrar em campo
