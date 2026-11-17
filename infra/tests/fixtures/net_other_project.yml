@@ -1,0 +1,7 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    networks: [sb]
+networks:
+  sb:
+    name: some_other_project_net

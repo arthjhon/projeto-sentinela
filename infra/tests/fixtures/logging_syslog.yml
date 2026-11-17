@@ -1,0 +1,7 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    logging:
+      driver: syslog
+      options:
+        syslog-address: "tcp://127.0.0.1:5432"

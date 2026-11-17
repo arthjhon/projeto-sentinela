@@ -1,0 +1,7 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    volumes: ["steal:/steal"]
+volumes:
+  steal:
+    name: supabase_db-config

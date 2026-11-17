@@ -22,7 +22,7 @@ pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1"; fails=$((fails + 1)); }
 
 render() { # <compose file> <out json>
-  docker compose --project-directory "$ALLOWED_BIND_ROOT" -f "$1" config --format json >"$2"
+  docker compose -p "${RENDER_PROJECT:-sentinela-stack}" --project-directory "$ALLOWED_BIND_ROOT" -f "$1" config --format json >"$2"
 }
 
 # expect <name> <want-exit> <want-substring|-> <json> [allowed-file]
@@ -78,6 +78,18 @@ fixture secopt_nnp_false 1 "security_opt"
 fixture secopt_label 1 "security_opt"
 fixture foreign_network 1 "network"
 fixture worker_digest 0 "OK"
+fixture deploy_ok 0 "OK"
+fixture vol_adopt 1 "volume name must be"
+fixture net_host_name 1 "network name"
+fixture net_other_project 1 "network name must be"
+fixture deploy_gpu 1 "deploy"
+fixture logging_syslog 1 "logging driver"
+fixture alias_external 1 "aliases not allowed on external network"
+fixture container_name 1 "container_name"
+fixture ipam 1 "ipam"
+fixture label_docker 1 "label not allowed"
+# C3: a free project name (rendered without -p) must be refused.
+RENDER_PROJECT=supabase fixture project_name 1 "project name must be"
 
 # Several violations are all reported, not just the first.
 cat >"$tmp/multi.json" <<'JSON'

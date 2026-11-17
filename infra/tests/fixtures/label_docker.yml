@@ -1,0 +1,5 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    labels:
+      com.docker.compose.project: supabase

@@ -1,0 +1,10 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

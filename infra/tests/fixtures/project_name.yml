@@ -1,0 +1,7 @@
+name: supabase
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    volumes: ["db-config:/x"]
+volumes:
+  db-config: {}

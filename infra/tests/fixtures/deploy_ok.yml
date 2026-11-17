@@ -1,0 +1,11 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    container_name: sentinela-influxdb
+    logging:
+      driver: json-file
+    labels:
+      app: x
+    deploy:
+      resources:
+        limits: {cpus: "1", memory: 512M}

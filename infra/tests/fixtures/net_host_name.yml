@@ -1,0 +1,7 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    networks: [hn]
+networks:
+  hn:
+    name: host
