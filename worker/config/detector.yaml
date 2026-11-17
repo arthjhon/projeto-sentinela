@@ -2,7 +2,9 @@
 # recalibrar em campo. Duracoes em minutos/dias conforme o sufixo da chave.
 sem_dados_max_min: 10     # fonte: spec 2026-11-17 §7.4.3 (firmware publica a cada 5 s)
 estabilizacao_min: 30     # fonte: valor inicial de bancada; recalibrar em campo
-janela_dias: 7            # fonte: spec 2026-11-17 §8
+janela_dias: 7            # fonte: spec 2026-11-17 §8 (janela bruta: regras da camada 1 e Hampel)
+pico_min_count: 5         # fonte: decisao R23; picos isolados so tornam o sensor suspeito com >= 5 em 60 min (2-5 picos/semana em serie limpa); recalibrar em campo
+janela_max_dias: 30       # fonte: decisao R25; teto do baseline flutuante (medias de 5 min desde o ultimo ponto de reinicio) usado por STL/CUSUM/Theil-Sen
 
 sensores:
   ph:

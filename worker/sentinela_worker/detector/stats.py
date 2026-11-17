@@ -153,13 +153,20 @@ def theil_sen_per_day(s: pd.Series) -> float:
 
 
 def layer2_flags(s: pd.Series, sensor: str, cfg: DetectorConfig,
-                 since: datetime | None) -> Layer2Result:
+                 since: datetime | None, *, historico: pd.Series | None = None) -> Layer2Result:
     """Adapter for the runner. `since` is the last reset point (maintenance/mode change):
-    every statistic uses only data from `since` on."""
+    every statistic uses only data from `since` on.
+
+    `historico` (optional) is the floating baseline: 5-min means from the reset point (capped by
+    the runner at `janela_max`). When given, STL/CUSUM/Theil-Sen run on it, so a level shift stays
+    visible after the raw window has slid past the baseline phase; Hampel always runs on the raw
+    recent `s`."""
     st, rules = cfg.stats, cfg.sensores[sensor]
     s = coerce(s)
+    level = s if historico is None else coerce(historico)
     if since is not None:
         s = s[s.index >= pd.Timestamp(since)]
+        level = level[level.index >= pd.Timestamp(since)]
     flags: list[Flag] = []
 
     spikes = s[hampel(s, cfg=st, mad_min=rules.mad_min).to_numpy()]
@@ -167,7 +174,7 @@ def layer2_flags(s: pd.Series, sensor: str, cfg: DetectorConfig,
                    f"pico isolado (Hampel, janela {st.hampel_window}, k={st.hampel_k:g})")
               for t, v in zip(spikes.index, spikes.to_numpy())]
 
-    d = _deseasonalized(s, st)
+    d = _deseasonalized(level, st)
     if d is None:
         return Layer2Result(flags, False)
 

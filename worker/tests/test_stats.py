@@ -259,3 +259,48 @@ def test_deriva_config_rejects_bad_values(tmp_path, old, new, key):
     p.write_text(txt.replace(old, new, 1))
     with pytest.raises(ConfigError, match=key.replace(".", r"\.")):
         load_detector_config(p)
+
+
+# ---- floating baseline (historico) -------------------------------------------------------
+
+def _means(s):
+    return s.resample("5min").mean().dropna()
+
+
+@pytest.mark.parametrize("end_day", [12, 14])
+def test_step_stays_deriva_with_historico_after_raw_window_slides_past_baseline(end_day):
+    """+0.5 pH step at day 5, reset at day 1: the 7-day raw window no longer holds the baseline,
+    but the 5-min means since the reset point do."""
+    full = inject_step(series("ph", 15, 104), T0 + timedelta(days=5), 0.5)
+    since = (T0 + timedelta(days=1)).to_pydatetime()
+    end = T0 + timedelta(days=end_day)
+    upto = full[full.index < end]
+    raw = upto[upto.index >= end - CFG.janela]
+    hist = _means(upto[upto.index >= since])
+    res = stats.layer2_flags(raw, "ph", CFG, since=since, historico=hist)
+    assert res.dados_suficientes
+    deriva = of(res, "deriva")
+    assert len(deriva) == 1 and deriva[0].valor > 0.3
+    assert abs(pd.Timestamp(deriva[0].time) - (T0 + timedelta(days=5))) <= timedelta(hours=12)
+    # without the floating baseline the step disappears once the raw window slides past it
+    assert of(stats.layer2_flags(raw, "ph", CFG, since=since), "deriva") == []
+
+
+def test_historico_does_not_feed_hampel():
+    s = series("ph", 1, 105)
+    t = s.index[9000]
+    spiky = inject_spike(s, t, 0.5)
+    tail = s[s.index >= s.index[-1] - timedelta(hours=1)]
+    res = stats.layer2_flags(tail, "ph", CFG, since=None, historico=_means(spiky))
+    assert of(res, "pico") == []                       # the spike is only in the historico
+    res = stats.layer2_flags(spiky, "ph", CFG, since=None, historico=_means(s))
+    assert [f.time for f in of(res, "pico")] == [t.to_pydatetime()]
+
+
+def test_historico_is_sliced_by_since_and_drives_sufficiency():
+    s = series("ph", 6, 106)
+    hist = _means(s)
+    recent = s[s.index >= s.index[-1] - timedelta(hours=1)]
+    assert stats.layer2_flags(recent, "ph", CFG, since=None, historico=hist).dados_suficientes
+    late = (T0 + timedelta(days=4)).to_pydatetime()
+    assert not stats.layer2_flags(recent, "ph", CFG, since=late, historico=hist).dados_suficientes

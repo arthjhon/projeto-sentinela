@@ -50,6 +50,8 @@ class DetectorConfig:
     sem_dados_max: timedelta = timedelta(minutes=10)
     estabilizacao: timedelta = timedelta(minutes=30)
     janela: timedelta = timedelta(days=7)
+    pico_min_count: int = 5                 # picos within 60 min needed to make the sensor suspeito
+    janela_max: timedelta = timedelta(days=30)   # cap of the floating baseline (5-min means)
 
 
 def _num(v, key: str, *, positive: bool = False, nullable: bool = False) -> float | None:
@@ -86,7 +88,8 @@ def _section(d, key: str) -> dict:
 _SENSOR_KEYS = {"faixa", "plausivel", "salto_max", "travado_min_min", "travado_eps", "piso",
                 "mad_min", "deriva"}
 _DERIVA_KEYS = {"habilitado", "delta_min", "sigma_min"}
-_TOP_KEYS = {"sem_dados_max_min", "estabilizacao_min", "janela_dias", "sensores", "stats"}
+_TOP_KEYS = {"sem_dados_max_min", "estabilizacao_min", "janela_dias", "pico_min_count",
+             "janela_max_dias", "sensores", "stats"}
 
 
 def _no_unknown(d: dict, prefix: str, allowed: set) -> None:
@@ -168,11 +171,21 @@ def load_detector_config(path: str | Path) -> DetectorConfig:
         v = raw.get(key)
         return default if v is None else timedelta(minutes=_num(v, key, positive=True))
 
-    janela = raw.get("janela_dias")
+    def days(key: str, default: timedelta) -> timedelta:
+        v = raw.get(key)
+        return default if v is None else timedelta(days=_num(v, key, positive=True))
+
+    st = _stats(raw.get("stats", {}))
+    janela_max = days("janela_max_dias", dflt.janela_max)
+    if janela_max < timedelta(days=st.stl_min_days):
+        raise ConfigError(f"janela_max_dias: must be >= stats.stl_min_days ({st.stl_min_days}), "
+                          f"got {janela_max.total_seconds() / 86400:g}")
     return DetectorConfig(
         sensores={s: _sensor(sensores[s], f"{s}") for s in SENSORS},
-        stats=_stats(raw.get("stats", {})),
+        stats=st,
         sem_dados_max=minutes("sem_dados_max_min", dflt.sem_dados_max),
         estabilizacao=minutes("estabilizacao_min", dflt.estabilizacao),
-        janela=dflt.janela if janela is None else timedelta(days=_num(janela, "janela_dias", positive=True)),
+        janela=days("janela_dias", dflt.janela),
+        pico_min_count=_int(raw.get("pico_min_count", dflt.pico_min_count), "pico_min_count"),
+        janela_max=janela_max,
     )
