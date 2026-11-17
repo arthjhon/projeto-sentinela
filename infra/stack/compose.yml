@@ -16,6 +16,12 @@ services:
       DOCKER_INFLUXDB_INIT_ORG: sentinela
       DOCKER_INFLUXDB_INIT_BUCKET: iot
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_ADMIN_TOKEN:?INFLUX_ADMIN_TOKEN is required}
+      # Flux query limits for the 768m container: at most 4 queries at once,
+      # 10 queued, 64 MiB per query, 256 MiB for all queries together.
+      INFLUXD_QUERY_CONCURRENCY: "4"
+      INFLUXD_QUERY_QUEUE_SIZE: "10"
+      INFLUXD_QUERY_MEMORY_BYTES: "67108864"
+      INFLUXD_QUERY_MAX_MEMORY_BYTES: "268435456"
     mem_limit: 768m
     healthcheck:
       test: ["CMD", "influx", "ping"]
