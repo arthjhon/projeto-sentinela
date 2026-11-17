@@ -278,10 +278,13 @@ sudoedit /srv/sentinela/stack/.env      # nomes em infra/stack/.env.example
 - `INFLUX_TELEGRAF_TOKEN`: placeholder (ex. `pendente-bootstrap`) até o passo 9.
 - `INFLUX_WORKER_TOKEN`, `PG_WORKER_DSN`: placeholder até existir o worker. `SUPABASE_NETWORK`
   vazio até o worker (vazio = nenhuma rede externa permitida).
-- O stdout do script (que o CI vê) nunca traz valor renderizado do compose: só passos, nomes de
-  serviço, nomes de regra e nomes de arquivo do incoming. As mensagens completas do validador e da
-  política (que podem conter valores do `.env`) e a saída do compose vão só para o log do host
-  (`/var/log/sentinela-stack-deploy.log`, root 600), sem máscara.
+- O stdout do script (que o CI vê) não traz nada derivado do compose renderizado nem das
+  mensagens do validador/política: só rótulos fixos, contagens (`validator: denied (N
+  violation(s))`, `policy: denied (N violation(s))`), nomes de serviço da lista fixa (`influxdb`,
+  `telegraf`, `worker`) e nomes de arquivo do incoming. As mensagens completas (que podem conter
+  valores do `.env`) e a saída do compose vão só para o log do host
+  (`/var/log/sentinela-stack-deploy.log`, root 600), sem máscara. O validador escapa caracteres de
+  controle (`\n` vira o texto `\n`), então cada violação ocupa uma linha só no log.
 
 ### 8. Primeiro deploy
 
@@ -301,8 +304,8 @@ sudo tail -n 50 /var/log/sentinela-stack-deploy.log
 
 Saída 0 = implantado; 1 = negado (nada mudou) ou falhou (rollback tentado); 2 = argumento inválido.
 O log (`/var/log/sentinela-stack-deploy.log`, root 600) guarda a saída do compose e as mensagens
-completas do validador; o stdout (que o CI vê) só traz passos e `DENY: <serviço>: <regra>`, sem
-valores.
+completas do validador; o stdout (que o CI vê) só traz passos e a contagem de violações. Para
+ver o motivo de um `denied`: `sudo grep -E 'validate\||policy DENY' /var/log/sentinela-stack-deploy.log | tail`.
 
 ### 9. Buckets e tokens (`influx-bootstrap.sh`)
 

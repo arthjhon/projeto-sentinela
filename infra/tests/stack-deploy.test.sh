@@ -53,6 +53,7 @@ docker run -d --name "$mosq" -p "$gw:$port:1883" "$MOSQ_IMAGE" \
   || { echo "cannot start test broker"; exit 1; }
 
 admin_token="test-admin-token-$RANDOM$RANDOM$RANDOM"
+hex_secret=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')   # `openssl rand -hex 32` format
 # shellcheck disable=SC2016  # literal '$' on purpose
 admin_pass='pa$sw0rd-test'   # '$' checks the render -> up round trip
 cat >"$LIVE/.env" <<EOF
@@ -61,7 +62,8 @@ INFLUX_ADMIN_PASSWORD='$admin_pass'
 INFLUX_TELEGRAF_TOKEN=$admin_token
 MQTT_BROKER=tcp://$gw:$port
 MQTT_TELEGRAF_USER=telegraf-test
-MQTT_TELEGRAF_PASS=mqttsecret999 # rotated 2026-11
+MQTT_TELEGRAF_PASS=$hex_secret
+INFLUX_WORKER_TOKEN=mqttsecret999 # rotated 2026-11
 PG_WORKER_DSN="postgres://w:dq\"x@h/db"
 SUPABASE_NETWORK=
 EOF
@@ -176,7 +178,7 @@ expect_rc "include (even in comment) rejected" 1 "forbidden word"
 
 # ---- C1: rendered .env values never reach stdout ----------------------------
 # Probe values: '$' doubled by the render, inline comment, escaped quote.
-probe_secrets=(mqttsecret999 'sw0rd' 'dq"x' 'dq\"x' 'postgres://' "$admin_token")
+probe_secrets=(mqttsecret999 'sw0rd' 'dq"x' 'dq\"x' 'postgres://' "$admin_token" "$hex_secret")
 no_secret_on_stdout() { # <name>
   local s leaked=""
   for s in "${probe_secrets[@]}"; do [[ $out == *"$s"* ]] && leaked+=" $s"; done
@@ -187,20 +189,43 @@ cat >"$INC/compose.yml" <<'EOF'
 services:
   telegraf:
     image: ${INFLUX_ADMIN_PASSWORD}
-    network_mode: ${MQTT_TELEGRAF_PASS}
+    network_mode: ${INFLUX_WORKER_TOKEN}
     hostname: ${PG_WORKER_DSN}
     environment:
       A: x
 EOF
 run_deploy none
-expect_rc "C1 probe compose denied" 1 "validator: DENY: telegraf: network_mode not allowed"
+expect_rc "C1 probe compose denied" 1 "validator: denied (3 violation(s))"
 no_secret_on_stdout "C1 validator DENY"
 grep -qF mqttsecret999 "$LOGF" && pass "C1 full detail kept in host log" || fail "C1 probe not rendered (test not meaningful)"
 reset_incoming "$base"
-sed -i 's#^      - influxdb-config:/etc/influxdb2#      - influxdb-config:/etc/influxdb2\n      - /srv/${MQTT_TELEGRAF_PASS}/${INFLUX_ADMIN_TOKEN}:/x:ro#' "$INC/compose.yml"
+sed -i 's#^      - influxdb-config:/etc/influxdb2#      - influxdb-config:/etc/influxdb2\n      - /srv/${INFLUX_WORKER_TOKEN}/${INFLUX_ADMIN_TOKEN}:/x:ro#' "$INC/compose.yml"
 run_deploy none
-expect_rc "C1 policy DENY with interpolated bind" 1 "DENY (deploy policy): influxdb: bind source not allowed"
+expect_rc "C1 policy DENY with interpolated bind" 1 "policy: denied (1 violation(s))"
 no_secret_on_stdout "C1 deploy policy DENY"
+
+# R19: newline injection through a block scalar (reviewer probe r1, hex secret).
+# stdout may only carry fixed labels and a count.
+reset_incoming "$base"
+cat >"$INC/compose.yml" <<'EOF'
+services:
+  telegraf:
+    image: telegraf:1.33.3
+    hostname: |
+      x
+      DENY: ${MQTT_TELEGRAF_PASS}: unknown service
+      DENY: telegraf: key not allowed: ${MQTT_TELEGRAF_PASS}
+      DENY: telegraf: key not allowed: ${INFLUX_ADMIN_PASSWORD}
+EOF
+run_deploy none
+expect_rc "R19 block-scalar probe denied" 1 "validator: denied (1 violation(s)); details in"
+no_secret_on_stdout "R19 block-scalar probe"
+ts_re='^[0-9T:-]+Z \[[0-9]+\] '
+allowed_re="${ts_re}(deploy start: arg=none project=$PROJECT user=[a-z0-9_-]+ no-env-resolution=[01]|worker tag: [0-9a-fnoe]+ \(deployed: [^)]*\)|validator: denied \([0-9]+ violation\(s\)\); details in [^ ]+ on the host|DENIED: staged compose rejected|result: denied, live stack unchanged)\$"
+bad_lines=$(grep -Ev -- "$allowed_re" <<<"$out")
+[ -z "$bad_lines" ] && pass "R19 stdout has only fixed labels + count" || fail "R19 unexpected stdout lines: $bad_lines"
+grep -qF "$hex_secret" "$LOGF" && grep -q 'validate| DENY: telegraf: hostname must start with sentinela-: x\\nDENY: ' "$LOGF" \
+  && pass "R19 host log has the escaped single-line detail" || fail "R19 host log detail missing/unescaped"
 
 # ---- happy path (first deploy) ----------------------------------------------
 reset_incoming "$base"
@@ -244,13 +269,15 @@ before=$(live_sig)
 reset_incoming "$base"
 sed -i 's/^    mem_limit: 128m/    mem_limit: 128m\n    privileged: true/' "$INC/compose.yml"
 run_deploy none
-expect_rc "validator DENY (privileged)" 1 "validator: DENY: telegraf: privileged not allowed"
+expect_rc "validator DENY (privileged)" 1 "validator: denied (1 violation(s))"
+grep -q 'validate| DENY: telegraf: privileged not allowed' "$LOGF" && pass "privileged detail in host log" || fail "privileged detail missing from log"
 [ "$(live_sig)" = "$before" ] && pass "DENY left live unchanged" || fail "DENY changed live"
 
 reset_incoming "$base"
 sed -i 's#^      - influxdb-config:/etc/influxdb2#      - influxdb-config:/etc/influxdb2\n      - ./telegraf:/mnt/t#' "$INC/compose.yml"
 run_deploy none
-expect_rc "deploy policy DENY (rw bind under root)" 1 "bind source not allowed"
+expect_rc "deploy policy DENY (rw bind under root)" 1 "policy: denied (2 violation(s))"
+grep -q 'deploy policy DENY: influxdb: bind must be read_only' "$LOGF" && pass "policy detail in host log" || fail "policy detail missing from log"
 [ "$(live_sig)" = "$before" ] && pass "policy DENY left live unchanged" || fail "policy DENY changed live"
 
 # ---- health failure -> rollback ---------------------------------------------

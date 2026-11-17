@@ -58,10 +58,12 @@
 #      .current -> releases/<id>. Fail -> `current` back to .current (re-rendered
 #      and re-validated against the current policy and .env), `up` it, exit 1.
 #
-# Output: stdout (what CI sees) carries only step names, service names, rule
-# names and file names from the incoming tree, never a rendered compose value.
-# Compose output and full validator/policy messages (which can contain .env
-# values) go only to $LOG (root 600). SIGPIPE/SIGHUP are ignored and stdout
+# Output: stdout (what CI sees) carries only fixed labels, counts, service names
+# from the fixed list (influxdb, telegraf, worker) and file names from the
+# incoming tree. Nothing derived from validator/policy output or from the
+# rendered compose: a DENY is reported as "denied (N violation(s))". Compose
+# output and full validator/policy messages (which can contain .env values)
+# go only to $LOG (root 600). SIGPIPE/SIGHUP are ignored and stdout
 # write errors are non-fatal, so a dropped SSH session cannot stop a deploy
 # halfway.
 #
@@ -426,64 +428,16 @@ render() { # <stage> <compose> <out json> <tag-or-empty>
   chmod 600 -- "$out"
 }
 
-# safe_name <text>: a compose key (service/network/volume name) or "?".
-# Keys are never interpolated by compose, so they cannot carry .env values.
-safe_name() { if [[ $1 =~ ^[A-Za-z0-9._()/-]{1,64}$ ]]; then printf '%s' "$1"; else printf '?'; fi; }
-
-# deny_rule <validator reason>: a fixed rule label for stdout. Only strings
-# from this table reach stdout; the reason itself (which may contain rendered
-# values) goes to the host log.
-deny_rule() {
-  local r=$1 k
-  case "$r" in
-    "unknown service" | "image missing" | "labels must be a map" | "mac_address not allowed" | \
-    "external not allowed" | "external volume not allowed" | "network driver_opts not allowed" | \
-    "volume driver_opts not allowed" | "network ipam not allowed" | "com.docker.* label not allowed" | \
-    "service on external network must cap_drop ALL or NET_RAW")
-      printf '%s' "$r"; return ;;
-  esac
-  for k in devices device_cgroup_rules gpus runtime build volumes_from cgroup_parent sysctls \
-           use_api_socket post_start pre_stop cap_add userns_mode uts cgroup pid privileged; do
-    [ "$r" = "$k not allowed" ] && { printf '%s' "$r"; return; }
-  done
-  case "$r" in
-    "key not allowed: "*) printf 'key not allowed: %s' "$(safe_name "${r#key not allowed: }")" ;;
-    "attachment options not allowed on external network "*) printf 'attachment options on external network not allowed' ;;
-    "network_mode not allowed"*) printf 'network_mode not allowed' ;;
-    "ipc not allowed"*) printf 'ipc not allowed' ;;
-    "security_opt not allowed"*) printf 'security_opt not allowed' ;;
-    "port "*" published on "*) printf 'port not published on 127.0.0.1' ;;
-    "mount type not allowed"*) printf 'mount type not allowed' ;;
-    "docker.sock mount"*) printf 'docker.sock mount' ;;
-    "bind outside "*) printf 'bind outside the stack dir' ;;
-    "bind propagation not allowed"*) printf 'bind propagation not allowed' ;;
-    "telegraf extra mount"*) printf 'telegraf extra mount' ;;
-    "container_name must start with"*) printf 'container_name must start with sentinela-' ;;
-    "hostname must start with"*) printf 'hostname must start with sentinela-' ;;
-    "domainname must start with"*) printf 'domainname must start with sentinela-' ;;
-    "label not allowed"*) printf 'com.docker.* label not allowed' ;;
-    "logging driver not allowed"*) printf 'logging driver not allowed' ;;
-    "logging.options requires"*) printf 'logging.options requires driver json-file or local' ;;
-    "deploy key not allowed"* | "deploy.resources"*) printf 'deploy key not allowed' ;;
-    "image not allowed (no tag)"*) printf 'image not allowed (no tag)' ;;
-    "image not allowed (latest)"*) printf 'image not allowed (latest)' ;;
-    "image not allowed"*) printf 'image not allowed' ;;
-    "project name must be"*) printf 'project name mismatch' ;;
-    "external network not allowed"*) printf 'external network not allowed' ;;
-    "network driver not allowed"*) printf 'network driver not allowed' ;;
-    "network name must be"* | "network name not allowed"*) printf 'network name not allowed' ;;
-    "volume driver not allowed"*) printf 'volume driver not allowed' ;;
-    "volume name must be"*) printf 'volume name not allowed' ;;
-    "file outside "*) printf 'file source outside the stack dir' ;;
-    *) printf 'unclassified rule' ;;
-  esac
-}
+# svc_label <name>: a service name for stdout, only from the fixed list the
+# validator allows (anything else prints as "?"; nothing from the rendered
+# compose reaches stdout verbatim).
+svc_label() { case "$1" in influxdb | telegraf | worker) printf '%s' "$1" ;; *) printf '?' ;; esac; }
 
 # Deploy-side policy, on top of the validator: binds and file-backed
 # secrets/configs only from the live EXPECTED_FILES, binds read-only, and no
 # file-reading keys survived the render. jq emits "<scope>\t<rule>\t<detail>".
 extra_policy() { # <json>
-  local json=$1 files out f scope rule detail
+  local json=$1 files out f scope rule detail n
   files=$(for f in "${EXPECTED_FILES[@]}"; do printf '%s\n' "$LIVE/$f"; done | jq -R . | jq -cs .)
   # shellcheck disable=SC2016  # jq program
   out=$(jq -r --argjson files "$files" '
@@ -498,15 +452,17 @@ extra_policy() { # <json>
     | map(tostring | gsub("[\t\n]"; " ")) | join("\t")
   ' "$json" 2>&1) || { log "deploy policy: cannot evaluate rendered JSON"; return 1; }
   [ -n "$out" ] || return 0
+  n=0
   while IFS=$'\t' read -r scope rule detail; do
-    log "DENY (deploy policy): $(safe_name "$scope"): $rule"
-    log_host "deploy policy detail: $scope: $rule: $detail"
+    n=$((n + 1))
+    log_host "deploy policy DENY: $scope: $rule: $detail"
   done <<<"$out"
+  log "policy: denied ($n violation(s)); details in $LOG on the host"
   return 1
 }
 
 validate() { # <stage> <json>
-  local stage=$1 json=$2 rc l scope reason
+  local stage=$1 json=$2 rc n
   timeout 60 env -i PATH="$PATH" LC_ALL=C ALLOWED_BIND_ROOT="$LIVE" EXPECTED_PROJECT="$project" \
     SUPABASE_NETWORK="$supabase_net" /bin/bash "$VALIDATOR" "$json" "$ALLOWED_IMAGES" \
     >"$stage/validate.out" 2>&1
@@ -515,14 +471,9 @@ validate() { # <stage> <json>
   case "$rc" in
     0) log "validator: OK"; return 0 ;;
     1)
-      while IFS= read -r l; do
-        if [[ $l =~ ^DENY:\ ([^:]+):\ (.*)$ ]]; then
-          scope=${BASH_REMATCH[1]}; reason=${BASH_REMATCH[2]}
-          log "validator: DENY: $(safe_name "$scope"): $(deny_rule "$reason")"
-        else
-          log "validator: DENY (unparsed line; see host log)"
-        fi
-      done <"$stage/validate.out"
+      # Only a count: the messages embed rendered values (.env content).
+      n=$(grep -c '^DENY: ' "$stage/validate.out")
+      log "validator: denied ($n violation(s)); details in $LOG on the host"
       return 1 ;;
     *) log "validator: bad input (exit $rc)"; return 1 ;;
   esac
@@ -581,7 +532,9 @@ compose_up() { # <release dir> <json> <recreate services...>
       docker compose -p "$project" --project-directory "$rel" -f "$json" up -d --remove-orphans ) \
     || { log "compose up failed (details in $LOG on the host)"; return 1; }
   if [ "$#" -gt 0 ]; then
-    log "force-recreate (bind source changed): $*"
+    local s labels=""
+    for s in "$@"; do labels+=" $(svc_label "$s")"; done
+    log "force-recreate (bind source changed):$labels"
     ( cd -- "$rel" && run_logged "$rel" recreate 300 \
         env -i PATH="$PATH" HOME="$docker_home" LC_ALL=C \
         docker compose -p "$project" --project-directory "$rel" -f "$json" up -d --no-deps --force-recreate "$@" ) \
@@ -607,12 +560,12 @@ wait_healthy() {
     for svc in "${svcs[@]}"; do
       ids=$(dk ps -a -q --filter "label=com.docker.compose.project=$project" \
         --filter "label=com.docker.compose.service=$svc" --filter "label=com.docker.compose.oneoff=False")
-      if [ -z "$ids" ]; then ok=0; report+=" $(safe_name "$svc")=missing"; continue; fi
+      if [ -z "$ids" ]; then ok=0; report+=" $(svc_label "$svc")=missing"; continue; fi
       for id in $ids; do
         read -r st health rc <<<"$(dk inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} {{.RestartCount}}' "$id" 2>/dev/null)"
-        report+=" $(safe_name "$svc")=${st:-?}/${health:-?}/restarts:${rc:-?}"
+        report+=" $(svc_label "$svc")=${st:-?}/${health:-?}/restarts:${rc:-?}"
         if [ "${health:-}" = unhealthy ]; then
-          log "health: $(safe_name "$svc") is unhealthy;$report"
+          log "health: $(svc_label "$svc") is unhealthy;$report"
           return 1
         fi
         if [ "${st:-}" != running ] || { [ "${health:-}" != none ] && [ "${health:-}" != healthy ]; }; then ok=0; fi
