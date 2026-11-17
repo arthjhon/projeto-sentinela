@@ -9,14 +9,14 @@ sensores:
     faixa: [0, 14]        # fonte: definicao da escala de pH
     plausivel: [5, 10]    # fonte: valor inicial de bancada; recalibrar em campo (agua doce/aquicultura)
     salto_max: 1.0        # fonte: valor inicial de bancada; recalibrar em campo
-    travado_min_min: 30   # fonte: valor inicial de bancada; recalibrar em campo
+    travado_min_min: 120  # fonte: valor inicial de bancada; plateaus reais longos a noite; recalibrar em campo
     travado_eps: 0.005    # fonte: metade do LSB de 0.01 (firmware serializa 2 casas); travado = max-min na janela < eps, i.e. nenhuma variacao; recalibrar em campo
     piso: null
   temperatura:
     faixa: [-10, 60]      # fonte: DS18B20 datasheet (-55 a 125 C), estreitado para agua
     plausivel: [15, 40]   # fonte: valor inicial de bancada; recalibrar em campo
     salto_max: 2.0        # fonte: valor inicial de bancada; recalibrar em campo
-    travado_min_min: 30   # fonte: valor inicial de bancada; recalibrar em campo
+    travado_min_min: 360  # fonte: valor inicial de bancada; plateaus reais longos a noite; recalibrar em campo
     travado_eps: 0.005    # fonte: metade do LSB de 0.01 (firmware serializa 2 casas); travado = max-min na janela < eps, i.e. nenhuma variacao; recalibrar em campo
     piso: null
   turbidez:
@@ -26,7 +26,7 @@ sensores:
     faixa: [0, 3000]
     plausivel: [0, 1000]  # fonte: valor inicial de bancada; recalibrar em campo
     salto_max: 200        # fonte: valor inicial de bancada; recalibrar em campo
-    travado_min_min: 30   # fonte: valor inicial de bancada; recalibrar em campo
+    travado_min_min: 120  # fonte: valor inicial de bancada; plateaus reais longos a noite; recalibrar em campo
     travado_eps: 0.005    # fonte: metade do LSB de 0.01 (firmware serializa 2 casas); travado = max-min na janela < eps, i.e. nenhuma variacao; recalibrar em campo
     piso: 0               # fonte: firmware faz clamp de turbidez < 0 para 0
 

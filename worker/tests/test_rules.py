@@ -29,9 +29,9 @@ def all_layer1(sensor, s):
 def test_each_layer1_fault_is_flagged():
     r = CFG.sensores["ph"]
     base = clean_series("ph", 1)
-    f = rules.check_travado(inject_stuck(base, at(hours=10), timedelta(hours=1)), r)
+    f = rules.check_travado(inject_stuck(base, at(hours=10), timedelta(hours=3)), r)
     assert len(f) == 1 and f[0].regra == "travado" and f[0].severidade == "falha"
-    assert at(hours=9, minutes=50) <= f[0].time <= at(hours=10, minutes=40)
+    assert at(hours=9, minutes=50) <= f[0].time <= at(hours=10, minutes=10)
     f = rules.check_faixa(inject_out_of_range(base, at(hours=5), 20.0), r)
     assert [(x.regra, x.severidade, x.valor, x.time) for x in f] == [("faixa", "falha", 20.0, at(hours=5))]
     f = rules.check_salto(inject_step(base, at(hours=6), 2.0), r)
@@ -54,11 +54,11 @@ def test_stuck_at_floor_is_suspeito_not_falha():
     r = CFG.sensores["turbidez"]
     base = clean_series("turbidez", 1)
     s = inject_out_of_range(base, at(hours=9, minutes=59, seconds=55), 0.0)
-    s = inject_stuck(s, at(hours=10), timedelta(hours=1))
+    s = inject_stuck(s, at(hours=10), timedelta(hours=3))
     f = rules.check_travado(s, r)
     assert len(f) == 1 and f[0].severidade == "suspeito" and f[0].valor == 0.0
     # same stuck at a non-floor value is a falha
-    f2 = rules.check_travado(inject_stuck(base, at(hours=10), timedelta(hours=1)), r)
+    f2 = rules.check_travado(inject_stuck(base, at(hours=10), timedelta(hours=3)), r)
     assert f2[0].severidade == "falha"
 
 
@@ -109,7 +109,8 @@ def test_layer1_performance_week():
 def test_config_loads_expected_values():
     t = CFG.sensores["turbidez"]
     assert CFG.sensores["ph"].travado_eps == 0.005
-    assert t.piso == 0 and t.faixa[0] == 0 and t.travado_min == timedelta(minutes=30)
+    assert t.piso == 0 and t.faixa[0] == 0 and t.travado_min == timedelta(minutes=120)
+    assert CFG.sensores["temperatura"].travado_min == timedelta(minutes=360)
     assert CFG.sensores["ph"].piso is None
     assert CFG.sem_dados_max == timedelta(minutes=10) and CFG.janela == timedelta(days=7)
     assert CFG.stats.hampel_window == 21 and CFG.stats.cusum_h == 5.0
@@ -145,18 +146,20 @@ def test_quantized_live_ph_is_not_stuck():
     assert rules.check_travado(_night_ph(v), r) == []
     v = np.round(7.80 + 0.01 * (np.arange(n) // 240), 2)   # +0.01 every 20 min
     assert rules.check_travado(_night_ph(v), r) == []
+    v = np.round(7.80 + 0.01 * (np.arange(n) // 480), 2)   # +0.01 every 40 min (plateau < 120 min)
+    assert rules.check_travado(_night_ph(v), r) == []
 
 
 def test_truly_constant_series_is_falha_and_time_is_first_sample():
     r = CFG.sensores["ph"]
-    s = _night_ph(np.full(720 * 2, 7.80))   # 2 h constant
+    s = _night_ph(np.full(720 * 3, 7.80))   # 3 h constant (> 120 min window)
     f = rules.check_travado(s, r)
     assert len(f) == 1 and f[0].severidade == "falha" and f[0].time == T0
 
 
 def test_unsorted_and_duplicate_index_do_not_raise():
     r = CFG.sensores["ph"]
-    s = _night_ph(np.full(720, 7.80))
+    s = _night_ph(np.full(720 * 3, 7.80))
     shuffled = s.sample(frac=1, random_state=0)
     assert len(rules.check_travado(shuffled, r)) == 1
     dup = pd.concat([s, s.iloc[:10]])
