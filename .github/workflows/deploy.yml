@@ -3,15 +3,27 @@ on:
   push:
     branches:
       - main
+permissions:
+  contents: read
+
+concurrency:
+  group: site-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # TAILSCALE_AUTHKEY, SSH_KEY_UMJ_RSYNC e UMJ_KNOWN_HOSTS vivem no
+    # environment `production` (só main, com aprovação). Ver infra/README.md.
+    environment: production
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
 
@@ -32,21 +44,30 @@ jobs:
         run: npm run build
 
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@6cae46e2d796f265265cfcf628b72a32b4d7cade # v3.3.0
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
-      - name: Setup SSH
+      - name: Setup SSH (pinned host key)
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY_UMJ_RSYNC }}
+          KNOWN_HOSTS: ${{ secrets.UMJ_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_KEY_UMJ_RSYNC }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          cat >> ~/.ssh/config <<EOF
+          set -euo pipefail
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          [ -n "$KNOWN_HOSTS" ] || { echo "UMJ_KNOWN_HOSTS is empty" >&2; exit 1; }
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          cat > "$HOME/.ssh/config" <<EOF
           Host umj-sentinela-deploy
             HostName 100.120.149.19
             User sentinela
-            IdentityFile ~/.ssh/id_ed25519
-            StrictHostKeyChecking no
+            IdentityFile $HOME/.ssh/id_ed25519
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile $HOME/.ssh/known_hosts
           EOF
 
       - name: Deploy via rsync
@@ -57,3 +78,7 @@ jobs:
           # o Samba da UMJ, pouco espaço livre). --delete remove assets
           # antigos (hashes defasados) que o build não gera mais.
           rsync -av --delete dist/ umj-sentinela-deploy:
+
+      - name: Remove SSH material
+        if: always()
+        run: rm -rf "$HOME/.ssh"

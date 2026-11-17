@@ -1,0 +1,189 @@
+name: Data stack
+
+# Valida a stack de dados (infra/stack) e a publica na VM da UMJ via
+# rsync (chave 1, rrsync -wo) + ssh (chave 2, forced command stack-deploy.sh).
+# Runbook: infra/README.md ("Stack de dados na VM"). Os segredos de deploy
+# vivem só no environment `production` (restrito a main, com aprovação).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "worker/**"
+      - ".github/workflows/stack.yml"
+  pull_request:
+    paths:
+      - "infra/**"
+      - "worker/**"
+      - ".github/workflows/stack.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UMJ_HOST: 100.120.149.19
+  ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      has_worker: ${{ steps.worker.outputs.present }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Lint workflows (actionlint)
+        run: docker run --rm -v "$PWD:/repo" -w /repo "$ACTIONLINT_IMAGE" -color
+
+      - name: Compose validator policy
+        run: bash infra/tests/validate-compose.test.sh
+
+      # Os testes abaixo usam só docker + imagens públicas do Docker Hub; não
+      # precisam de root nem de segredo.
+      - name: Stack deploy (end to end, throwaway project)
+        run: bash infra/tests/stack-deploy.test.sh
+
+      - name: Influx bootstrap and backup
+        run: bash infra/tests/influx-ops.test.sh
+
+      - name: MQTT ACL check
+        run: bash infra/tests/mqtt-acl-check.test.sh
+
+      - name: Detect worker
+        id: worker
+        run: |
+          if [ -f worker/Dockerfile ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Task 10: pytest do worker entra aqui quando worker/ existir.
+
+  # Só roda depois que worker/Dockerfile existir (Task 10); até lá fica skipped
+  # e o deploy passa `none`.
+  image:
+    needs: test
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/main' &&
+      needs.test.outputs.has_worker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: worker
+          push: true
+          tags: ghcr.io/arthjhon/sentinela-worker:${{ github.sha }}
+
+  deploy:
+    needs: [test, image]
+    # image pode estar skipped (sem worker); falha ou cancelamento dela bloqueia.
+    if: >-
+      !cancelled() &&
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/main' &&
+      needs.test.result == 'success' &&
+      (needs.image.result == 'success' || needs.image.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    # Dois deploys da stack nunca se sobrepõem; o em andamento não é cancelado.
+    concurrency:
+      group: stack-deploy
+      cancel-in-progress: false
+    env:
+      # 40-hex do commit cuja imagem acabou de ser publicada; `none` sem imagem.
+      DEPLOY_ARG: ${{ needs.image.result == 'success' && github.sha || 'none' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@6cae46e2d796f265265cfcf628b72a32b4d7cade # v3.3.0
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: Setup SSH (pinned host key)
+        env:
+          SSH_KEY_RSYNC: ${{ secrets.SSH_KEY_UMJ_STACK_RSYNC }}
+          SSH_KEY_DEPLOY: ${{ secrets.SSH_KEY_UMJ_STACK_DEPLOY }}
+          KNOWN_HOSTS: ${{ secrets.UMJ_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          [ -n "$KNOWN_HOSTS" ] || { echo "UMJ_KNOWN_HOSTS is empty" >&2; exit 1; }
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$SSH_KEY_RSYNC" > "$HOME/.ssh/id_stack_rsync"
+          printf '%s\n' "$SSH_KEY_DEPLOY" > "$HOME/.ssh/id_stack_deploy"
+          cat > "$HOME/.ssh/config" <<EOF
+          Host umj-stack-rsync umj-stack-deploy
+            HostName $UMJ_HOST
+            User sentinela-deploy
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile $HOME/.ssh/known_hosts
+          Host umj-stack-rsync
+            IdentityFile $HOME/.ssh/id_stack_rsync
+          Host umj-stack-deploy
+            IdentityFile $HOME/.ssh/id_stack_deploy
+          EOF
+
+      # O CI envia exatamente dois arquivos (stack-deploy recusa qualquer outro).
+      - name: Stage files
+        run: |
+          set -euo pipefail
+          umask 022
+          install -d "$RUNNER_TEMP/incoming/telegraf"
+          install -m 644 infra/stack/compose.yml "$RUNNER_TEMP/incoming/compose.yml"
+          install -m 644 infra/stack/telegraf/telegraf.conf "$RUNNER_TEMP/incoming/telegraf/telegraf.conf"
+          find "$RUNNER_TEMP/incoming" -type f | sort
+
+      - name: Rsync to incoming (key 1, rrsync -wo)
+        run: rsync -r --delete "$RUNNER_TEMP/incoming/" umj-stack-rsync:./
+
+      - name: Run stack-deploy (key 2, forced command)
+        run: |
+          set -euo pipefail
+          case "$DEPLOY_ARG" in
+            none) ;;
+            *[!0-9a-f]*) echo "invalid deploy argument" >&2; exit 1 ;;
+            *) [ "${#DEPLOY_ARG}" -eq 40 ] || { echo "invalid deploy argument" >&2; exit 1; } ;;
+          esac
+          # arg validado acima (none | 40-hex); expandir no cliente é o desejado
+          # shellcheck disable=SC2029
+          ssh umj-stack-deploy "$DEPLOY_ARG"
+
+      - name: Remove SSH material
+        if: always()
+        run: rm -rf "$HOME/.ssh" "$RUNNER_TEMP/incoming"
