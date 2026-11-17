@@ -25,3 +25,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Stack de infra: nunca versionar .env (exceto o exemplo)
+infra/stack/.env*
+!infra/stack/.env.example

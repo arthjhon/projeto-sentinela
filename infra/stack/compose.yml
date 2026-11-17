@@ -1,0 +1,46 @@
+# Stack de producao do Sentinela (VM Debian). Servicos: influxdb + telegraf.
+# O worker entra em task posterior. Valores vem do .env (nunca versionado).
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:?INFLUX_ADMIN_PASSWORD is required}
+      DOCKER_INFLUXDB_INIT_ORG: sentinela
+      DOCKER_INFLUXDB_INIT_BUCKET: iot
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_ADMIN_TOKEN:?INFLUX_ADMIN_TOKEN is required}
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  telegraf:
+    image: telegraf:1.33.3
+    restart: unless-stopped
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    environment:
+      INFLUX_TELEGRAF_TOKEN: ${INFLUX_TELEGRAF_TOKEN:?INFLUX_TELEGRAF_TOKEN is required}
+      MQTT_BROKER: ${MQTT_BROKER:?MQTT_BROKER is required}
+      MQTT_TELEGRAF_USER: ${MQTT_TELEGRAF_USER:?MQTT_TELEGRAF_USER is required}
+      MQTT_TELEGRAF_PASS: ${MQTT_TELEGRAF_PASS:?MQTT_TELEGRAF_PASS is required}
+    mem_limit: 128m
+
+volumes:
+  influxdb-data:
+    name: sentinela-influxdb-data
+  influxdb-config:
+    name: sentinela-influxdb-config

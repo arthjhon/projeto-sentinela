@@ -1,0 +1,30 @@
+# SOMENTE DESENVOLVIMENTO LOCAL. Nunca usar na VM de producao.
+# Uso: docker compose -f compose.yml -f compose.dev.yml --env-file .env.local-test up -d
+# Adiciona broker Mosquitto sem TLS e sem autenticacao, e expoe portas no host.
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    # Sem bind mount: a config minima (anonimo, sem TLS) e gerada no start.
+    command:
+      - sh
+      - -c
+      - |
+        printf 'listener 1883\nallow_anonymous true\n' > /tmp/mosquitto.conf
+        exec mosquitto -c /tmp/mosquitto.conf
+    ports:
+      - "127.0.0.1:1883:1883"
+
+  telegraf:
+    depends_on:
+      mosquitto:
+        condition: service_started
+    environment:
+      MQTT_BROKER: tcp://mosquitto:1883
+
+# Nomes proprios no dev: evita colidir com volumes reais de mesmo nome do
+# compose.yml (um `down -v` local apagaria dados de producao/legado).
+volumes:
+  influxdb-data:
+    name: sentinela-dev-influxdb-data
+  influxdb-config:
+    name: sentinela-dev-influxdb-config
