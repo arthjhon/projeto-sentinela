@@ -16,7 +16,7 @@ import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { fetchUltimasLeituras } from '../../hooks/useInfluxHistory';
 import {
   getBuoyRegistry, saveBuoyRegistry, topicsForRegistry,
-  codigoEmUso, upsertRegistryEntry, LAGOA_LABEL,
+  codigoEmUso, upsertRegistryEntry, LAGOA_LABEL, withModo, normalizeModo,
 } from '../../services/buoyRegistry';
 import {
   buoyStatus, STATUS_LABEL, formatCoords, formatAge, formatInterval,
@@ -98,6 +98,7 @@ const SensorsPage = () => {
       name: r.nome,
       deviceId: d ?? '',
       location: LAGOA_LABEL[r.lagoa] ?? r.lagoa,
+      modo: normalizeModo(r.modo),
       coordinates: formatCoords(r.lat, r.lng),
       status: buoyStatus(d, d ? messages[`${d}/availability`] : undefined),
       // o firmware atual não mede bateria; aparece quando o /status trouxer
@@ -125,7 +126,7 @@ const SensorsPage = () => {
   // Validation State
   const [formErrors, setFormErrors] = useState({});
 
-  const initialFormData = { id: '', deviceId: '', name: '', lagoa: 'mundau', lat: '', lng: '' };
+  const initialFormData = { id: '', deviceId: '', name: '', lagoa: 'mundau', modo: 'bancada', lat: '', lng: '' };
   const [formData, setFormData] = useState(initialFormData);
 
   // Histórico bruto (InfluxDB) por bóia: { [boiaId]: { loading, rows, error } }
@@ -164,6 +165,7 @@ const SensorsPage = () => {
       deviceId: regEntry.deviceId ?? '',
       name: regEntry.nome ?? buoy.name,
       lagoa: regEntry.lagoa ?? 'mundau',
+      modo: normalizeModo(regEntry.modo),
       lat: regEntry.lat ?? '',
       lng: regEntry.lng ?? '',
     });
@@ -211,7 +213,10 @@ const SensorsPage = () => {
     if (codigoOriginal && !fresh.some(r => r.codigo === codigoOriginal)) {
       throw new Error(`a bóia ${codigoOriginal} foi removida do registro em outra sessão`);
     }
-    await saveBuoyRegistry(upsertRegistryEntry(fresh, codigoOriginal, entry));
+    // modoDesde depende do modo guardado, não do estado da página (pode estar stale).
+    const previous = codigoOriginal ? fresh.find(r => r.codigo === codigoOriginal) : null;
+    const comModo = withModo(previous, entry, new Date().toISOString());
+    await saveBuoyRegistry(upsertRegistryEntry(fresh, codigoOriginal, comModo));
   };
 
   const handleSaveForm = async (e) => {
@@ -255,6 +260,7 @@ const SensorsPage = () => {
         codigo,
         nome,
         lagoa: formData.lagoa,
+        modo: formData.modo,
         lat: Number(formData.lat),
         lng: Number(formData.lng),
         deviceId: newDeviceId || null,
@@ -269,10 +275,10 @@ const SensorsPage = () => {
 
     if (editingBuoy) {
       addToast('Cadastro da bóia atualizado.', 'success');
-      logAcao(AUDIT.BOIA_EDITAR, codigo, { nome, deviceId: newDeviceId });
+      logAcao(AUDIT.BOIA_EDITAR, codigo, { nome, deviceId: newDeviceId, modo: formData.modo });
     } else {
       addToast('Bóia cadastrada.', 'success');
-      logAcao(AUDIT.BOIA_CRIAR, codigo, { nome, deviceId: newDeviceId });
+      logAcao(AUDIT.BOIA_CRIAR, codigo, { nome, deviceId: newDeviceId, modo: formData.modo });
     }
 
     setIsModalOpen(false);
@@ -503,6 +509,14 @@ const SensorsPage = () => {
                   </select>
                 </div>
                 <div className="form-group">
+                  <label>Modo</label>
+                  <select value={formData.modo} onChange={e => setFormData({...formData, modo: e.target.value})}>
+                    <option value="bancada">Bancada</option>
+                    <option value="campo">Campo</option>
+                  </select>
+                  <small className="text-muted">Em bancada, alertas do detector ficam neutros.</small>
+                </div>
+                <div className="form-group">
                   <label>Latitude (mapa)</label>
                   <input type="number" step="any" className={`w-100 ${formErrors.lat ? 'input-error' : ''}`} value={formData.lat} onChange={e => {setFormData({...formData, lat: e.target.value}); setFormErrors({...formErrors, lat: false})}} placeholder="Ex: -9.6559" />
                 </div>
@@ -559,6 +573,9 @@ const SensorsPage = () => {
                   </td>
                   <td onClick={() => toggleRow(buoy.id)}>
                     <span className="sc-location"><MapPin size={14} /> {buoy.location}</span>
+                    <span className={`badge ${buoy.modo === 'campo' ? 'badge-online' : 'badge-planejada'}`} style={{ marginLeft: '8px' }}>
+                      {buoy.modo === 'campo' ? 'Campo' : 'Bancada'}
+                    </span>
                   </td>
                   <td onClick={() => toggleRow(buoy.id)}>
                     <span

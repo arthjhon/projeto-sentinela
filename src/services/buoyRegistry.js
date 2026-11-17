@@ -62,3 +62,25 @@ export function upsertRegistryEntry(list, codigoOriginal, entry) {
     ? list.map(r => (r.codigo === codigoOriginal ? entry : r))
     : [...list, entry];
 }
+
+export const MODOS = ['bancada', 'campo'];
+
+/** Valor ausente/inválido vale 'bancada' (mesmo default do worker). */
+export function normalizeModo(value) {
+  return MODOS.includes(value) ? value : 'bancada';
+}
+
+/**
+ * Normaliza `entry.modo` e mantém `modoDesde`: vira `nowIso` quando o modo muda
+ * em relação a `previous` (ou no cadastro novo, previous null); se não mudou,
+ * preserva `previous.modoDesde`. O worker zera as estatísticas do detector a
+ * partir de `modoDesde` quando o modo muda.
+ */
+export function withModo(previous, entry, nowIso) {
+  const modo = normalizeModo(entry.modo);
+  const { modoDesde: _descartado, ...rest } = entry;
+  if (!previous || normalizeModo(previous.modo) !== modo) {
+    return { ...rest, modo, modoDesde: nowIso };
+  }
+  return previous.modoDesde ? { ...rest, modo, modoDesde: previous.modoDesde } : { ...rest, modo };
+}

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { FLEET, getMqttTopics } from '../config/fleet';
 import {
   topicsForRegistry, codigoEmUso, upsertRegistryEntry,
-  SEED_BUOYS, LAGOA_LABEL,
+  SEED_BUOYS, LAGOA_LABEL, MODOS, normalizeModo, withModo,
 } from './buoyRegistry';
 
 describe('topicsForRegistry', () => {
@@ -107,5 +107,37 @@ describe('SEED_BUOYS (fallback do registro)', () => {
       expect(seed.deviceId).toBe(fleet.deviceId ?? null);
       expect(LAGOA_LABEL[seed.lagoa]).toBe(fleet.location);
     }
+  });
+});
+
+describe('modo (bancada/campo)', () => {
+  const NOW = '2026-11-17T12:00:00.000Z';
+  const base = { codigo: 'SM-01', nome: 'A', lagoa: 'mundau', lat: -9.1, lng: -35.1, deviceId: 'esp_a' };
+
+  it('normalizeModo trata ausente/inválido como bancada', () => {
+    expect(MODOS).toEqual(['bancada', 'campo']);
+    expect(normalizeModo('campo')).toBe('campo');
+    expect(normalizeModo('bancada')).toBe('bancada');
+    expect(normalizeModo(undefined)).toBe('bancada');
+    expect(normalizeModo('xyz')).toBe('bancada');
+    expect(normalizeModo(null)).toBe('bancada');
+  });
+
+  it('withModo grava modoDesde só quando o modo muda', () => {
+    const prev = { ...base, modo: 'bancada', modoDesde: '2026-01-01T00:00:00.000Z' };
+    expect(withModo(prev, { ...base, modo: 'bancada' }, NOW))
+      .toMatchObject({ modo: 'bancada', modoDesde: prev.modoDesde });
+    expect(withModo(prev, { ...base, modo: 'campo' }, NOW))
+      .toMatchObject({ modo: 'campo', modoDesde: NOW });
+    // previous sem modo conta como bancada
+    expect(withModo(base, { ...base, modo: 'bancada' }, NOW).modoDesde).toBeUndefined();
+    expect(withModo(base, { ...base, modo: 'campo' }, NOW).modoDesde).toBe(NOW);
+  });
+
+  it('withModo em cadastro novo grava modo e modoDesde', () => {
+    expect(withModo(null, { ...base, modo: 'campo' }, NOW))
+      .toMatchObject({ modo: 'campo', modoDesde: NOW });
+    expect(withModo(null, { ...base }, NOW))
+      .toMatchObject({ modo: 'bancada', modoDesde: NOW });
   });
 });
