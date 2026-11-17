@@ -24,6 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("backfill-openmeteo", "backfill-ana"):
         sp = sub.add_parser(name, help="one-off historical backfill")
         sp.add_argument("--start", required=True, type=_date, metavar="YYYY-MM-DD")
+        if name == "backfill-openmeteo":
+            sp.add_argument("--end", type=_date, metavar="YYYY-MM-DD", default=None,
+                            help="inclusive; defaults to yesterday (UTC)")
     sub.add_parser("detect-once", help="run the sensor-fault detector once")
     sub.add_parser("healthcheck", help="exit 0 if the scheduler ticked in the last 10 minutes")
     return p
@@ -73,6 +76,27 @@ def _interruptible_sleep(is_stopping):
     return _sleep
 
 
+def cmd_backfill_openmeteo(start: str, end: str | None) -> int:
+    from datetime import date, datetime, timedelta, timezone
+
+    from .collectors import openmeteo
+    from .sinks.influx import InfluxSink
+
+    d_start = date.fromisoformat(start)
+    d_end = date.fromisoformat(end) if end else datetime.now(timezone.utc).date() - timedelta(days=1)
+    if d_end < d_start:
+        log("ERROR", "backfill-openmeteo", "end before start")
+        return 2
+    settings = Settings.from_env()
+    sink = InfluxSink(settings.influx_url, settings.influx_org, settings.influx_token)
+    try:
+        with openmeteo.make_client() as client:
+            openmeteo.backfill_openmeteo(client, sink, d_start, d_end)
+    finally:
+        sink.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "healthcheck":
@@ -80,6 +104,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run":
         try:
             return cmd_run()
+        except RuntimeError as exc:
+            log("ERROR", "worker", str(exc))
+            return 2
+    if args.command == "backfill-openmeteo":
+        try:
+            return cmd_backfill_openmeteo(args.start, args.end)
         except RuntimeError as exc:
             log("ERROR", "worker", str(exc))
             return 2

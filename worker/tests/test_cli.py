@@ -46,3 +46,22 @@ def test_run_writes_tick_and_stops_on_sigterm(tmp_path):
     lines = [json.loads(line) for line in out.splitlines()]
     assert {"ts", "level", "job", "msg"} <= set(lines[0])
     assert lines[-1]["msg"] == "stopped"
+
+
+def test_backfill_openmeteo_cli_wiring(monkeypatch):
+    calls = {}
+    monkeypatch.setenv("INFLUX_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("INFLUX_ORG", "o")
+    monkeypatch.setenv("INFLUX_WORKER_TOKEN", "t")
+    monkeypatch.setenv("PG_WORKER_DSN", "postgresql://x")
+    from sentinela_worker.collectors import openmeteo
+
+    def fake(client, sink, start, end, **kw):
+        calls["args"] = (start, end)
+
+    monkeypatch.setattr(openmeteo, "backfill_openmeteo", fake)
+    assert cli.main(["backfill-openmeteo", "--start", "2024-06-01", "--end", "2024-06-03"]) == 0
+    import datetime as dt
+    assert calls["args"] == (dt.date(2024, 6, 1), dt.date(2024, 6, 3))
+    assert cli.main(["backfill-openmeteo", "--start", "2024-06-01"]) == 0
+    assert calls["args"][1] == dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=1)
