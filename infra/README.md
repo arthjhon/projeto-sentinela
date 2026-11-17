@@ -29,8 +29,11 @@ As credenciais ficam fora do git (cofre/variáveis de ambiente).
 ### Verificação
 
 ```bash
-infra/bin/mqtt-acl-check.sh <broker_host> <user> <pass> <device_id>
+read -rs MQTT_PASS; export MQTT_PASS   # fora do histórico do shell e do argv
+infra/bin/mqtt-acl-check.sh <broker_host> <user> <device_id>
 ```
+
+A senha é lida da variável de ambiente obrigatória `MQTT_PASS` (sem ela, exit 2).
 
 Publica `{"ph":0}` em `<device_id>/sensores` com MQTT v5 / QoS 1 (porta 8883, TLS) e
 interpreta a resposta do broker:
@@ -46,9 +49,10 @@ credencial do device publica de fato uma leitura `{"ph":0}` no tópico do device
 use um `device_id` de teste.
 
 Usa `mosquitto_pub` do PATH ou, se ausente, a imagem `eclipse-mosquitto:2.0.22` via docker.
-A senha não vai na linha de comando (arquivo de configuração temporário com modo 600,
-removido ao sair), então não aparece no `ps`; no fallback docker o arquivo é montado
-somente leitura no container.
+O `mosquitto_pub` não recebe a senha na linha de comando: ela vai num arquivo de
+configuração temporário com modo 600, removido ao sair; no fallback docker o arquivo é
+montado somente leitura no container. O script em si também não recebe a senha por
+argumento. Limitação: o arquivo existe brevemente em disco.
 
 Teste local do script (broker mosquitto descartável, sem tocar em broker real):
 

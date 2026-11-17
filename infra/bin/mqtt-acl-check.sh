@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Verifies that a broker credential is NOT allowed to publish on <device_id>/sensores.
 #
-# Usage: mqtt-acl-check.sh <broker_host> <user> <pass> <device_id>
+# Usage: MQTT_PASS=... mqtt-acl-check.sh <broker_host> <user> <device_id>
+#   The password is read from the required env var MQTT_PASS (never an argument,
+#   so it stays out of this script's ps entry and shell history).
 #
 # Exit codes:
 #   0  publish rejected by the broker  ("ACL OK: publish rejected")
@@ -13,20 +15,24 @@
 #   MQTT_TLS   1 = TLS with the system CA bundle (default), 0 = plain TCP
 #
 # Uses mosquitto_pub from PATH, or falls back to a pinned eclipse-mosquitto image.
-# The password never goes on the command line: it is written to a mode-600 temp
+# mosquitto_pub does not receive the password on its command line: it is written to a mode-600 temp
 # config file that mosquitto_pub reads from $XDG_CONFIG_HOME/mosquitto_pub (this
-# version has no -o flag), so it does not show up in `ps`. Limitation: the file
+# version has no -o flag), so it is not in its `ps` entry. Limitation: the file
 # exists briefly on disk (and is bind-mounted read-only in the docker fallback).
 set -u
 
 readonly MOSQUITTO_IMAGE="eclipse-mosquitto:2.0.22"
 readonly CA_FILE="/etc/ssl/certs/ca-certificates.crt"
 
-if [ "$#" -ne 4 ]; then
-  echo "usage: ${0##*/} <broker_host> <user> <pass> <device_id>" >&2
+if [ "$#" -ne 3 ]; then
+  echo "usage: MQTT_PASS=... ${0##*/} <broker_host> <user> <device_id>" >&2
   exit 2
 fi
-broker=$1 user=$2 pass=$3 device_id=$4
+if [ -z "${MQTT_PASS:-}" ]; then
+  echo "error: MQTT_PASS env var is required (e.g. read -rs MQTT_PASS; export MQTT_PASS)" >&2
+  exit 2
+fi
+broker=$1 user=$2 device_id=$3 pass=$MQTT_PASS
 port=${MQTT_PORT:-8883}
 tls=${MQTT_TLS:-1}
 

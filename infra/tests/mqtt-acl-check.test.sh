@@ -50,7 +50,7 @@ done
 
 check() { # <description> <expected rc> <user> <pass>
   local desc=$1 want=$2 got
-  MQTT_TLS=0 MQTT_PORT=$port "$script" 127.0.0.1 "$3" "$4" dev1 >/dev/null 2>&1
+  MQTT_PASS=$4 MQTT_TLS=0 MQTT_PORT=$port "$script" 127.0.0.1 "$3" dev1 >/dev/null 2>&1
   got=$?
   if [ "$got" -eq "$want" ]; then
     echo "PASS: $desc (exit $got)"
@@ -64,8 +64,11 @@ check "denied user is rejected"       0 browser browserpass
 check "allowed user is accepted"      1 device  devicepass
 check "wrong password is inconclusive" 2 browser wrongpass
 
-MQTT_TLS=0 MQTT_PORT=$port "$script" onlyone >/dev/null 2>&1
+MQTT_PASS=x MQTT_TLS=0 MQTT_PORT=$port "$script" onlyone >/dev/null 2>&1
 if [ $? -eq 2 ]; then echo "PASS: wrong arg count (exit 2)"; else echo "FAIL: wrong arg count"; fails=$((fails + 1)); fi
+
+env -u MQTT_PASS MQTT_TLS=0 MQTT_PORT=$port "$script" 127.0.0.1 browser dev1 >/dev/null 2>&1
+if [ $? -eq 2 ]; then echo "PASS: unset MQTT_PASS (exit 2)"; else echo "FAIL: unset MQTT_PASS"; fails=$((fails + 1)); fi
 
 [ "$fails" -eq 0 ] && echo "all tests passed" || echo "$fails test(s) failed"
 exit $((fails > 0))
