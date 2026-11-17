@@ -26,11 +26,11 @@ class SensorRules:
 @dataclass(frozen=True)
 class StatsConfig:
     hampel_window: int = 21
-    hampel_k: float = 3.0
+    hampel_k: float = 6.0
     stl_period_s: int = 86400
     stl_min_days: int = 3
-    cusum_k: float = 0.5
-    cusum_h: float = 5.0
+    cusum_k: float = 1.0
+    cusum_h: float = 8.0
     incrustacao_ntu_dia: float = 3.0
 
 

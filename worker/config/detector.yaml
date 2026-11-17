@@ -32,9 +32,9 @@ sensores:
 
 stats:
   hampel_window: 21       # fonte: valor inicial de bancada; recalibrar em campo
-  hampel_k: 3.0           # fonte: valor inicial de bancada; recalibrar em campo
+  hampel_k: 6.0          # fonte: k=3 marcava 1.4-2.3% de amostras de ruido puro (janela 21); k=6 marca 0.02-0.08%; recalibrar em campo
   stl_period_s: 86400     # fonte: ciclo diario
   stl_min_days: 3         # fonte: valor inicial de bancada; recalibrar em campo
-  cusum_k: 0.5            # fonte: valor inicial de bancada; recalibrar em campo
-  cusum_h: 5.0            # fonte: valor inicial de bancada; recalibrar em campo
+  cusum_k: 1.0            # fonte: calibrado em serie sintetica limpa (0.5 gerava ~2 eventos falsos/sensor/semana sobre residuo horario autocorrelacionado); recalibrar em campo
+  cusum_h: 8.0            # fonte: idem cusum_k (h=5 ainda dava ate 1 falso/semana sem margem); deriva de 10 sigma/dia detectada em ~2-3 h; recalibrar em campo
   incrustacao_ntu_dia: 3.0  # fonte: valor inicial de bancada; recalibrar em campo
