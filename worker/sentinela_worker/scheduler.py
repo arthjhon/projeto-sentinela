@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from .log import log
+from .redact import redact_error
 from .sinks.status import JobStatusSink
 
 TICK_FILE = os.environ.get("WORKER_TICK_FILE", "/tmp/sentinela-worker.tick")
@@ -36,7 +37,7 @@ def _run_job(job: Job, status: JobStatusSink, now: Callable[[], datetime]) -> No
     try:
         job.fn(started)
     except Exception as exc:  # a failing job must not stop the others
-        error = f"{type(exc).__name__}: {exc}"
+        error = redact_error(exc)
     duration = time.monotonic() - t0
     ok = error is None
     log("INFO" if ok else "ERROR", job.name, "job ok" if ok else "job failed",
@@ -44,7 +45,7 @@ def _run_job(job: Job, status: JobStatusSink, now: Callable[[], datetime]) -> No
     try:
         status.record(job.name, ok, started, duration, error)
     except Exception as exc:
-        log("ERROR", job.name, "status record failed", error=f"{type(exc).__name__}: {exc}")
+        log("ERROR", job.name, "status record failed", error=redact_error(exc))
 
 
 def run_forever(
