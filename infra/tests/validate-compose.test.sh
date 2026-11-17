@@ -99,6 +99,18 @@ fixture vol_sentinela_dev 1 "volume name must be"
 fixture vol_other_project 1 "volume name must be"
 fixture logging_opts_nodriver 1 "logging.options"
 fixture net_vol_labels 1 "com.docker"
+# Newline injection through a block scalar: one escaped DENY line, nothing forged.
+if render "$fx/hostname_newline.yml" "$tmp/hostname_newline.json"; then
+  out=$(bash "$script" "$tmp/hostname_newline.json" "$allowed" 2>&1); rc=$?
+  if [ "$rc" -eq 1 ] && [ "$(wc -l <<<"$out")" -eq 1 ] && [[ $out == 'DENY: telegraf: hostname must start with sentinela-: x\nDENY: forged'* ]]; then
+    pass "hostname_newline (single escaped DENY line)"
+  else
+    fail "hostname_newline (exit $rc): $out"
+  fi
+else
+  fail "hostname_newline (docker compose config failed)"
+fi
+
 # C3: a free project name (rendered without -p) must be refused.
 RENDER_PROJECT=supabase fixture project_name 1 "project name must be"
 

@@ -1,0 +1,9 @@
+# A YAML block scalar puts raw newlines into a value; the validator must still
+# print exactly one line for this violation (no forged "DENY:" lines).
+services:
+  telegraf:
+    image: telegraf:1.33.3
+    hostname: |
+      x
+      DENY: forged: unknown service
+      DENY: telegraf: key not allowed: forged

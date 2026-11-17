@@ -6,7 +6,8 @@
 # <config.json> is the output of `docker compose config --format json`, rendered
 # with `--project-directory "$ALLOWED_BIND_ROOT"` so relative binds resolve there.
 # Exit 0 + "OK" (allowed), exit 1 + one "DENY: <service>: <reason>" line per
-# violation (denied), exit 2 (bad input: fail closed, nothing may be deployed).
+# violation (denied; control characters in values are JSON-escaped), exit 2
+# (bad input: fail closed, nothing may be deployed).
 #
 # Env:
 #   ALLOWED_BIND_ROOT  absolute dir bind sources must live under (default /srv/sentinela/stack)
@@ -55,6 +56,11 @@ def present: . != null and . != false and . != "" and . != [] and . != {};
 def extra_keys($o; $ok):
   if ($o | type) == "object" then [$o | to_entries[] | select((.value | present) and ((.key as $k | $ok | index($k)) == null)) | .key] else [] end;
 def deny($c; $m): if $c then $m else empty end;
+# Output escaping: messages interpolate rendered values (which can hold .env
+# content and, via YAML block scalars, raw newlines). Every control character
+# (C0/C1, incl. \n \r) is written as its JSON escape, so one violation is
+# always exactly one output line and no value can forge a "DENY:" line.
+def esc: gsub("(?<c>[\\p{Cc}])"; .c | tojson | .[1:-1]);
 # Inside $root, with no ".." segment (blocks traversal). The trailing slash
 # keeps /srv/sentinela/stack-incoming from matching /srv/sentinela/stack.
 def under_root($p):
@@ -245,6 +251,7 @@ def under_root($p):
        deny(($s.file | present) and (under_root($s.file) | not); "file outside \($root): \($s.file)"))
     | "DENY: secrets/configs.\($k): \(.)")
 )
+| esc
 '
 
 out=$(jq -r --arg root "$root" --arg supabase "${SUPABASE_NETWORK:-}" --arg project "$project" \
