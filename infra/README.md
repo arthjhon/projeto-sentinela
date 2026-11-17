@@ -69,9 +69,28 @@ CI (main) --rsync, chave 1 (rrsync -wo)--> /srv/sentinela/stack-incoming/   (don
 CI (main) --ssh, chave 2 (forced command)--> sudo /usr/local/sbin/stack-deploy.sh <sha|none>   (root)
 stack-deploy.sh: confere o incoming -> copia para staging root -> checagem textual do compose
   -> render único (docker compose config) -> política do deploy + validate-compose.sh
-  -> pull -> snapshot .previous -> troca de arquivos -> up -> healthchecks -> DEPLOYED
-  (falhou -> restaura .previous, revalida e sobe de novo)
+  -> pull -> releases/<id> -> current aponta para ele -> up -> healthchecks
+  -> DEPLOYED, .previous <- .current antigo, .current <- release nova
+  (falhou -> current volta ao .current, revalidado, e sobe de novo)
 ```
+
+Layout em `/srv/sentinela/stack/` (root 750; só o root escreve):
+
+```text
+.env                          root 600; nunca tocado pelo script
+releases/<UTC>-<pid>/         uma por tentativa: compose.yml, telegraf/telegraf.conf,
+                              rendered.json (JSON validado, 600), DEPLOYED (só se ficou saudável)
+current  -> releases/<id>     o que foi iniciado por último
+.current -> releases/<id>     último bom conhecido: só muda depois do healthcheck
+.previous -> releases/<id>    o último bom antes desse
+compose.yml -> current/compose.yml   telegraf -> current/telegraf   DEPLOYED -> .current/DEPLOYED
+```
+
+Toda troca é o `rename` de um symlink (atômico): `compose.yml` e `telegraf.conf` mudam juntos, e uma
+queda em qualquer ponto deixa `.current`/`DEPLOYED` numa release que estava saudável. O deploy
+seguinte avisa (`an earlier deploy did not finish`) e segue normalmente. Releases sem ponteiro são
+apagadas. O script ignora SIGPIPE/SIGHUP e erros de escrita no stdout: a queda da sessão SSH do CI
+não interrompe o deploy no meio.
 
 O CI envia **exatamente** dois arquivos: `compose.yml` e `telegraf/telegraf.conf`. Qualquer outro
 arquivo, symlink, hardlink, fifo, device, socket ou setuid no incoming recusa o deploy inteiro. O
@@ -169,7 +188,8 @@ teste local) nunca chega ao script; mesmo como root ele é ignorado.
 ### 5. Chaves SSH do CI (`/var/lib/sentinela-deploy/.ssh/authorized_keys`)
 
 Dois pares ed25519 distintos, gerados fora da VM (privadas vão para os secrets
-`SSH_KEY_UMJ_STACK_RSYNC` e `SSH_KEY_UMJ_STACK_DEPLOY`):
+`SSH_KEY_UMJ_STACK_RSYNC` e `SSH_KEY_UMJ_STACK_DEPLOY` **do environment `production`**, passo 6b,
+nunca como secrets do repositório):
 
 ```text
 restrict,from="100.64.0.0/10",command="/usr/bin/rrsync -wo /srv/sentinela/stack-incoming" ssh-ed25519 AAAA... ci-stack-rsync
@@ -203,10 +223,47 @@ Fingerprint esperado: `SHA256:ZlLsGy9vi17ADaGxXlrE8THwoYtjGz3wzHQ/c3dF/xc`.
    ```
    `ssh-keyscan` não autentica nada: só seguir se a linha do mesmo tipo mostrar exatamente o
    fingerprint visto no passo 1. Em caso de diferença, não criar o secret.
-3. Criar o secret e apagar o arquivo local:
+3. Criar o secret **no environment `production`** (passo 6b) e apagar o arquivo local:
    ```bash
-   gh secret set UMJ_KNOWN_HOSTS --repo arthjhon/projeto-sentinela < umj_known_hosts && rm umj_known_hosts
+   gh secret set UMJ_KNOWN_HOSTS --env production --repo arthjhon/projeto-sentinela < umj_known_hosts && rm umj_known_hosts
    ```
+
+### 6b. Environment `production` no GitHub (segredos do deploy)
+
+Secret de repositório é entregue a workflow de **qualquer** branch (um push em branch qualquer
+com um workflow novo lê a chave de deploy). Secret de environment só vai para job que declara
+`environment: production`, e o environment só aceita a `main` e exige aprovação do Arthur.
+
+```bash
+R=arthjhon/projeto-sentinela
+ARTHUR_ID=$(gh api users/arthjhon --jq .id)
+gh api -X PUT "repos/$R/environments/production" --input - <<JSON
+{
+  "wait_timer": 0,
+  "prevent_self_review": false,
+  "reviewers": [ { "type": "User", "id": $ARTHUR_ID } ],
+  "deployment_branch_policy": { "protected_branches": false, "custom_branch_policies": true }
+}
+JSON
+gh api -X POST "repos/$R/environments/production/deployment-branch-policies" -f name=main -f type=branch
+gh api "repos/$R/environments/production" --jq '{reviewers: [.protection_rules[]? | select(.type=="required_reviewers") | .reviewers[].reviewer.login], branch_policy: .deployment_branch_policy}'
+gh api "repos/$R/environments/production/deployment-branch-policies" --jq '[.branch_policies[].name]'   # ["main"]
+
+gh secret set SSH_KEY_UMJ_STACK_RSYNC  --env production --repo "$R" < ci-stack-rsync      # chave privada
+gh secret set SSH_KEY_UMJ_STACK_DEPLOY --env production --repo "$R" < ci-stack-deploy
+gh secret set UMJ_KNOWN_HOSTS          --env production --repo "$R" < umj_known_hosts    # passo 6
+gh secret list --env production --repo "$R"
+gh secret list --repo "$R"        # nenhum destes nomes pode aparecer aqui (apagar com gh secret delete)
+shred -u ci-stack-rsync ci-stack-deploy
+```
+
+- `prevent_self_review: false`: o Arthur aprova o próprio deploy (projeto de uma pessoa).
+- Revisor obrigatório em environment exige repositório público ou plano pago (Pro/Team) em
+  repositório privado; conferir `gh repo view "$R" --json visibility`. Sem isso, a restrição de
+  branch continua valendo, mas a aprovação manual não.
+- Os workflows (Task 5) referenciam `environment: production` no job de deploy. Ao migrar o
+  `deploy.yml`, mover também `TAILSCALE_AUTHKEY` e `SSH_KEY_UMJ_RSYNC` para o environment e apagar
+  as versões de repositório.
 
 ### 7. `.env` da stack
 
@@ -221,8 +278,10 @@ sudoedit /srv/sentinela/stack/.env      # nomes em infra/stack/.env.example
 - `INFLUX_TELEGRAF_TOKEN`: placeholder (ex. `pendente-bootstrap`) até o passo 9.
 - `INFLUX_WORKER_TOKEN`, `PG_WORKER_DSN`: placeholder até existir o worker. `SUPABASE_NETWORK`
   vazio até o worker (vazio = nenhuma rede externa permitida).
-- O script nunca imprime o `.env`; valores de chaves com `TOKEN|PASS|SECRET|KEY|DSN|AUTH|CRED` são
-  mascarados (`[REDACTED]`) no stdout e no log.
+- O stdout do script (que o CI vê) nunca traz valor renderizado do compose: só passos, nomes de
+  serviço, nomes de regra e nomes de arquivo do incoming. As mensagens completas do validador e da
+  política (que podem conter valores do `.env`) e a saída do compose vão só para o log do host
+  (`/var/log/sentinela-stack-deploy.log`, root 600), sem máscara.
 
 ### 8. Primeiro deploy
 
@@ -241,8 +300,9 @@ sudo tail -n 50 /var/log/sentinela-stack-deploy.log
 ```
 
 Saída 0 = implantado; 1 = negado (nada mudou) ou falhou (rollback tentado); 2 = argumento inválido.
-O log (`/var/log/sentinela-stack-deploy.log`, root 600) guarda a saída do compose e do validador; o
-stdout (que o CI vê) só traz os passos e as linhas `DENY`.
+O log (`/var/log/sentinela-stack-deploy.log`, root 600) guarda a saída do compose e as mensagens
+completas do validador; o stdout (que o CI vê) só traz passos e `DENY: <serviço>: <regra>`, sem
+valores.
 
 ### 9. Buckets e tokens (`influx-bootstrap.sh`)
 
@@ -259,7 +319,7 @@ eco) e entra no container por `docker exec -e INFLUX_TOKEN`, nunca na linha de c
 | --- | --- | --- |
 | `telegraf` | write `iot` | `INFLUX_TELEGRAF_TOKEN` no `.env` |
 | `worker` | read `iot`; write `externos`, `qualidade` | `INFLUX_WORKER_TOKEN` no `.env` |
-| `nginx-publico` | read `iot` | `/etc/nginx/sentinela-influx-token.conf` |
+| `nginx-publico` | read `iot` | `/etc/nginx/sentinela-influx-token.conf` (só se o proxy for ativado, passo 10b) |
 | `backup` | operator (exigido por `influx backup`) | `/usr/local/etc/sentinela/influx-backup.token` |
 
 ```bash
@@ -273,21 +333,75 @@ mexer no admin; fica apenas no arquivo do timer.
 
 ### 10. nginx
 
+O vhost versionado sai com o proxy `/influx/` **desligado**: todo `/influx/` responde 404 até o
+Arthur decidir a mitigação do SSRF (passo 10b). Os blocos do proxy ficam em
+`infra/nginx/sentinela-influx-proxy.conf`, incluídos só se estiverem em `/etc/nginx/sentinela.d/`.
+
 ```bash
 readlink -f /etc/nginx/sites-enabled/sentinela.conf          # arquivo real do vhost
 sudo cp -a "$(readlink -f /etc/nginx/sites-enabled/sentinela.conf)" /root/sentinela.conf.bak-$(date +%F)
 diff -u "$(readlink -f /etc/nginx/sites-enabled/sentinela.conf)" infra/nginx/sentinela.conf
 ```
 
-O diff deve mostrar só os blocos `/influx/` e o realip. A regex de extensões estáticas foi
-reconstruída da spec (que a abrevia): se o diff mostrar diferença nela, manter a de produção e
-corrigir o arquivo versionado. Depois:
+O diff deve mostrar só o realip, o `include /etc/nginx/sentinela.d/*.conf` e o `location ^~ /influx/`
+(404). A regex de extensões estáticas foi reconstruída da spec (que a abrevia): se o diff mostrar
+diferença nela, manter a de produção e corrigir o arquivo versionado. Depois:
+
+```bash
+sudo install -d -o root -g root -m 755 /etc/nginx/sentinela.d        # vazio = proxy desligado
+sudo install -o root -g root -m 644 infra/nginx/sentinela.conf "$(readlink -f /etc/nginx/sites-enabled/sentinela.conf)"
+sudo install -o root -g root -m 644 infra/nginx/sentinela-http.conf /etc/nginx/conf.d/sentinela-http.conf
+sudo nginx -t && sudo systemctl reload nginx
+H='Host: sentinela.arthlabs.dev'; U=http://127.0.0.1:8088/influx
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" -X POST "$U/api/v2/query?org=sentinela"   # 404 (desligado)
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" http://127.0.0.1:8088/                    # 200
+```
+
+- O IP do visitante vem de `CF-Connecting-IP` (`set_real_ip_from 127.0.0.1` dentro do server do
+  Sentinela, não no `http{}`: os outros vhosts continuam vendo o IP do socket). Sem isso o
+  `limit_req` do proxy seria global, porque todo tráfego chega do cloudflared em loopback.
+- Rollback: `sudo install -m 644 /root/sentinela.conf.bak-<data> <arquivo real>`,
+  `sudo rm /etc/nginx/conf.d/sentinela-http.conf`, `sudo nginx -t && sudo systemctl reload nginx`.
+
+### 10a. Proxy `/influx/` — risco de SSRF
+
+Qualquer visitante que alcance `POST /influx/api/v2/query` executa **Flux** no InfluxDB, e o Flux
+tem pacotes de rede. Mesmo com o token `nginx-publico` (só leitura de `iot`), uma consulta pode:
+
+- buscar URLs a partir do container (`http/requests`): serviços em loopback do container, a rede
+  docker da stack, o host e a internet;
+- abrir conexões de banco (`sql.from(driverName: "postgres", dataSourceName: ...)`) para qualquer
+  host alcançável, inclusive o Postgres do Supabase se houver rota.
+
+Prova (reproduzida localmente em `influxdb:2.7.12` com token só-leitura; devolve o corpo do
+`/health`):
+
+```bash
+curl -s -X POST 'https://sentinela.arthlabs.dev/influx/api/v2/query?org=sentinela' \
+  -H 'Content-Type: application/vnd.flux' --data 'import "http/requests"
+import "array"
+r = requests.get(url: "http://127.0.0.1:8086/health")
+array.from(rows: [{status: r.statusCode, body: string(v: r.body)}])'
+```
+
+O que já existe: limites de consulta no `compose.yml` (`INFLUXD_QUERY_CONCURRENCY=4`,
+`INFLUXD_QUERY_QUEUE_SIZE=10`, `INFLUXD_QUERY_MEMORY_BYTES=64 MiB`,
+`INFLUXD_QUERY_MAX_MEMORY_BYTES=256 MiB`, confirmados em `/api/v2/config` e no log de start), e o
+proxy só aceita `POST` com corpo de até 16 KiB e 5 r/s por IP. Isso limita o custo de uma consulta
+abusiva, **não** o SSRF. Opções (decisão do Arthur):
+
+| Opção | O que é | Prós | Contras |
+| --- | --- | --- | --- |
+| **(a) recomendada** | Migrar as leituras do frontend para InfluxQL v1 (`/query`) com mapeamento DBRP do bucket `iot`; o nginx expõe só `GET /influx/query` com `db` fixo | InfluxQL não tem pacotes de rede: elimina o SSRF na origem | Mudança no `useInfluxHistory` e criação do DBRP (`influx v1 dbrp create`) |
+| (b) | Firewall de saída para o container do InfluxDB (cadeia `DOCKER-USER`: só respostas a conexões estabelecidas) | Sem mudar o frontend | Não cobre o loopback do próprio container nem a rede da stack; regra de host fora do compose (drift) |
+| (c) | Aceitar o risco | Nada a fazer | Visitante anônimo usa o InfluxDB como cliente HTTP/SQL de dentro da VM |
+
+### 10b. Ativar o proxy (só depois da decisão acima)
 
 ```bash
 sudo install -o root -g root -m 600 /dev/null /etc/nginx/sentinela-influx-token.conf
 sudoedit /etc/nginx/sentinela-influx-token.conf    # set $influx_token "<token nginx-publico>";
-sudo install -o root -g root -m 644 infra/nginx/sentinela.conf "$(readlink -f /etc/nginx/sites-enabled/sentinela.conf)"
-sudo install -o root -g root -m 644 infra/nginx/sentinela-http.conf /etc/nginx/conf.d/sentinela-http.conf
+sudo install -o root -g root -m 644 infra/nginx/sentinela-influx-proxy.conf /etc/nginx/sentinela.d/influx-proxy.conf
 sudo nginx -t && sudo systemctl reload nginx
 H='Host: sentinela.arthlabs.dev'; U=http://127.0.0.1:8088/influx
 curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/health"                       # 200
@@ -295,16 +409,13 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/api/v2/query?org=sentinela"
 curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/api/v2/buckets"              # 404
 ```
 
+Desativar: `sudo rm /etc/nginx/sentinela.d/influx-proxy.conf && sudo nginx -t && sudo systemctl reload nginx`.
+
 - Só `POST /influx/api/v2/query` e `GET /influx/health` chegam ao InfluxDB; o resto de `/influx/` é
   404. Corpo máximo 16 KiB; `limit_req` 5 r/s por IP com burst 10 (429 acima disso).
-- O IP do visitante vem de `CF-Connecting-IP` (`set_real_ip_from 127.0.0.1` dentro do server do
-  Sentinela, não no `http{}`: os outros vhosts continuam vendo o IP do socket). Sem isso o limite
-  seria global, porque todo tráfego chega do cloudflared em loopback.
-- Validado localmente com `nginx:1.22.1` (versão do Debian 12): `nginx -t` ok; POST 200, GET 403,
-  buckets/write 404, corpo de 20 KB 413, 25 requisições do mesmo IP → 6 x 429, outro IP logo
-  depois → 200, cabeçalhos `X-Influxdb-*` ocultos.
-- Rollback: `sudo install -m 644 /root/sentinela.conf.bak-<data> <arquivo real>`,
-  `sudo rm /etc/nginx/conf.d/sentinela-http.conf`, `sudo nginx -t && sudo systemctl reload nginx`.
+- Validado localmente com `nginx:1.22.1` (versão do Debian 12): desligado, todo `/influx/` 404 e o
+  SPA 200; ligado, POST 200, GET 403, buckets/write 404, corpo de 20 KB 413, 25 requisições do mesmo
+  IP → 6 x 429, outro IP logo depois → 200, cabeçalhos `X-Influxdb-*` ocultos.
 
 ### 11. Backup (timer systemd)
 
@@ -362,8 +473,15 @@ o job de teste: `"required_status_checks": {"strict": true, "contexts": ["test"]
 ### 13. Worker (tarefa futura): restrições que o deploy exige
 
 - Imagem só `ghcr.io/arthjhon/sentinela-worker:${WORKER_TAG}` (40-hex; o CI passa o SHA como
-  argumento, `none` mantém o implantado). Pacote GHCR privado → `docker login ghcr.io` como root
-  com PAT `read:packages`.
+  argumento, `none` mantém o implantado).
+- Pull do GHCR: pacote público dispensa credencial (preferível; a imagem não deve conter segredo).
+  Se for privado, `docker login ghcr.io` como root com um token **só de leitura de pacotes** e com
+  validade: fine-grained PAT com permissão Packages: read, se o GHCR já aceitar fine-grained na
+  data da instalação (até a redação deste runbook o registry exigia PAT clássico); senão PAT
+  clássico com o escopo único `read:packages`. Entrar sem eco nem histórico:
+  `read -rs T; printf '%s' "$T" | sudo docker login ghcr.io -u arthjhon --password-stdin; unset T`.
+  O token fica em base64 (não cifrado) em `/root/.docker/config.json`: usar um credential helper
+  (`docker-credential-pass`) ou, no mínimo, validade curta e rotação periódica (passo 14).
 - Na rede do Supabase: `cap_drop: [ALL]` e anexo **vazio** (`networks: { supabase: {} }`; sem
   `aliases`, `ipv4_address`, `mac_address`, prioridades); rede top-level
   `supabase: { external: true, name: ${SUPABASE_NETWORK} }`; `SUPABASE_NETWORK` preenchido no `.env`.
@@ -393,15 +511,23 @@ o job de teste: `"required_status_checks": {"strict": true, "contexts": ["test"]
 - **`INFLUX_ADMIN_TOKEN`**: só vale no setup inicial. Para trocar, criar outro token de operador
   (`influx auth create --operator --description admin-<data>`), pôr no `.env`, testar, apagar o
   antigo. O container guarda o token antigo na config do CLI (`/etc/influxdb2/influx-configs`).
-- **Chaves SSH do CI**: gerar par novo, trocar a linha em `authorized_keys` (passo 5) e o secret.
+- **Chaves SSH do CI**: gerar par novo, trocar a linha em `authorized_keys` (passo 5) e o secret
+  do environment `production` (passo 6b).
+- **Token do GHCR** (se o pacote for privado): gerar novo antes de expirar, `docker login` de novo
+  como root (passo 13), revogar o antigo no GitHub.
 - **Chave de host da VM** (se regenerada): refazer o passo 6.
 
 ### 15. Rollback
 
 - **Automático**: se o `up` falhar ou algum serviço não ficar saudável em 120 s (ou ficar
-  `unhealthy`), o script restaura `/srv/sentinela/stack/.previous/` (re-renderizado e revalidado
-  com o `.env` e a política atuais), sobe de novo e sai com 1. `DEPLOYED` só muda em sucesso. No
-  primeiro deploy não há `.previous`: os containers ficam como estão para diagnóstico.
+  `unhealthy`), o script volta `current` para `.current` (último bom conhecido, re-renderizado e
+  revalidado com o `.env` e a política atuais), sobe de novo e sai com 1. `DEPLOYED` e `.current`
+  só mudam em sucesso. No primeiro deploy não há `.current`: os containers ficam como estão para
+  diagnóstico.
+- **Queda no meio** (VM reiniciou, processo morto): `.current`/`DEPLOYED` continuam na última release
+  saudável; `current` pode apontar para a release incompleta. Rodar um deploy (CI ou
+  `sudo /usr/local/sbin/stack-deploy.sh none`) resolve; se ele falhar, o rollback automático volta
+  ao `.current`.
 - **Preferido (GitOps)**: `git revert` do commit na `main` via PR; o CI implanta a versão anterior.
 - **Emergência** (sem CI), voltar ao `.previous`:
   ```bash
@@ -412,11 +538,11 @@ o job de teste: `"required_status_checks": {"strict": true, "contexts": ["test"]
   ```
 - **Parar a stack** (nunca `down -v`: apagaria os volumes de dados):
   ```bash
-  sudo docker compose -p sentinela-stack -f /srv/sentinela/stack/.deployed.json down
+  sudo docker compose -p sentinela-stack -f /srv/sentinela/stack/current/rendered.json down
   ```
 - **Dados**: restaurar backup (passo 11). **nginx**: passo 10.
 - Diagnóstico: `sudo tail -n 100 /var/log/sentinela-stack-deploy.log`,
-  `sudo docker compose -p sentinela-stack ps -a`.
+  `sudo docker compose -p sentinela-stack ps -a`, `sudo ls -l /srv/sentinela/stack/`.
 
 ### Testes locais (workstation)
 
