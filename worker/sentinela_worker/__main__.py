@@ -40,26 +40,35 @@ def healthcheck(path: str | None = None, max_age_s: int = HEALTHCHECK_MAX_AGE_S)
     return 0 if age < max_age_s else 1
 
 
-def build_jobs(sink) -> tuple[list[scheduler.Job], list]:
-    """Return the production jobs and the long-lived clients to close on shutdown."""
-    from .collectors import ana, openmeteo
+def build_jobs(sink, pg, detector_config_path: str) -> tuple[list[scheduler.Job], list]:
+    """Return the production jobs and the long-lived clients to close on shutdown.
 
+    The detector config is loaded here, so an invalid detector.yaml stops the worker at startup."""
+    from .collectors import ana, openmeteo
+    from .detector import runner
+    from .detector.config import load_detector_config
+
+    detector_cfg = load_detector_config(detector_config_path)
     om_client = openmeteo.make_client()
     ana_client = ana.make_client()
     source = ana.AnaLegacySource(ana_client)
     jobs = [
         scheduler.Job("openmeteo", 3600, lambda now: openmeteo.collect_openmeteo(om_client, sink, now)),
         scheduler.Job("ana", 900, lambda now: ana.collect_ana(source, sink, now)),
+        scheduler.Job("detector", runner.DETECTOR_INTERVAL_S,
+                      runner.make_detector_job(sink, pg, detector_cfg)),
     ]
     return jobs, [om_client, ana_client]
 
 
 def cmd_run(jobs_factory=build_jobs) -> int:
+    from .pg import FanOutStatus, PgConnection, PgJobStatus
     from .sinks.influx import InfluxSink
     from .sinks.status import InfluxJobStatus
 
     settings = Settings.from_env()
     sink = InfluxSink(settings.influx_url, settings.influx_org, settings.influx_token)
+    pg = PgConnection(settings.pg_dsn)   # lazy: connects on the first job/status that needs it
     stopping = False
 
     def _stop(signum, _frame):
@@ -69,15 +78,22 @@ def cmd_run(jobs_factory=build_jobs) -> int:
 
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    jobs, closers = jobs_factory(sink)
+    try:
+        jobs, closers = jobs_factory(sink, pg, settings.detector_config_path)
+    except Exception:
+        pg.close()
+        sink.close()
+        raise
     log("INFO", "worker", "started", jobs=len(jobs))
+    status = FanOutStatus(InfluxJobStatus(sink), PgJobStatus(pg))
     try:
         scheduler.run_forever(
-            jobs, InfluxJobStatus(sink), sleep=_interruptible_sleep(lambda: stopping), stop=lambda: stopping
+            jobs, status, sleep=_interruptible_sleep(lambda: stopping), stop=lambda: stopping
         )
     finally:
         for c in closers:
             c.close()
+        pg.close()
         sink.close()
     log("INFO", "worker", "stopped")
     return 0
@@ -133,14 +149,38 @@ def cmd_backfill_ana(start: str, end: str | None) -> int:
     return 0
 
 
+def cmd_detect_once() -> int:
+    """One detector cycle, then exit: 0 on success, 1 on any failure (error text redacted)."""
+    from .detector import runner
+    from .detector.config import load_detector_config
+    from .pg import PgConnection
+    from .redact import redact_error
+    from .sinks.influx import InfluxSink
+
+    settings = Settings.from_env()
+    cfg = load_detector_config(settings.detector_config_path)
+    sink = InfluxSink(settings.influx_url, settings.influx_org, settings.influx_token)
+    pg = PgConnection(settings.pg_dsn)
+    try:
+        runner.detect_cycle(scheduler.utcnow(), sink, pg, cfg)
+    except Exception as exc:
+        log("ERROR", "detector", "detect-once failed", error=redact_error(exc))
+        return 1
+    finally:
+        pg.close()
+        sink.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "healthcheck":
         return healthcheck()
     if args.command == "run":
+        from .detector.config import ConfigError
         try:
             return cmd_run()
-        except RuntimeError as exc:
+        except (RuntimeError, ConfigError) as exc:
             log("ERROR", "worker", str(exc))
             return 2
     if args.command == "backfill-openmeteo":
@@ -153,6 +193,13 @@ def main(argv: list[str] | None = None) -> int:
         try:
             return cmd_backfill_ana(args.start, args.end)
         except RuntimeError as exc:
+            log("ERROR", "worker", str(exc))
+            return 2
+    if args.command == "detect-once":
+        from .detector.config import ConfigError
+        try:
+            return cmd_detect_once()
+        except (RuntimeError, ConfigError) as exc:
             log("ERROR", "worker", str(exc))
             return 2
     log("ERROR", "worker", f"command {args.command} not implemented yet")

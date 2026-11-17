@@ -61,6 +61,50 @@ def load_maintenance(conn, since: datetime) -> list[MaintenanceWindow]:
     return [MaintenanceWindow(*r) for r in rows]
 
 
+class PgConnection:
+    """One long-lived psycopg connection (autocommit off; every access runs in an explicit
+    `with transaction()` block). Connects lazily on first use and is recreated when it is
+    closed or broken; `reset()` drops it explicitly (the detector job does so on
+    OperationalError). Quacks like the psycopg connection for `execute`/`transaction`."""
+
+    CONNECT_TIMEOUT_S = 10
+    STATEMENT_TIMEOUT_MS = 60_000
+
+    def __init__(self, dsn: str, connect=None):
+        self._dsn = dsn
+        self._connect = connect
+        self._conn = None
+
+    def _get(self):
+        c = self._conn
+        if c is None or c.closed or c.broken:
+            self.reset()
+            connect = self._connect
+            if connect is None:
+                import psycopg
+                connect = psycopg.connect
+            self._conn = c = connect(
+                self._dsn, autocommit=False, connect_timeout=self.CONNECT_TIMEOUT_S,
+                options=f"-c statement_timeout={self.STATEMENT_TIMEOUT_MS}")
+        return c
+
+    def execute(self, *args, **kwargs):
+        return self._get().execute(*args, **kwargs)
+
+    def transaction(self):
+        return self._get().transaction()
+
+    def reset(self) -> None:
+        c, self._conn = self._conn, None
+        if c is not None:
+            try:
+                c.close()
+            except Exception:
+                pass
+
+    close = reset
+
+
 class PgHealthStore:
     def __init__(self, conn):
         self._conn = conn
