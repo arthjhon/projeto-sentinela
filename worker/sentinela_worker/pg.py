@@ -75,7 +75,7 @@ class PgHealthStore:
     def apply(self, changes: list[StateChange], prune: list[tuple[str, str]]) -> None:
         """Persist changes and prune rows in ONE transaction (all or nothing).
 
-        Event contract: close_event closes the open event of (device_id, sensor) at new.desde.
+        Event contract: close_event closes the open event of (device_id, sensor) at new.desde (never before its inicio).
         open_event opens a new event; if an event with a DIFFERENT estado is still open it is
         closed first (fim = new.desde, never before its inicio), so a falha->suspeito transition
         never drops the new event. An already-open event with the same estado is kept as is
@@ -93,7 +93,7 @@ class PgHealthStore:
                     (c.device_id, c.sensor, c.boia_id, c.modo, c.new.estado, c.new.motivo, c.new.desde))
                 if c.close_event:
                     self._conn.execute(
-                        "UPDATE public.sensor_health_events SET fim=%s"
+                        "UPDATE public.sensor_health_events SET fim=GREATEST(inicio, %s)"
                         " WHERE device_id=%s AND sensor=%s AND fim IS NULL",
                         (c.new.desde, c.device_id, c.sensor))
                 if c.open_event:

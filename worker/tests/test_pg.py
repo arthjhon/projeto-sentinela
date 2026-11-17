@@ -216,6 +216,15 @@ def test_open_over_open_closes_previous_event(conn):
     assert rows == [("falha", T0, t1), ("suspeito", t1, None)]
 
 
+def test_close_event_with_out_of_order_desde_does_not_violate_check(conn):
+    store = PgHealthStore(conn)
+    store.apply([change(estado="falha")], [])
+    early = T0 - timedelta(minutes=5)
+    store.apply([StateChange("dev1", "ph", "SM-01", "campo",
+                             SensorState("ok", "m", early), False, True)], [])
+    assert conn.execute("SELECT inicio, fim FROM public.sensor_health_events").fetchone() == (T0, T0)
+
+
 def test_event_checks_reject_bad_rows(conn):
     for sql in ("INSERT INTO public.sensor_health_events(device_id,sensor,estado,inicio,fim)"
                 " VALUES ('d','ph','falha',now(), now() - interval '1 hour')",

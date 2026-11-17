@@ -526,47 +526,61 @@ ownership) e as policies de RLS. É idempotente: pode ser reexecutada.
 
 2. Habilitar login e definir a senha **sem** passar o literal em SQL (`ALTER ROLE ... PASSWORD
    '<literal>'` cai em texto claro no log do Postgres com `log_statement=ddl` e no
-   `pg_stat_statements`). O `\password` do psql envia apenas o hash SCRAM:
+   `pg_stat_statements`) **nem em argv** (aparece em `ps` e no `COMMAND=` do sudo em auth.log). Gerar a
+   senha numa variável (nunca com `echo`), gravar o DSN no `.env` com `printf` builtin + `sudo tee`
+   (só `tee -a <arquivo>` vai para o argv do sudo) e definir a senha no role via `\password`, que
+   envia só o hash SCRAM:
 
    ```bash
+   PW="$(openssl rand -hex 32)"
+   printf "PG_WORKER_DSN='postgresql://sentinela_worker:%s@<host-supabase-db>:5432/postgres'\n" "$PW" \
+     | sudo tee -a /srv/sentinela/stack/.env >/dev/null
    psql -U postgres -c 'ALTER ROLE sentinela_worker WITH LOGIN'
-   psql -U postgres -c '\password sentinela_worker'
+   printf %s "$PW" | xclip -selection clipboard; unset PW   # ou wl-copy; limpe o clipboard depois
+   psql -U postgres -c '\password sentinela_worker'          # colar a senha quando pedir
    ```
 
-3. Gravar `PG_WORKER_DSN` no `.env` da stack sem expor a senha no histórico do shell
-   (`read -rs`; use a mesma senha digitada no passo 2; entre aspas simples no arquivo):
-
-   ```bash
-   read -rs -p 'senha do sentinela_worker: ' PW; echo
-   sudo sh -c "printf \"PG_WORKER_DSN='postgresql://sentinela_worker:%s@<host-supabase-db>:5432/postgres'\n\" \"$PW\" >> /srv/sentinela/stack/.env"
-   unset PW
-   ```
-
-   O worker só alcança o Postgres pela rede `SUPABASE_NETWORK`.
-4. Verificar: com esse DSN, `SELECT` em `app_settings` funciona e `UPDATE app_settings ...` falha
+   Sem clipboard, leia o valor uma única vez do `.env` com `sudo` num terminal privado. O worker só alcança o Postgres
+   pela rede `SUPABASE_NETWORK`.
+3. Verificar: com esse DSN, `SELECT` em `app_settings` funciona e `UPDATE app_settings ...` falha
    com `permission denied`.
 
 **Risco residual aceito: privilégios herdados via PUBLIC.** Todo role herda de `PUBLIC`: EXECUTE
 em `net.http_get/post/delete` (extensão gerenciada `pg_net`), arwdDxt em `net.http_request_queue` e
 `net._http_response`, e TEMP/CONNECT no banco. A migration não mexe na extensão gerenciada. Motivo:
 o container do worker já tem egress de rede próprio, então o `pg_net` acrescenta pouco; alterar
-objetos da extensão arrisca quebrar o Supabase. Se o dono quiser fechar:
+objetos da extensão arrisca quebrar o Supabase. Se o dono quiser fechar (opcional, avançado;
+testar em staging antes):
 
 ```sql
--- 1) conferir se pg_net / Database Webhooks estão em uso (triggers do schema supabase_functions):
+-- Conectar como supabase_admin: os grants em net.* pertencem a ele; como `postgres` os REVOKE
+-- abaixo retornam "no privileges could be revoked" e nada muda.
+
+-- 1) Descobrir se pg_net está em uso (qualquer resultado = em uso; não prosseguir sem revisar):
 SELECT extname FROM pg_extension WHERE extname = 'pg_net';
-SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
- WHERE p.proname = 'http_request';
--- 2) se NÃO estiver em uso, retirar do PUBLIC e devolver só aos roles do Supabase:
+SELECT tgrelid::regclass, tgname FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+ WHERE p.proname = 'http_request';                                    -- Database Webhooks
+SELECT n.nspname, p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE p.prosrc ILIKE '%net.http\_%' AND n.nspname NOT IN ('net', 'pg_catalog');  -- funções
+SELECT jobid, jobname FROM cron.job WHERE command ILIKE '%net.http\_%';  -- só se pg_cron existir
+
+-- 2) As funções net.http_* NÃO são SECURITY DEFINER: quem as chama precisa de direitos nas tabelas.
+--    Revogar do PUBLIC e re-conceder aos roles do Supabase:
 REVOKE EXECUTE ON FUNCTION net.http_get, net.http_post, net.http_delete FROM PUBLIC;
 GRANT  EXECUTE ON FUNCTION net.http_get, net.http_post, net.http_delete
   TO postgres, service_role, supabase_functions_admin;
 REVOKE ALL ON net.http_request_queue, net._http_response FROM PUBLIC;
--- 3) TEMP/CONNECT: REVOKE TEMP ON DATABASE postgres FROM sentinela_worker; (CONNECT é necessário)
+GRANT  SELECT, INSERT, UPDATE, DELETE ON net.http_request_queue, net._http_response
+  TO postgres, service_role, supabase_functions_admin;
+GRANT  USAGE ON ALL SEQUENCES IN SCHEMA net TO postgres, service_role, supabase_functions_admin;
+
+-- 3) TEMP no banco vem do PUBLIC (revogar do role é inerte). Opcional:
+REVOKE TEMP ON DATABASE postgres FROM PUBLIC;
+GRANT  TEMP ON DATABASE postgres TO postgres, supabase_admin, authenticated, anon, service_role;
+-- CONNECT continua necessário para o worker.
 ```
 
-Se houver Database Webhooks, o passo 2 precisa re-conceder aos roles que os disparam; reverter =
-os mesmos `GRANT ... TO PUBLIC`. Testar em staging antes.
+Reverter = `GRANT ... TO PUBLIC` dos mesmos objetos (como `supabase_admin`).
 
 ### 14. Rotação de segredos
 
