@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { fetchWorkerJobs, jobStaleness, jobTitle } from './sensorHealth';
+import { jobStaleness, jobTitle } from './sensorHealth';
 
 // Modelo de estado da página/selo de status. Funções puras no topo; fetchers no fim.
 // `nao_monitorado` é só de frontend (itens sem sonda) e nunca entra no pior estado.
@@ -25,6 +25,7 @@ export function worstState(states) {
 export function applyStaleness(rows, now = new Date(), maxAgeMs = STALE_AFTER_MS) {
   const n = toMs(now);
   return (rows ?? []).map((r) => {
+    if (r.estado === 'nao_monitorado') return r;
     const t = r.verificado_em ? new Date(r.verificado_em).getTime() : NaN;
     if (Number.isFinite(t) && n - t <= maxAgeMs) return r;
     return { ...r, estado: 'desconhecido', detalhe: 'status desatualizado — worker parado?' };
@@ -90,10 +91,67 @@ export const BADGE_META = {
 
 // ── Fetchers ────────────────────────────────────────────────────────────
 
-export async function fetchSystemStatus() {
-  const { data, error } = await supabase.from('system_status').select('*');
+export const REST_TIMEOUT_MS = 5000;
+
+/** Rejeita com Error('timeout') se a promessa não resolver em `ms` (rede em buraco negro). */
+export function withTimeout(promise, ms = REST_TIMEOUT_MS) {
+  let timer;
+  const t = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms); });
+  return Promise.race([promise, t]).finally(() => clearTimeout(timer));
+}
+
+export async function fetchSystemStatus(timeoutMs = REST_TIMEOUT_MS) {
+  const { data, error } = await supabase.from('system_status').select('*')
+    .abortSignal(AbortSignal.timeout(timeoutMs));
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+async function fetchJobsTimed(timeoutMs = REST_TIMEOUT_MS) {
+  const { data, error } = await supabase.from('worker_jobs').select('*')
+    .abortSignal(AbortSignal.timeout(timeoutMs));
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/** Leitura REST completa com timeout; nunca rejeita: {rows, jobs} ou {error}. */
+export async function fetchRest(timeoutMs = REST_TIMEOUT_MS) {
+  try {
+    const [rows, jobs] = await withTimeout(
+      Promise.all([fetchSystemStatus(timeoutMs), fetchJobsTimed(timeoutMs)]), timeoutMs + 500);
+    return { rows, jobs };
+  } catch (error) {
+    return { error };
+  }
+}
+
+/** Resultado de uma rodada → estado do contexto (puro). */
+export function buildSnapshot({ auth, rest, now = new Date() }) {
+  const restFailed = Boolean(rest.error);
+  const sb = {
+    auth: classifySupabaseHealth(auth),
+    rest: restFailed
+      ? { estado: 'falha', detalhe: String(rest.error?.message ?? rest.error).slice(0, 200) }
+      : { estado: 'ok', detalhe: null },
+  };
+  sb.estado = worstState([sb.auth.estado, sb.rest.estado]);
+  if (restFailed) return { loading: false, supabase: sb, rows: null, jobs: null };
+  let rows = applyStaleness(rest.rows, now);
+  if (!(rest.rows ?? []).length && !(rest.jobs ?? []).length) {
+    rows = [{ componente: 'worker', estado: 'desconhecido', detalhe: 'worker ainda não reportou', verificado_em: null }];
+  }
+  return { loading: false, supabase: sb, rows, jobs: jobsToStatus(rest.jobs, now) };
+}
+
+/** Uma rodada por vez; só o resultado da rodada mais recente vale. */
+export function createPollGuard() {
+  let seq = 0;
+  let inFlight = false;
+  return {
+    start() { if (inFlight) return null; inFlight = true; return ++seq; },
+    isLatest(token) { return token === seq; },
+    finish() { inFlight = false; },
+  };
 }
 
 export async function checkSupabaseAuth(timeoutMs = 5000) {
@@ -113,5 +171,3 @@ export async function checkSupabaseAuth(timeoutMs = 5000) {
     clearTimeout(timer);
   }
 }
-
-export { fetchWorkerJobs };

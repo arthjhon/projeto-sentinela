@@ -1,7 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  fetchSystemStatus, fetchWorkerJobs, checkSupabaseAuth, classifySupabaseHealth,
-  applyStaleness, jobsToStatus, worstState, badgeState,
+  fetchRest, checkSupabaseAuth, buildSnapshot, createPollGuard, badgeState,
 } from '../services/systemStatus';
 
 // Um único laço de polling (30 s, pausado com a aba oculta), sem MQTT, compartilhado por
@@ -18,35 +17,17 @@ export function SystemStatusProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false;
+    const guard = createPollGuard();
     const load = async () => {
       if (document.visibilityState === 'hidden') return;
+      const token = guard.start();
+      if (token === null) return; // rodada anterior ainda em andamento
       try {
-        const [auth, rest] = await Promise.all([
-          checkSupabaseAuth(),
-          Promise.all([fetchSystemStatus(), fetchWorkerJobs()]).then(
-            ([rows, jobs]) => ({ rows, jobs }),
-            (e) => ({ error: e }),
-          ),
-        ]);
-        if (cancelled) return;
-        const now = new Date();
-        const authState = classifySupabaseHealth(auth);
-        const restFailed = Boolean(rest.error);
-        const supabase = {
-          auth: authState,
-          rest: restFailed
-            ? { estado: 'falha', detalhe: String(rest.error?.message ?? rest.error).slice(0, 200) }
-            : { estado: 'ok', detalhe: null },
-        };
-        supabase.estado = worstState([supabase.auth.estado, supabase.rest.estado]);
-        setState({
-          loading: false,
-          supabase,
-          rows: restFailed ? null : applyStaleness(rest.rows, now),
-          jobs: restFailed ? null : jobsToStatus(rest.jobs, now),
-        });
+        const [auth, rest] = await Promise.all([checkSupabaseAuth(), fetchRest()]);
+        if (cancelled || !guard.isLatest(token)) return;
+        setState(buildSnapshot({ auth, rest, now: new Date() }));
       } catch (e) {
-        if (cancelled) return;
+        if (cancelled || !guard.isLatest(token)) return;
         // Nunca derruba o layout: trata como Supabase em falha.
         setState({
           loading: false,
@@ -54,6 +35,8 @@ export function SystemStatusProvider({ children }) {
           rows: null,
           jobs: null,
         });
+      } finally {
+        guard.finish(token);
       }
     };
     refreshRef.current = load;

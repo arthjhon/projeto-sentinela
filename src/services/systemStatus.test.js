@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
-  worstState, applyStaleness, classifySupabaseHealth, jobsToStatus, buoyStatus, badgeState,
+  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, buoyStatus, badgeState,
 } from './systemStatus';
 
 const NOW = new Date('2026-11-18T12:00:00Z');
@@ -102,5 +102,52 @@ describe('badgeState', () => {
   });
   it('ignores nao_monitorado', () => {
     expect(badgeState({ supabase: ok, rows: [{ estado: 'nao_monitorado' }], jobs: [] })).toBe('ok');
+  });
+});
+
+describe('applyStaleness nao_monitorado', () => {
+  it('does not stale nao_monitorado rows', () => {
+    const r = { componente: 'x', estado: 'nao_monitorado', verificado_em: null };
+    expect(applyStaleness([r], NOW)[0].estado).toBe('nao_monitorado');
+  });
+});
+
+describe('REST timeout', () => {
+  it('withTimeout rejects a never-resolving call, and the snapshot is REST falha', async () => {
+    vi.useFakeTimers();
+    try {
+      const p = withTimeout(new Promise(() => {}), 5000).catch((error) => ({ error }));
+      await vi.advanceTimersByTimeAsync(5001);
+      const rest = await p;
+      expect(rest.error.message).toBe('timeout');
+      const snap = buildSnapshot({ auth: { ok: true, status: 200, elapsedMs: 50 }, rest, now: NOW });
+      expect(snap.supabase.rest.estado).toBe('falha');
+      expect(snap.supabase.estado).toBe('falha');
+      expect(badgeState({ supabase: snap.supabase, rows: snap.rows, jobs: snap.jobs })).toBe('falha');
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+describe('createPollGuard', () => {
+  it('skips while in flight and only the latest poll wins', () => {
+    const g = createPollGuard();
+    const a = g.start();
+    expect(g.start()).toBeNull();
+    expect(g.isLatest(a)).toBe(true);
+    g.finish(a);
+    const b = g.start();
+    expect(g.isLatest(a)).toBe(false);
+    expect(g.isLatest(b)).toBe(true);
+  });
+});
+
+describe('empty worker tables', () => {
+  it('zero rows and zero jobs gives a desconhecido entry, not green', () => {
+    const snap = buildSnapshot({
+      auth: { ok: true, status: 200, elapsedMs: 50 }, rest: { rows: [], jobs: [] }, now: NOW,
+    });
+    expect(snap.rows).toHaveLength(1);
+    expect(snap.rows[0].detalhe).toBe('worker ainda não reportou');
+    expect(badgeState({ supabase: snap.supabase, rows: snap.rows, jobs: snap.jobs })).toBe('degradado');
   });
 });
