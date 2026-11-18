@@ -6,12 +6,15 @@
                 [--observer USER|- [--obs-url URL]] [--receive]
                 [--feeder USER [--feeder-url URL]]
 
-The password is read from env MQTT_PASS (observer: MQTT_OBS_PASS, feeder: MQTT_FEED_PASS), never argv.
+Passwords are read from env, never argv: MQTT_PASS (the probed user),
+MQTT_OBS_PASS (--observer), MQTT_FEED_PASS (--feeder).
 Exit 0 iff the observed result equals --expect (default allowed), 1 on
 mismatch, 2 on probe setup errors.
 
-  --sub : allowed iff the connection and the SUBACK are granted. With
-          --receive the probe also needs a message within 3 s (retained check).
+  --sub : a SUBACK "granted" proves nothing on Mosquitto 2.0 (it grants
+          ACL-denied filters), so plain --sub only detects a refused
+          connection and `--sub --expect allowed` is rejected (exit 2)
+          unless --feeder or --receive is given. With --receive the probe also needs a message within 3 s (retained check).
           With --feeder USER, USER (privileged) also publishes to the topic
           after the subscribe and the message must arrive: Mosquitto 2.0 can
           answer SUBACK "granted" for an ACL-denied filter, so delivery is the
@@ -19,7 +22,22 @@ mismatch, 2 on probe setup errors.
   --pub : (--observer required; "-" = anonymous) allowed iff the message reaches a privileged observer within 3 s.
           Mosquitto drops unauthorized publishes silently on MQTT 3.1.1, so
           delivery is the authoritative signal; the v5 PUBACK reason code is
-          printed for information. A refused connection counts as denied.
+          printed; a failure PUBACK code (>= 0x80) also counts as denied.
+          A refused connection counts as denied.
+
+How to check correctly (run inside the broker's docker network):
+  anonymous can read X:
+    mqtt_probe.py --url ws://broker:9001 --sub X \
+      --feeder <priv user> --feeder-url tcp://broker:1883 --expect allowed
+      (env MQTT_FEED_PASS=<priv user password>)
+  user U cannot publish X:
+    mqtt_probe.py --url tcp://broker:1883 --user U --pub X \
+      --observer <user allowed to read X, or -> --expect denied
+      (env MQTT_PASS=<U password> MQTT_OBS_PASS=<observer password>)
+  user U cannot subscribe X:
+    mqtt_probe.py --url tcp://broker:1883 --user U --sub X \
+      --feeder <user allowed to publish X> --expect denied
+  anonymous TCP refused: plain --sub with no --user, --expect denied.
 """
 import argparse
 import os
@@ -92,14 +110,21 @@ def do_sub(a, pw):
     if c is None:
         return False
     got = threading.Event()
-    c.on_message = lambda *_: got.set()
+    marker = uuid.uuid4().hex.encode()
+
+    def on_message(_c, _u, msg):
+        # --receive wants any message (retained check); feeder wants its marker.
+        if a.receive or msg.payload == marker:
+            got.set()
+
+    c.on_message = on_message
     ok = subscribe(c, a.sub)
     if ok and a.feeder:
         f = connect(a.feeder_url or a.url, a.feeder, os.environ.get("MQTT_FEED_PASS", ""))
         if f is None:
             print("feeder could not connect", file=sys.stderr)
             sys.exit(2)
-        f.publish(a.sub, b"feed", qos=1).wait_for_publish(timeout=WAIT)
+        f.publish(a.sub, marker, qos=1).wait_for_publish(timeout=WAIT)
         f.loop_stop()
         f.disconnect()
     if ok and (a.receive or a.feeder):
@@ -133,14 +158,21 @@ def do_pub(a, pw):
     if c is None:
         obs.loop_stop()
         return False
+    puback = {}
+
+    def on_publish(_c, _u, _mid, rc, _p):
+        puback["rc"] = rc
+        print(f"puback: {rc}", file=sys.stderr)
+
+    c.on_publish = on_publish
     info = c.publish(a.pub, payload, qos=1, retain=a.retain)
     try:
         info.wait_for_publish(timeout=WAIT)
-        if info.is_published():
-            print("puback received", file=sys.stderr)
     except (RuntimeError, ValueError):
         pass
     delivered = seen.wait(WAIT)
+    if "rc" in puback and puback["rc"].is_failure:
+        delivered = False
     for x in (c, obs):
         x.loop_stop()
         x.disconnect()
@@ -165,6 +197,10 @@ def main():
     a = p.parse_args()
     if a.pub and not a.observer:
         p.error("--pub needs --observer")
+    if a.sub and a.expect == "allowed" and not (a.feeder or a.receive):
+        print("--sub --expect allowed needs --feeder or --receive "
+              "(SUBACK alone is not proof of access)", file=sys.stderr)
+        return 2
     pw = os.environ.get("MQTT_PASS", "")
     allowed = do_sub(a, pw) if a.sub else do_pub(a, pw)
     got = "allowed" if allowed else "denied"
