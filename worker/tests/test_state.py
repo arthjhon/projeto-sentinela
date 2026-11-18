@@ -49,7 +49,7 @@ def test_desde_is_kept_while_estado_is_unchanged_and_reset_on_change():
 def test_motivo_names_the_rule_and_detail():
     s = st([FALHA, SUSP])
     assert s.motivo.startswith("travado: valor constante por 120 min")
-    assert "plausibilidade" not in s.motivo             # a lower severity is not the reason
+    assert s.motivo.endswith(" (+ plausibilidade)")     # listed, but not the reason
     two = st([FALHA, Flag("faixa", "falha", NOW, 15.0, "fora")])
     assert "travado" in two.motivo and "faixa" in two.motivo
     assert st([]).motivo == "" and st(man=True).motivo
@@ -63,3 +63,14 @@ def test_motivo_regras_round_trips_derive_state_motivo():
     assert motivo_regras(st([pico, deriva]).motivo) == {"pico", "deriva"}
     assert motivo_regras(st([pico]).motivo) == {"pico"}
     assert motivo_regras("") == set() and motivo_regras(st(man=True).motivo) == set()
+
+
+def test_motivo_lists_every_active_rule_after_the_winning_severity():
+    from sentinela_worker.detector.state import motivo_regras
+    deriva = Flag("deriva", "suspeito", NOW, 0.2, "deriva lenta: nivel atual +0.200 (media 24 h; x)")
+    faixa = Flag("faixa", "falha", NOW, 15.0, "valor fora da faixa [0, 14]")
+    s = st([deriva, SEM, faixa])
+    assert s.estado == "falha" and s.motivo.startswith("faixa: valor fora da faixa [0, 14]")
+    assert s.motivo.endswith(" (+ deriva, sem_dados)")
+    assert motivo_regras(s.motivo) == {"faixa", "deriva", "sem_dados"}   # deriva not forgotten
+    assert motivo_regras(st([SEM, deriva]).motivo) == {"sem_dados", "deriva"}

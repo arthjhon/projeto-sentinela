@@ -395,6 +395,29 @@ def test_deriva_motivo_reports_current_shift_and_hysteresis_comes_from_previous_
     assert shift == pytest.approx(0.11, abs=0.03)                   # current 24 h shift, not the alarm
 
 
+def test_short_falha_does_not_forget_an_active_in_band_deriva():
+    """Deriva active with the level parked between the exit and enter thresholds; one faixa
+    sample (falha) for a run or two must not make the runner forget the deriva: once the
+    sample is no longer recent the state is suspeito/deriva again, never ok."""
+    data = week(10, seed=341)
+    data["ph"] = inject_step(data["ph"], at(days=5), 0.5)
+    data["ph"] = inject_step(data["ph"], at(days=7), 0.11 - 0.5)    # parked between the thresholds
+    t_bad = at(days=9) + timedelta(minutes=2)
+    data["ph"] = inject_out_of_range(data["ph"], t_bad, 15.0)       # one sample out of [0, 14]
+    raw = frame("dev1", **data)
+    store = FakeStore()
+    store.states[("dev1", "ph")] = SensorState("suspeito", "deriva: x", at(days=8))
+    runner.run_cycle(at(days=9), FakeInflux(raw), store, [buoy()], [], CFG)
+    assert store.states[("dev1", "ph")].estado == "suspeito"        # hysteresis holds
+    runner.run_cycle(at(days=9, minutes=5), FakeInflux(raw), store, [buoy()], [], CFG)
+    st = store.states[("dev1", "ph")]
+    assert st.estado == "falha" and st.motivo.startswith("faixa:") and "(+ " in st.motivo
+    assert "deriva" in st.motivo                                     # still listed as active
+    runner.run_cycle(at(days=9, minutes=20), FakeInflux(raw), store, [buoy()], [], CFG)
+    back = store.states[("dev1", "ph")]
+    assert back.estado == "suspeito" and back.motivo.startswith("deriva:"), back
+
+
 def test_duplicate_device_id_warns_once_per_registry_change(capsys):
     runner._reset_registry_warnings()
     empty = pd.DataFrame(columns=["_time", "device_id", *SENSORS])

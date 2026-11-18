@@ -45,9 +45,12 @@ def motivo_regras(motivo: str) -> set[str]:
     return regras
 
 
-def _motivo(flags: "list[Flag]") -> str:
-    first = flags[0]
-    others = list(dict.fromkeys(f.regra for f in flags if f.regra != first.regra))
+def _motivo(winning: "list[Flag]", active: "list[Flag]") -> str:
+    """'regra: detalhe' of the first winning-severity flag, then EVERY other active rule
+    (any severity) as '(+ a, b)'. The runner reads the rules back with motivo_regras (deriva
+    hysteresis), so a short falha/sem_dados must not hide a deriva that is still active."""
+    first = winning[0]
+    others = list(dict.fromkeys(f.regra for f in [*winning, *active] if f.regra != first.regra))
     return f"{first.regra}: {first.detalhe}" + (f" (+ {', '.join(others)})" if others else "")
 
 
@@ -68,11 +71,11 @@ def derive_state(flags: "list[Flag]", modo: str, em_manutencao: bool, cadastrado
     elif not cadastrado:
         estado, motivo = "nao_cadastrado", "dispositivo publicando sem cadastro no registro de boias"
     elif falha:
-        estado, motivo = "falha", _motivo(falha)
+        estado, motivo = "falha", _motivo(falha, flags)
     elif sem_dados:
-        estado, motivo = "sem_dados", _motivo(sem_dados)
+        estado, motivo = "sem_dados", _motivo(sem_dados, flags)
     elif suspeito:
-        estado, motivo = "suspeito", _motivo(suspeito)
+        estado, motivo = "suspeito", _motivo(suspeito, flags)
     elif not dados_suficientes:
         estado, motivo = "dados_insuficientes", "historico insuficiente para a estatistica (camada 2)"
     else:
