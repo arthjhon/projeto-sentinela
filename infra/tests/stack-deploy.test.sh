@@ -19,13 +19,21 @@ INC=$R/srv/sentinela/stack-incoming
 LIVE=$R/srv/sentinela/stack
 LOGF=$R/var/log/sentinela-stack-deploy.log
 mosq=s4t-mosq-$$
+# I2 prune test: a test-only repository (stack-deploy accepts the override only in
+# non-root test mode and only under sentinela-stack-test/). Tags are local aliases
+# of the mosquitto image: nothing is pulled or pushed.
+PRUNE_REPO=sentinela-stack-test/worker
+OTHER_REPO=sentinela-stack-test/other
+inuse_ctr=s4t-inuse-$$
 fails=0
 
 pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1"; fails=$((fails + 1)); }
 
 teardown() {
-  docker rm -f "$mosq" >/dev/null 2>&1
+  docker rm -f -v "$mosq" "$inuse_ctr" >/dev/null 2>&1
+  docker image ls --format '{{.Repository}}:{{.Tag}}' "$PRUNE_REPO" 2>/dev/null | xargs -r docker rmi >/dev/null 2>&1
+  docker image ls --format '{{.Repository}}:{{.Tag}}' "$OTHER_REPO" 2>/dev/null | xargs -r docker rmi >/dev/null 2>&1
   docker compose -p "$PROJECT" down --remove-orphans >/dev/null 2>&1
   # Explicit, test-only names (never `down -v`, never the real sentinela-influxdb-*).
   docker volume rm "${PROJECT}_influxdb-data" "${PROJECT}_influxdb-config" >/dev/null 2>&1
@@ -231,6 +239,18 @@ bad_lines=$(grep -Ev -- "$allowed_re" <<<"$out")
 grep -qF "$hex_secret" "$LOGF" && grep -q 'validate| DENY: telegraf: hostname must start with sentinela-: x\\nDENY: ' "$LOGF" \
   && pass "R19 host log has the escaped single-line detail" || fail "R19 host log detail missing/unescaped"
 
+# ---- I1: first deploy with `none` and a compose that has the worker --------
+# No DEPLOYED yet: there is no tag to keep, so `none` is denied with a pointer to
+# the runbook (fail-closed, before any render).
+real_first=$tmp/compose.real.yml
+sed -e '/^    name: sentinela-influxdb-/d' -e 's/127\.0\.0\.1:8086:8086/127.0.0.1:18086:8086/' \
+  "$repo/infra/stack/compose.yml" >"$real_first"
+reset_incoming "$real_first"
+run_deploy none
+expect_rc "first deploy 'none' with worker denied" 1 "no worker tag deployed"
+[[ $out == *"Primeiro deploy"* ]] && pass "denial points to the runbook" || fail "denial lacks runbook pointer: $out"
+[ ! -e "$LIVE/compose.yml" ] && pass "'none' denial left live empty" || fail "'none' denial touched live"
+
 # ---- happy path (first deploy) ----------------------------------------------
 reset_incoming "$base"
 run_deploy none
@@ -360,6 +380,36 @@ expect_rc "deploy after crash recovers" 0 "an earlier deploy did not finish"
 grep -q " $sha3\$" "$LIVE/DEPLOYED" && pass "none after crash keeps last healthy tag" || fail "tag after crash: $(cat "$LIVE/DEPLOYED")"
 n=$(find "$LIVE/releases" -mindepth 1 -maxdepth 1 | wc -l)
 [ "$n" -le 3 ] && pass "releases pruned ($n kept)" || fail "releases not pruned ($n)"
+
+grep -q 'image prune: skipped (test mode without a test repository)' "$LOGF" \
+  && pass "test mode without a test repo never prunes" || fail "prune not skipped in test mode"
+
+# ---- I2: scoped prune of unreferenced worker tags ---------------------------
+SENTINELA_TEST_WORKER_REPO=ghcr.io/arthjhon/sentinela-worker run_deploy none
+expect_rc "real repo name refused as test repo" 2 "SENTINELA_TEST_WORKER_REPO must match"
+cur_tag=$(awk '{print $2}' "$LIVE/DEPLOYED")              # sha3: becomes .previous
+new_tag=$(printf 'e%.0s' {1..40})
+drop1=$(printf 'f%.0s' {1..40}); drop2=$(printf '1%.0s' {1..40}); inuse=$(printf '2%.0s' {1..40})
+for t in "$cur_tag" "$new_tag" "$drop1" "$drop2" dev; do docker tag "$MOSQ_IMAGE" "$PRUNE_REPO:$t"; done
+docker tag "$MOSQ_IMAGE" "$OTHER_REPO:$drop1"
+# In use: an image of its own (a tag that only aliases another image would just be
+# untagged), whose only tag is used by a stopped container => rmi without -f refuses.
+docker create --name "$inuse_ctr" "$MOSQ_IMAGE" true >/dev/null
+docker commit "$inuse_ctr" "$PRUNE_REPO:$inuse" >/dev/null
+docker rm "$inuse_ctr" >/dev/null
+docker create --name "$inuse_ctr" "$PRUNE_REPO:$inuse" true >/dev/null
+reset_incoming "$base"
+out=$(SENTINELA_DEPLOY_ROOT="$R" SENTINELA_TEST_WORKER_REPO="$PRUNE_REPO" bash "$script" "$new_tag" 2>&1); rc=$?
+expect_rc "deploy with prune (in-use tag cannot be removed)" 0 "image prune: removed 2 unreferenced worker tag(s), 1 kept"
+has_tag() { docker image inspect "$1" >/dev/null 2>&1; }
+has_tag "$PRUNE_REPO:$new_tag" && has_tag "$PRUNE_REPO:$cur_tag" && pass "prune keeps current and .previous tags" \
+  || fail "prune removed a referenced tag"
+! has_tag "$PRUNE_REPO:$drop1" && ! has_tag "$PRUNE_REPO:$drop2" && pass "prune removed unreferenced tags" \
+  || fail "unreferenced tags left"
+has_tag "$PRUNE_REPO:$inuse" && pass "prune kept a tag used by a container (no -f)" || fail "in-use tag removed"
+has_tag "$PRUNE_REPO:dev" && pass "prune ignores non-sha tags" || fail "non-sha tag removed"
+has_tag "$OTHER_REPO:$drop1" && pass "prune never touches another repository" || fail "other repository touched"
+has_tag "$MOSQ_IMAGE" && pass "base image intact" || fail "base image removed"
 
 [ -n "${SHOW_LOG:-}" ] && { echo "--- deploy log"; cat "$LOGF"; }
 echo

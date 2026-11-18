@@ -57,6 +57,13 @@
 #  12. OK -> write releases/<id>/DEPLOYED, .previous -> old .current,
 #      .current -> releases/<id>. Fail -> `current` back to .current (re-rendered
 #      and re-validated against the current policy and .env), `up` it, exit 1.
+#  13. OK only: remove local tags of $WORKER_REPO (and nothing else) that no
+#      release in current/.current/.previous names; `docker rmi` without -f, so an
+#      image a container still uses stays. A pruning failure never fails the deploy.
+#
+# `none` keeps the deployed worker tag. With no deployed tag yet (first deploy)
+# and a compose that references WORKER_TAG, `none` is denied before any render:
+# the first deploy must name a 40-hex sha whose image is already in GHCR.
 #
 # Output: stdout (what CI sees) carries only fixed labels, counts, service names
 # from the fixed list (influxdb, telegraf, worker) and file names from the
@@ -71,7 +78,10 @@
 #
 # Testing: when NOT running as uid 0, SENTINELA_DEPLOY_ROOT=<abs dir> prefixes
 # every path below and switches the compose project to sentinela-stack-test.
-# As root it is ignored (sudo's env_reset strips it anyway). See
+# In that mode the image prune of step 13 only runs when
+# SENTINELA_TEST_WORKER_REPO names a test-only repository (never the real one,
+# so a test run cannot delete a developer's local worker images). As root both
+# are ignored (sudo's env_reset strips them anyway). See
 # infra/tests/stack-deploy.test.sh.
 trap '' PIPE HUP
 set -uo pipefail
@@ -101,6 +111,9 @@ readonly HEALTH_POLL=5
 readonly LOCK_TIMEOUT=600
 readonly ARG_RE='^(none|[0-9a-f]{40})$'
 readonly RELEASE_RE='^releases/[0-9]{8}T[0-9]{6}Z-[0-9]+$'
+readonly WORKER_REPO_PROD=ghcr.io/arthjhon/sentinela-worker
+readonly TEST_WORKER_REPO_RE='^sentinela-stack-test/[a-z0-9][a-z0-9_.-]{0,63}$'
+readonly RUNBOOK_FIRST_DEPLOY='infra/README.md, "Primeiro deploy"'
 
 # ---- output (never fatal) -----------------------------------------------------
 say() { printf '%s\n' "$*" 2>/dev/null || true; }
@@ -111,6 +124,7 @@ prefix=""
 project=$PROJECT_NAME
 docker_home=$ROOT_HOME
 test_mode=0
+worker_repo=$WORKER_REPO_PROD
 if [ -n "${SENTINELA_DEPLOY_ROOT:-}" ]; then
   if [ "$(id -u)" -eq 0 ]; then
     err "stack-deploy: SENTINELA_DEPLOY_ROOT ignored when running as root"
@@ -126,14 +140,22 @@ if [ -n "${SENTINELA_DEPLOY_ROOT:-}" ]; then
     project=$TEST_PROJECT_NAME
     docker_home=${HOME:-/nonexistent}
     test_mode=1
+    # Test mode never prunes the real repository: only an explicit test-only one.
+    worker_repo=""
+    if [ -n "${SENTINELA_TEST_WORKER_REPO:-}" ]; then
+      if ! [[ $SENTINELA_TEST_WORKER_REPO =~ $TEST_WORKER_REPO_RE ]]; then
+        err "stack-deploy: SENTINELA_TEST_WORKER_REPO must match $TEST_WORKER_REPO_RE"; exit 2
+      fi
+      worker_repo=$SENTINELA_TEST_WORKER_REPO
+    fi
   fi
 fi
-unset SENTINELA_DEPLOY_ROOT
+unset SENTINELA_DEPLOY_ROOT SENTINELA_TEST_WORKER_REPO
 if [ "$test_mode" -eq 0 ] && [ "$(id -u)" -ne 0 ]; then
   err "stack-deploy: must run as root (via sudo)"
   exit 2
 fi
-readonly prefix project docker_home test_mode
+readonly prefix project docker_home test_mode worker_repo
 readonly INCOMING=$prefix$INCOMING_PATH
 readonly LIVE=$prefix$LIVE_PATH
 readonly VALIDATOR=$prefix$VALIDATOR_PATH
@@ -486,6 +508,10 @@ prepare() {
   fill_stage "$stage" "$src" "$untrusted" || return 1
   check_tree "$stage/in" staged || return 1
   raw_check "$stage/in/compose.yml" || return 1
+  if [ -z "$tag" ] && grep -q -F -e 'WORKER_TAG' -- "$stage/in/compose.yml"; then
+    log "no worker tag deployed: 'none' has no tag to keep; the first worker deploy must pass the 40-hex sha of an image already in GHCR (runbook: $RUNBOOK_FIRST_DEPLOY)"
+    return 1
+  fi
   render "$stage" "$stage/in/compose.yml" "$stage/rendered.json" "$tag" || return 1
   extra_policy "$stage/rendered.json" || return 1
   validate "$stage" "$stage/rendered.json" || return 1
@@ -522,6 +548,40 @@ prune_releases() {
     d=${d##*/}
     in_list "$d" "${keep[@]+"${keep[@]}"}" || rm -rf --one-file-system -- "${RELEASES:?}/$d"
   done < <(find -P "$RELEASES" -mindepth 1 -maxdepth 1 -print0 2>/dev/null)
+}
+
+# prune_worker_images: after a successful deploy, untag local images of
+# $worker_repo (exactly that repository, 40-hex tags only) that no release in
+# current/.current/.previous names in its DEPLOYED. `docker rmi` without -f: an
+# image a container (running or stopped) still uses is kept. Never a global prune,
+# never another repository. Best effort: every failure is logged, none is fatal.
+prune_worker_images() {
+  local keep=() t d tag tags n=0 failed=0
+  if [ -z "$worker_repo" ]; then log_host "image prune: skipped (test mode without a test repository)"; return 0; fi
+  for t in current .current .previous; do
+    d=$(link_target "$t") || continue
+    [[ $d =~ $RELEASE_RE ]] || continue
+    tag=$(awk 'NR==1 {print $2}' "$LIVE/$d/DEPLOYED" 2>/dev/null) || continue
+    [[ $tag =~ ^[0-9a-f]{40}$ ]] && keep+=("$tag")
+  done
+  if ! tags=$(timeout 60 env -i PATH="$PATH" HOME="$docker_home" LC_ALL=C \
+                docker image ls --format '{{.Tag}}' -- "$worker_repo" 2>/dev/null); then
+    log "image prune: cannot list worker images (ignored)"
+    return 0
+  fi
+  for tag in $tags; do
+    [[ $tag =~ ^[0-9a-f]{40}$ ]] || continue
+    in_list "$tag" "${keep[@]+"${keep[@]}"}" && continue
+    if timeout 60 env -i PATH="$PATH" HOME="$docker_home" LC_ALL=C \
+         docker rmi -- "$worker_repo:$tag" >/dev/null 2>&1; then
+      n=$((n + 1))
+    else
+      failed=$((failed + 1))
+      log_host "image prune: kept $worker_repo:$tag (rmi refused, e.g. still used by a container)"
+    fi
+  done
+  log "image prune: removed $n unreferenced worker tag(s), $failed kept (in use or error)"
+  return 0
 }
 
 compose_up() { # <release dir> <json> <recreate services...>
@@ -666,6 +726,7 @@ if compose_up "$rel" "$json" "${recreate[@]+"${recreate[@]}"}" && wait_healthy "
   if [ -n "$old" ] && [ "$old" != "releases/$rel_name" ]; then set_link .previous "$old"; fi
   set_link .current "releases/$rel_name" || { log "FATAL: cannot move .current"; exit 1; }
   prune_releases
+  prune_worker_images || true
   log "result: deployed $(cat -- "$rel/DEPLOYED")"
   exit 0
 fi
