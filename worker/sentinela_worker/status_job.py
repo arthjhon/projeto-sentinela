@@ -14,6 +14,7 @@ from .pg import PgSystemStatus, load_registry
 from .redact import redact_error
 
 STATUS_INTERVAL_S = 60
+STATUS_HTTP_TIMEOUT_MS = 5_000     # a hung InfluxDB must not stall the sequential scheduler
 SOURCE_BUCKET = "iot"
 FRESH = timedelta(minutes=2)       # campo buoy: <= 2 min ok
 STALE = timedelta(minutes=15)      # (2, 15] min degradado; beyond (or no point) falha
@@ -21,7 +22,7 @@ STALE = timedelta(minutes=15)      # (2, 15] min degradado; beyond (or no point)
 INGESTAO_FLUX = (
     f'from(bucket:"{SOURCE_BUCKET}") |> range(start:-24h)'
     ' |> filter(fn:(r)=> r._measurement=="sensores")'
-    ' |> group(columns:["device_id"]) |> last()'
+    ' |> group(columns:["device_id"]) |> max(column:"_time")'
     ' |> keep(columns:["device_id","_time"])'
 )
 
@@ -35,13 +36,18 @@ class StatusRow:
     verificado_em: datetime
 
 
-def human_age(delta: timedelta) -> str:
+def age_text(delta: timedelta) -> str:
+    """Compact PT-BR duration without prefix: "30 s", "3 min", "2 h"."""
     secs = max(0, int(delta.total_seconds()))
     if secs < 60:
-        return f"há {secs} s"
+        return f"{secs} s"
     if secs < 3600:
-        return f"há {secs // 60} min"
-    return f"há {secs // 3600} h"
+        return f"{secs // 60} min"
+    return f"{secs // 3600} h"
+
+
+def human_age(delta: timedelta) -> str:
+    return f"há {age_text(delta)}"
 
 
 def _short(exc: BaseException) -> str:
@@ -117,7 +123,7 @@ def check_ingestao(sink, registry, now: datetime) -> StatusRow:
 
 
 def check_worker(version: str, started_at: datetime, now: datetime) -> StatusRow:
-    return StatusRow("worker", "ok", f"versão {version}; ativo {human_age(now - started_at)[4:]}",
+    return StatusRow("worker", "ok", f"versão {version}; ativo {age_text(now - started_at)}",
                      {"versao": version, "iniciado_em": started_at.isoformat()}, now)
 
 
@@ -137,6 +143,7 @@ def run_status(now: datetime, sink, pg_conn_factory, version: str,
 
 
 def make_status_job(sink, pg, version: str, started_at: datetime):
+    """`sink` should be a short-timeout sink (see InfluxSink.with_timeout)."""
     def job(now: datetime) -> None:
         rows = run_status(now, sink, lambda: pg, version, started_at)
         bad = [r.componente for r in rows if r.estado != "ok"]

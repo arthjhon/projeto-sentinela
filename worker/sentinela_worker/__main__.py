@@ -48,11 +48,16 @@ def build_jobs(sink, pg, detector_config_path: str, *, version: str | None = Non
     from .collectors import ana, openmeteo
     from .detector import runner
     from .detector.config import load_detector_config
-    from .status_job import STATUS_INTERVAL_S, make_status_job
+    from .status_job import STATUS_HTTP_TIMEOUT_MS, STATUS_INTERVAL_S, make_status_job
 
     version = version or os.environ.get("WORKER_VERSION") or "desconhecida"
     started_at = started_at or scheduler.utcnow()
     detector_cfg = load_detector_config(detector_config_path)
+    # Dedicated short-timeout Influx client for the status job (the detector keeps its 60 s).
+    status_sink, extra = sink, []
+    if hasattr(sink, "with_timeout"):
+        status_sink = sink.with_timeout(STATUS_HTTP_TIMEOUT_MS)
+        extra.append(status_sink)
     om_client = openmeteo.make_client()
     ana_client = ana.make_client()
     source = ana.AnaLegacySource(ana_client)
@@ -61,9 +66,9 @@ def build_jobs(sink, pg, detector_config_path: str, *, version: str | None = Non
         scheduler.Job("ana", 900, lambda now: ana.collect_ana(source, sink, now)),
         scheduler.Job("detector", runner.DETECTOR_INTERVAL_S,
                       runner.make_detector_job(sink, pg, detector_cfg)),
-        scheduler.Job("status", STATUS_INTERVAL_S, make_status_job(sink, pg, version, started_at)),
+        scheduler.Job("status", STATUS_INTERVAL_S, make_status_job(status_sink, pg, version, started_at)),
     ]
-    return jobs, [om_client, ana_client]
+    return jobs, [om_client, ana_client, *extra]
 
 
 def cmd_run(jobs_factory=build_jobs) -> int:

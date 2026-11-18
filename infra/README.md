@@ -419,6 +419,7 @@ existe. Tudo abaixo passa por `docker exec` no container.
    ```sql
    GRANT sentinela_worker TO postgres;
    DROP TABLE public.sensor_health, public.sensor_health_events, public.worker_jobs;
+   DROP TABLE IF EXISTS public.system_status;   -- página de status (20261118_system_status.sql)
    DROP OWNED BY sentinela_worker;   -- remove também policies e grants em app_settings/maintenance_logs
    DROP ROLE sentinela_worker;
    ```

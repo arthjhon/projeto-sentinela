@@ -9,9 +9,10 @@ HTTP_TIMEOUT_MS = 60_000
 
 
 class InfluxSink:
-    def __init__(self, url: str, org: str, token: str):
+    def __init__(self, url: str, org: str, token: str, timeout_ms: int = HTTP_TIMEOUT_MS):
+        self._conn_args = (url, org, token)
         self._org = org
-        self._client = InfluxDBClient(url=url, org=org, token=token, timeout=HTTP_TIMEOUT_MS)
+        self._client = InfluxDBClient(url=url, org=org, token=token, timeout=timeout_ms)
         self._write_api = self._client.write_api(write_options=SYNCHRONOUS)
         self._query_api = self._client.query_api()
 
@@ -24,6 +25,10 @@ class InfluxSink:
         if isinstance(result, list):
             return pd.concat(result, ignore_index=True) if result else pd.DataFrame()
         return result
+
+    def with_timeout(self, timeout_ms: int) -> "InfluxSink":
+        """A second sink on the same server with its own HTTP timeout (caller closes it)."""
+        return InfluxSink(*self._conn_args, timeout_ms=timeout_ms)
 
     def ping(self) -> bool:
         """True when the server answers its health endpoint (no exception on a clean 'down')."""

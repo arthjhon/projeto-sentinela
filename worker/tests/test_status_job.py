@@ -25,7 +25,7 @@ class FakeSink:
     def query_df(self, flux):
         if self.query_exc:
             raise self.query_exc
-        assert "last()" in flux and "sensores" in flux
+        assert "max(column:\"_time\")" in flux and "sensores" in flux
         return pd.DataFrame({"device_id": list(self.last),
                              "_time": [pd.Timestamp(t) for t in self.last.values()]})
 

@@ -38,6 +38,9 @@ args=(--rm -v "$HERE":/app -w /app -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/a
       -v "$HERE/../supabase/migrations":/supabase/migrations:ro)  # DB tests read the migration
 [[ -n "${DOCKER_NETWORK:-}" ]] && args+=(--network "$DOCKER_NETWORK")
 [[ -n "${TEST_PG_DSN:-}" ]] && args+=(-e TEST_PG_DSN)   # name only: value is not printed
+for v in TEST_INFLUX_URL TEST_INFLUX_ORG TEST_INFLUX_TOKEN; do   # live Flux test (see test_status_influx_live.py)
+  [[ -n "${!v:-}" ]] && args+=(-e "$v")
+done
 
 # Slow acceptance/memory tests (marker "slow") run only with RUN_SLOW=1 (CI sets it).
 select=()
