@@ -77,6 +77,7 @@ services:
       INFLUX_ORG: sentinela
       INFLUX_WORKER_TOKEN: ${INFLUX_WORKER_TOKEN:?INFLUX_WORKER_TOKEN is required}
       PG_WORKER_DSN: ${PG_WORKER_DSN:?PG_WORKER_DSN is required}
+      WORKER_VERSION: ${WORKER_TAG}
     networks:
       default: {}
       pg: {}

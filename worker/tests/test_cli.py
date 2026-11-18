@@ -70,11 +70,11 @@ def test_backfill_openmeteo_cli_wiring(monkeypatch):
     assert calls["args"][1] == dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=1)
 
 
-def test_build_jobs_registers_openmeteo_ana_and_detector():
+def test_build_jobs_registers_openmeteo_ana_detector_and_status():
     jobs, closers = cli.build_jobs(object(), object(), "config/detector.yaml")
     try:
         assert [(j.name, j.interval_s) for j in jobs] == [
-            ("openmeteo", 3600), ("ana", 900), ("detector", 300)]
+            ("openmeteo", 3600), ("ana", 900), ("detector", 300), ("status", 60)]
         assert len(closers) == 2
     finally:
         for c in closers:
@@ -156,7 +156,8 @@ def test_cmd_run_uses_factory_closes_clients_and_fans_out_status(monkeypatch):
     def fake_run_forever(jobs, status, **kw):
         seen["jobs"], seen["status"] = jobs, status
 
-    def factory(sink, pg, cfg_path):
+    def factory(sink, pg, cfg_path, **kw):
+        seen["kw"] = kw
         seen["pg"], seen["cfg_path"] = pg, cfg_path
         return [], [Closer(), Closer()]
 
@@ -164,6 +165,7 @@ def test_cmd_run_uses_factory_closes_clients_and_fans_out_status(monkeypatch):
     assert cli.cmd_run(factory) == 0
     assert seen["jobs"] == [] and len(closed) == 2
     assert seen["cfg_path"] == "config/detector.yaml"
+    assert seen["kw"]["started_at"].tzinfo is not None   # captured once, at process start
     from sentinela_worker.pg import FanOutStatus, PgConnection, PgJobStatus
     from sentinela_worker.sinks.status import InfluxJobStatus
     assert isinstance(seen["pg"], PgConnection)

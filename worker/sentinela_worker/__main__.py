@@ -40,14 +40,18 @@ def healthcheck(path: str | None = None, max_age_s: int = HEALTHCHECK_MAX_AGE_S)
     return 0 if age < max_age_s else 1
 
 
-def build_jobs(sink, pg, detector_config_path: str) -> tuple[list[scheduler.Job], list]:
+def build_jobs(sink, pg, detector_config_path: str, *, version: str | None = None,
+               started_at=None) -> tuple[list[scheduler.Job], list]:
     """Return the production jobs and the long-lived clients to close on shutdown.
 
     The detector config is loaded here, so an invalid detector.yaml stops the worker at startup."""
     from .collectors import ana, openmeteo
     from .detector import runner
     from .detector.config import load_detector_config
+    from .status_job import STATUS_INTERVAL_S, make_status_job
 
+    version = version or os.environ.get("WORKER_VERSION") or "desconhecida"
+    started_at = started_at or scheduler.utcnow()
     detector_cfg = load_detector_config(detector_config_path)
     om_client = openmeteo.make_client()
     ana_client = ana.make_client()
@@ -57,6 +61,7 @@ def build_jobs(sink, pg, detector_config_path: str) -> tuple[list[scheduler.Job]
         scheduler.Job("ana", 900, lambda now: ana.collect_ana(source, sink, now)),
         scheduler.Job("detector", runner.DETECTOR_INTERVAL_S,
                       runner.make_detector_job(sink, pg, detector_cfg)),
+        scheduler.Job("status", STATUS_INTERVAL_S, make_status_job(sink, pg, version, started_at)),
     ]
     return jobs, [om_client, ana_client]
 
@@ -78,8 +83,10 @@ def cmd_run(jobs_factory=build_jobs) -> int:
 
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
+    started_at = scheduler.utcnow()   # captured once, at process start
     try:
-        jobs, closers = jobs_factory(sink, pg, settings.detector_config_path)
+        jobs, closers = jobs_factory(sink, pg, settings.detector_config_path,
+                                     started_at=started_at)
     except Exception:
         pg.close()
         sink.close()

@@ -407,6 +407,9 @@ existe. Tudo abaixo passa por `docker exec` no container.
      < supabase/migrations/20261117_sensor_health.sql
    ```
 
+   Aplicar também `supabase/migrations/20261118_system_status.sql` do mesmo jeito (tabela
+   `system_status` da página de status; depende do role criado acima e é idempotente).
+
    Impacto: cria objetos novos, revoga escrita de `anon`/`authenticated` nas 3 tabelas novas e
    adiciona uma policy de SELECT e um GRANT SELECT para `sentinela_worker` em `app_settings` e
    `maintenance_logs` (tabelas existentes; nenhuma permissão de outros roles é removida delas).

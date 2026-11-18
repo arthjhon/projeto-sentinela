@@ -196,3 +196,23 @@ class FanOutStatus:
             except Exception as exc:
                 log("ERROR", job, "status sink failed", sink=type(sink).__name__,
                     error=redact_error(exc))
+
+
+class PgSystemStatus:
+    """Upserts the status page rows (public.system_status) in ONE transaction."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def upsert(self, rows) -> None:
+        from psycopg.types.json import Json
+        with self._conn.transaction():
+            for r in rows:
+                self._conn.execute(
+                    "INSERT INTO public.system_status (componente, estado, detalhe, dados, verificado_em)"
+                    " VALUES (%s,%s,%s,%s,%s)"
+                    " ON CONFLICT (componente) DO UPDATE SET estado=EXCLUDED.estado,"
+                    " detalhe=EXCLUDED.detalhe, dados=EXCLUDED.dados,"
+                    " verificado_em=EXCLUDED.verificado_em",
+                    (r.componente, r.estado, r.detalhe,
+                     Json(r.dados) if r.dados is not None else None, r.verificado_em))

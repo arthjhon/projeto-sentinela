@@ -25,5 +25,9 @@ class InfluxSink:
             return pd.concat(result, ignore_index=True) if result else pd.DataFrame()
         return result
 
+    def ping(self) -> bool:
+        """True when the server answers its health endpoint (no exception on a clean 'down')."""
+        return bool(self._client.ping())
+
     def close(self) -> None:
         self._client.close()

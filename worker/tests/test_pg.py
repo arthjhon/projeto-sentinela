@@ -13,15 +13,17 @@ import pytest
 
 from sentinela_worker.detector.state import SensorState, StateChange
 from sentinela_worker.pg import (
-    Buoy, FanOutStatus, MaintenanceWindow, PgHealthStore, PgJobStatus,
+    Buoy, FanOutStatus, MaintenanceWindow, PgHealthStore, PgJobStatus, PgSystemStatus,
     load_maintenance, load_registry,
 )
+from sentinela_worker.status_job import StatusRow
 
 DSN = os.environ.get("TEST_PG_DSN")
 pytestmark = pytest.mark.skipif(not DSN, reason="TEST_PG_DSN not set")
 
 MIGRATION = (pathlib.Path(__file__).resolve().parents[2]
              / "supabase" / "migrations" / "20261117_sensor_health.sql")
+STATUS_MIGRATION = MIGRATION.with_name("20261118_system_status.sql")
 T0 = datetime(2026, 11, 17, 12, tzinfo=timezone.utc)
 USER = "00000000-0000-0000-0000-0000000000aa"
 
@@ -31,6 +33,7 @@ def conn():
     c = psycopg.connect(DSN, autocommit=False)
     try:
         c.execute(MIGRATION.read_text())
+        c.execute(STATUS_MIGRATION.read_text())
         c.execute("SET LOCAL session_replication_role = replica")  # fixtures skip FKs/triggers
         yield c
     finally:
@@ -300,3 +303,63 @@ def test_last_success_reads_detector_job(conn):
     PgJobStatus(conn).record("ana", True, T0 + timedelta(minutes=9), 1.0, None)
     as_role(conn, "sentinela_worker")
     assert store.last_success() == T0
+
+
+def _rows(estado="ok", detalhe="d", dados=None):
+    t = datetime(2026, 11, 18, 12, tzinfo=timezone.utc)
+    return [StatusRow("influxdb", estado, detalhe, None, t),
+            StatusRow("telegraf_ingestao", estado, detalhe, dados, t),
+            StatusRow("worker", estado, detalhe, {"versao": "v1"}, t)]
+
+
+def test_status_migration_is_idempotent(conn):
+    conn.execute(STATUS_MIGRATION.read_text())
+
+
+def test_status_rows_upsert_is_idempotent(conn):
+    store = PgSystemStatus(conn)
+    store.upsert(_rows("ok"))
+    store.upsert(_rows("falha", "latest", {"dev1": "2026-11-18T12:00:00+00:00"}))
+    rows = conn.execute("SELECT componente, estado, detalhe, dados FROM public.system_status"
+                        " ORDER BY componente").fetchall()
+    assert [r[0] for r in rows] == ["influxdb", "telegraf_ingestao", "worker"]
+    assert all(r[1] == "falha" and r[2] == "latest" for r in rows[:2])
+    assert rows[1][3] == {"dev1": "2026-11-18T12:00:00+00:00"} and rows[0][3] is None
+    assert rows[2][1] == "falha" and rows[2][3] == {"versao": "v1"}
+
+
+def test_system_status_estado_check(conn):
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("INSERT INTO public.system_status(componente, estado, verificado_em)"
+                     " VALUES ('x','nao_monitorado', now())")
+
+
+def test_authenticated_reads_system_status_worker_writes(conn):
+    conn.execute("INSERT INTO public.profiles(id, name, username, role) VALUES (%s,'t','t_probe','visualizador')"
+                 " ON CONFLICT (id) DO NOTHING", (USER,))
+    as_role(conn, "sentinela_worker")
+    PgSystemStatus(conn).upsert(_rows())
+    reset_role(conn)
+    as_role(conn, "anon")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        conn.execute("SAVEPOINT s")
+        try:
+            conn.execute("SELECT * FROM public.system_status")
+        finally:
+            conn.execute("ROLLBACK TO s")
+    reset_role(conn)
+    as_role(conn, "authenticated", USER)
+    assert conn.execute("SELECT count(*) FROM public.system_status").fetchone()[0] == 3
+    for sql in ("INSERT INTO public.system_status(componente,estado,verificado_em)"
+                " VALUES ('y','ok',now())",
+                "UPDATE public.system_status SET estado='falha'",
+                "DELETE FROM public.system_status"):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("SAVEPOINT s")
+            try:
+                conn.execute(sql)
+            finally:
+                conn.execute("ROLLBACK TO s")
+    reset_role(conn)
+    as_role(conn, "authenticated", "00000000-0000-0000-0000-0000000000bb")  # no profile
+    assert conn.execute("SELECT count(*) FROM public.system_status").fetchone()[0] == 0
