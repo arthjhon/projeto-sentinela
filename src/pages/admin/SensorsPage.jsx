@@ -648,7 +648,7 @@ const SensorsPage = () => {
                         {buoy.deviceId && (
                           <div className="mt-2">
                             <span className="info-label">Saúde dos sensores</span>
-                            <HealthEvents deviceId={buoy.deviceId} />
+                            <HealthEvents deviceId={buoy.deviceId} modo={buoy.modo} />
                           </div>
                         )}
 

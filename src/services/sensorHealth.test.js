@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ESTADO_META, healthForDevice, jobStaleness } from './sensorHealth';
+import { ESTADO_META, healthForDevice, jobStaleness, eventTone, estadoMeta, fmtDate } from './sensorHealth';
 
 const row = (sensor, estado, device_id = 'esp_a') => ({
   device_id, sensor, estado, motivo: null, desde: '2026-11-17T10:00:00Z',
@@ -47,5 +47,25 @@ describe('jobStaleness', () => {
   it('carries the erro for failed jobs', () => {
     const r = jobStaleness([{ job: 'ana', ok: false, erro: 'boom', ultimo_sucesso: ago(10) }], now);
     expect(r[0].erro).toBe('boom');
+  });
+});
+
+describe('eventTone / estadoMeta / fmtDate / bancada motivo', () => {
+  it('bancada is neutral for every estado; campo keeps the tone', () => {
+    for (const e of Object.keys(ESTADO_META)) expect(eventTone(e, 'bancada')).toBe('neutral');
+    expect(eventTone('falha', 'campo')).toBe('bad');
+    expect(eventTone('qualquer', 'campo')).toBe('neutral');
+  });
+  it('unknown estado shows the raw value, neutral', () => {
+    expect(estadoMeta('xyz')).toEqual({ label: 'xyz', tone: 'neutral' });
+  });
+  it('fmtDate renders a dash for missing/invalid dates', () => {
+    expect(fmtDate(null)).toBe('—');
+    expect(fmtDate('lixo')).toBe('—');
+    expect(fmtDate('2026-11-17T10:00:00Z')).not.toBe('—');
+  });
+  it('bancada clears motivo', () => {
+    const h = healthForDevice([{ device_id: 'd', sensor: 'ph', estado: 'falha', motivo: 'faixa', desde: null }], 'd', 'bancada');
+    expect(h.sensores[0].motivo).toBeNull();
   });
 });

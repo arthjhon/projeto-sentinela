@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ESTADO_META, DADOS_INSUFICIENTES_HINT, jobStaleness, fetchHealthEvents,
+  estadoMeta, eventTone, fmtDate, DADOS_INSUFICIENTES_HINT, jobStaleness, fetchHealthEvents,
 } from '../../services/sensorHealth';
 import './SensorHealth.css';
 
@@ -10,12 +10,12 @@ const TONE_CLASS = {
 };
 const JOB_LABEL = { openmeteo: 'Open-Meteo', ana: 'ANA', detector: 'Detector' };
 
-const fmt = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
+const fmt = fmtDate;
 
 function titleFor(s) {
-  const meta = ESTADO_META[s.estado];
+  const meta = estadoMeta(s.estado);
   if (s.estado === 'dados_insuficientes') return DADOS_INSUFICIENTES_HINT;
-  return [s.motivo, s.desde ? `desde ${fmt(s.desde)}` : null].filter(Boolean).join(' — ') || meta?.label;
+  return [s.motivo, s.desde && fmt(s.desde) !== '—' ? `desde ${fmt(s.desde)}` : null].filter(Boolean).join(' — ') || meta?.label;
 }
 
 /** Uma pílula por sensor; o motivo vai no title. */
@@ -24,7 +24,7 @@ export function SensorHealthBadges({ health }) {
   return (
     <span className="sh-badges">
       {health.sensores.map((s) => {
-        const meta = ESTADO_META[s.estado] ?? ESTADO_META.nao_cadastrado;
+        const meta = estadoMeta(s.estado);
         return (
           <span key={s.sensor} className={`badge ${TONE_CLASS[meta.tone]}`} title={titleFor(s)}>
             {s.sensor}: {meta.label}
@@ -36,7 +36,7 @@ export function SensorHealthBadges({ health }) {
 }
 
 /** Últimos eventos de saúde do device (dentro da linha expandida). */
-export function HealthEvents({ deviceId }) {
+export function HealthEvents({ deviceId, modo }) {
   const [state, setState] = useState({ loading: true, error: false, events: [] });
 
   useEffect(() => {
@@ -53,10 +53,10 @@ export function HealthEvents({ deviceId }) {
   return (
     <ul className="sh-events">
       {state.events.map((e) => {
-        const meta = ESTADO_META[e.estado] ?? ESTADO_META.nao_cadastrado;
+        const meta = estadoMeta(e.estado);
         return (
           <li key={e.id}>
-            <span className={`badge ${TONE_CLASS[meta.tone]}`}>{meta.label}</span>
+            <span className={`badge ${TONE_CLASS[eventTone(e.estado, modo)]}`}>{meta.label}</span>
             <span className="sh-ev-sensor">{e.sensor}</span>
             <span className="text-muted">
               {fmt(e.inicio)} → {e.fim ? fmt(e.fim) : 'em andamento'}

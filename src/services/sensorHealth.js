@@ -18,7 +18,22 @@ export const DADOS_INSUFICIENTES_HINT =
   'Detector estatístico precisa de ~3 dias de dados após manutenção ou troca de modo; regras básicas seguem ativas.';
 
 const TONE_RANK = { bad: 4, warn: 3, info: 2, neutral: 1, ok: 0 };
-const metaOf = (estado) => ESTADO_META[estado] ?? ESTADO_META.nao_cadastrado;
+/** Meta de um estado; estado desconhecido mostra o valor cru em tom neutro. */
+export const estadoMeta = (estado) =>
+  ESTADO_META[estado] ?? { label: String(estado ?? '—'), tone: 'neutral' };
+const metaOf = estadoMeta;
+
+/** Tom de um estado; bóia de bancada é sempre neutra (precedência do registro). */
+export const eventTone = (estado, modo) =>
+  (modo === 'bancada' ? 'neutral' : estadoMeta(estado).tone);
+
+/** Data legível em pt-BR; ausente/inválida vira "—". */
+export function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+}
 const rank = (estado) => TONE_RANK[metaOf(estado).tone];
 
 /**
@@ -32,7 +47,7 @@ export function healthForDevice(rows, deviceId, modo) {
   const sensores = mine.map((r) => ({
     sensor: r.sensor,
     estado: bancada ? 'bancada' : r.estado,
-    motivo: r.motivo ?? null,
+    motivo: bancada ? null : (r.motivo ?? null),
     desde: r.desde,
   }));
   if (bancada && sensores.length) return { sensores, pior: 'bancada' };
