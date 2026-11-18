@@ -15,7 +15,7 @@ if [[ -n "${SUPABASE_ENV_FILE:-}" ]]; then
   unset pw
 fi
 
-PY_TAG="3.12.16-slim"   # keep in sync with worker/Dockerfile
+PY_TAG="3.12.16-slim"   # keep in sync with worker/Dockerfile and scripts/lock.sh
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="sentinela-worker-test:${PY_TAG}"
 
@@ -23,13 +23,15 @@ docker build -q -t "$IMAGE" -f - "$HERE" >/dev/null <<DOCKERFILE
 FROM python:${PY_TAG}
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
+# Runtime deps exactly as in the production image (same hashed lockfile), then test deps.
+COPY requirements.lock ./
+RUN pip install --require-hashes --no-deps --only-binary=:all: -r requirements.lock
 COPY pyproject.toml ./
-RUN python - <<'PY' > /tmp/reqs.txt
+RUN python - <<'PY' > /tmp/reqs-test.txt
 import tomllib
-d = tomllib.load(open("pyproject.toml", "rb"))["project"]
-print("\n".join(d["dependencies"] + d["optional-dependencies"]["test"]))
+print("\n".join(tomllib.load(open("pyproject.toml", "rb"))["project"]["optional-dependencies"]["test"]))
 PY
-RUN pip install -r /tmp/reqs.txt
+RUN pip install -r /tmp/reqs-test.txt
 DOCKERFILE
 
 args=(--rm -v "$HERE":/app -w /app -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/app
