@@ -1,0 +1,22 @@
+# Anonymous (browsers): read-only telemetry.
+topic read +/sensores
+topic read +/status
+topic read +/availability
+topic read +/ota/status
+
+# Authenticated buoys: username == device id.
+pattern write %u/sensores
+pattern write %u/status
+pattern write %u/availability
+pattern write %u/ota/status
+pattern readwrite %u/ping
+pattern read %u/ota/command
+
+# Service accounts. "svc/..." contains a slash, so their %u patterns are
+# multi-level and can never match +/sensores or +/status.
+user svc/telegraf
+topic read +/sensores
+topic read +/status
+
+user svc/ota
+topic write +/ota/command
