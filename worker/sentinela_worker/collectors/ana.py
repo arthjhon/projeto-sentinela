@@ -22,6 +22,8 @@ from ..log import log
 
 BASE_URL = "https://telemetriaws1.ana.gov.br/ServiceANA.asmx/DadosHidrometeorologicos"
 ESTACOES = ("39770000", "39760000", "39740000", "39700000", "39800100")
+PRIMARY = "39770000"   # Fazenda Boa Fortuna: the station the collect job is judged on
+NOTE_MAX_CHARS = 200   # partial-failure note recorded as worker_jobs.erro of an ok run
 BUCKET = "externos"
 MEASUREMENT = "ana_telemetria"
 ROW_TAG = "DadosHidrometereologicos"  # sic
@@ -147,9 +149,12 @@ def _raise_if_failed(job: str, failed: list[str]) -> None:
         raise RuntimeError(f"{job} failed for stations: {', '.join(failed)}")
 
 
-def collect_ana(source: AnaSource, sink, now: datetime, sleep=time.sleep) -> None:
+def collect_ana(source: AnaSource, sink, now: datetime, sleep=time.sleep) -> str | None:
     """Window now-48h..now, one request per station. A failing station does not skip the
-    others; after all are attempted an aggregated error is raised."""
+    others. The job fails (raises, listing every failed station) only when the primary
+    station fails; otherwise the failed secondary stations come back as a short note that
+    the scheduler records in the status of an ok run. An ErrorTable ("no data") is a
+    successful request with zero points, never a failure."""
     failed = []
     for i, estacao in enumerate(ESTACOES):
         if i:
@@ -161,7 +166,11 @@ def collect_ana(source: AnaSource, sink, now: datetime, sleep=time.sleep) -> Non
             log("ERROR", "collect-ana", "station failed", estacao=estacao, error=type(exc).__name__)
         else:
             log("INFO", "collect-ana", "station done", estacao=estacao, points=n)
-    _raise_if_failed("collect-ana", failed)
+    if PRIMARY in failed:
+        _raise_if_failed("collect-ana", failed)
+    if failed:
+        return f"estacoes secundarias com falha: {', '.join(failed)}"[:NOTE_MAX_CHARS]
+    return None
 
 
 def _month_chunks(start: date, end: date):

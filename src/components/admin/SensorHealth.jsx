@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  estadoMeta, eventTone, fmtDate, DADOS_INSUFICIENTES_HINT, jobStaleness, fetchHealthEvents,
+  estadoMeta, eventTone, fmtDate, DADOS_INSUFICIENTES_HINT, jobStaleness, jobTitle, fetchHealthEvents,
 } from '../../services/sensorHealth';
 import './SensorHealth.css';
 
@@ -79,9 +79,7 @@ export function CollectionHealth({ jobs, unavailable = false }) {
       Coleta:{' '}
       {list.map((j, i) => {
         const bad = j.atrasado || j.ok === false;
-        const title = j.ok === false && j.erro
-          ? String(j.erro).slice(0, 200)
-          : j.atrasado ? 'Sem execução bem-sucedida recente' : undefined;
+        const title = jobTitle(j);
         return (
           <React.Fragment key={j.job}>
             {i > 0 && ' · '}

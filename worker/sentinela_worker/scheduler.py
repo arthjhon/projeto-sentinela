@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from .log import log
-from .redact import redact_error
+from .redact import MAX_ERROR_LEN, redact_error, redact_text
 from .sinks.status import JobStatusSink
 
 TICK_FILE = os.environ.get("WORKER_TICK_FILE", "/tmp/sentinela-worker.tick")
@@ -16,7 +16,9 @@ MAX_SLEEP_S = 30
 class Job:
     name: str
     interval_s: int
-    fn: Callable[[datetime], None]
+    # Returns None, or a short note (partial failure that does not fail the job): the
+    # run is recorded ok, with the note in the status error field.
+    fn: Callable[[datetime], str | None]
 
 
 def utcnow() -> datetime:
@@ -34,16 +36,23 @@ def _run_job(job: Job, status: JobStatusSink, now: Callable[[], datetime]) -> No
     started = now()
     t0 = time.monotonic()
     error: str | None = None
+    note: str | None = None
     try:
-        job.fn(started)
+        result = job.fn(started)
+        if isinstance(result, str) and result:
+            note = redact_text(result)[:MAX_ERROR_LEN]
     except Exception as exc:  # a failing job must not stop the others
         error = redact_error(exc)
     duration = time.monotonic() - t0
     ok = error is None
-    log("INFO" if ok else "ERROR", job.name, "job ok" if ok else "job failed",
-        duration_s=round(duration, 3), **({"error": error} if error else {}))
+    if not ok:
+        log("ERROR", job.name, "job failed", duration_s=round(duration, 3), error=error)
+    elif note:
+        log("WARN", job.name, "job ok with partial failure", duration_s=round(duration, 3), note=note)
+    else:
+        log("INFO", job.name, "job ok", duration_s=round(duration, 3))
     try:
-        status.record(job.name, ok, started, duration, error)
+        status.record(job.name, ok, started, duration, error if not ok else note)
     except Exception as exc:
         log("ERROR", job.name, "status record failed", error=redact_error(exc))
 

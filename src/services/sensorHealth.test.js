@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ESTADO_META, healthForDevice, jobStaleness, eventTone, estadoMeta, fmtDate } from './sensorHealth';
+import { ESTADO_META, healthForDevice, jobStaleness, jobTitle, eventTone, estadoMeta, fmtDate } from './sensorHealth';
 
 const row = (sensor, estado, device_id = 'esp_a') => ({
   device_id, sensor, estado, motivo: null, desde: '2026-11-17T10:00:00Z',
@@ -47,6 +47,17 @@ describe('jobStaleness', () => {
   it('carries the erro for failed jobs', () => {
     const r = jobStaleness([{ job: 'ana', ok: false, erro: 'boom', ultimo_sucesso: ago(10) }], now);
     expect(r[0].erro).toBe('boom');
+  });
+});
+
+describe('jobTitle', () => {
+  it('shows the error of a failed job, lateness, or the partial-failure note of an ok job', () => {
+    expect(jobTitle({ ok: false, erro: 'boom', atrasado: false })).toBe('boom');
+    expect(jobTitle({ ok: true, erro: null, atrasado: true })).toBe('Sem execução bem-sucedida recente');
+    expect(jobTitle({ ok: true, erro: 'estacoes secundarias com falha: 39760000', atrasado: false }))
+      .toBe('Parcial: estacoes secundarias com falha: 39760000');
+    expect(jobTitle({ ok: true, erro: null, atrasado: false })).toBeUndefined();
+    expect(jobTitle({ ok: false, erro: 'x'.repeat(300), atrasado: false })).toHaveLength(200);
   });
 });
 

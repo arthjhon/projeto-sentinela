@@ -152,11 +152,49 @@ def test_collect_window_is_48h_with_1s_pause_between_stations():
 
 def test_one_station_failure_does_not_skip_the_others():
     sink = FakeSink()
-    with pytest.raises(RuntimeError) as e:
-        ana.collect_ana(FakeSource(fail={"39760000"}), sink, utc(2026, 11, 17, 12), sleep=lambda s: None)
-    assert "39760000" in str(e.value)
+    note = ana.collect_ana(FakeSource(fail={"39760000"}), sink, utc(2026, 11, 17, 12), sleep=lambda s: None)
+    assert note == "estacoes secundarias com falha: 39760000"   # job ok, failure reported
     written = [p._tags["estacao"] for _, pts in sink.writes for p in pts]
     assert written == ["39770000", "39740000", "39700000", "39800100"]
+
+
+def test_all_stations_ok_returns_no_note():
+    assert ana.collect_ana(FakeSource(), FakeSink(), utc(2026, 11, 17, 12), sleep=lambda s: None) is None
+
+
+def test_primary_station_failure_fails_the_job_and_lists_every_failed_station():
+    sink = FakeSink()
+    with pytest.raises(RuntimeError) as e:
+        ana.collect_ana(FakeSource(fail={"39770000", "39800100"}), sink, utc(2026, 11, 17, 12),
+                        sleep=lambda s: None)
+    assert "39770000" in str(e.value) and "39800100" in str(e.value)
+    written = [p._tags["estacao"] for _, pts in sink.writes for p in pts]
+    assert written == ["39760000", "39740000", "39700000"]           # the others still written
+
+
+def test_note_is_short_even_if_every_secondary_fails():
+    note = ana.collect_ana(FakeSource(fail=set(ana.ESTACOES[1:])), FakeSink(), utc(2026, 11, 17, 12),
+                           sleep=lambda s: None)
+    assert note and len(note) <= ana.NOTE_MAX_CHARS and all(e in note for e in ana.ESTACOES[1:])
+
+
+@respx.mock
+def test_error_table_station_is_not_a_failure():
+    """ErrorTable ("no data") from ANA, even for the primary station, is a successful
+    request with zero points: no exception, no note."""
+    error_table = (FIX / "ana_error_table.xml").read_bytes()
+    data = xml([("39760000", "2026-11-17 02:15:00", "2.0", "1.0", "0.0")])
+
+    def answer(request):
+        if request.url.params["codEstacao"] in ("39770000", "39800100"):
+            return httpx.Response(200, content=error_table)
+        return httpx.Response(200, text=data)
+
+    respx.get(URL).mock(side_effect=answer)
+    sink = FakeSink()
+    note = ana.collect_ana(source(), sink, utc(2026, 11, 17, 12), sleep=lambda s: None)
+    assert note is None
+    assert {p._tags["estacao"] for _, pts in sink.writes for p in pts} == {"39760000", "39740000", "39700000"}
 
 
 def test_backfill_monthly_chunks_with_2s_pause_per_station():

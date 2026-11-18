@@ -68,6 +68,17 @@ export function jobStaleness(jobs, now = new Date()) {
   });
 }
 
+/**
+ * Tooltip de um job no cabeçalho: erro da falha; atraso; ou, num job ok, a nota de falha
+ * parcial que o worker grava em `erro` (ex.: estação secundária da ANA fora do ar).
+ */
+export function jobTitle(j) {
+  if (j.ok === false && j.erro) return String(j.erro).slice(0, 200);
+  if (j.atrasado) return 'Sem execução bem-sucedida recente';
+  if (j.erro) return `Parcial: ${String(j.erro).slice(0, 200)}`;
+  return undefined;
+}
+
 export async function fetchSensorHealth() {
   const { data, error } = await supabase.from('sensor_health').select('*');
   if (error) throw new Error(error.message);

@@ -62,6 +62,19 @@ def test_failing_job_does_not_stop_others():
     assert ("b", True, None) in status.calls
 
 
+def test_job_note_is_recorded_on_an_ok_run(capsys):
+    status = FakeStatus()
+    run_for([Job("a", 900, lambda now: "estacoes secundarias com falha: 1 ?token=abc")], status, 10)
+    assert status.calls == [("a", True, "estacoes secundarias com falha: 1 ?token=***")]
+    assert "job ok with partial failure" in capsys.readouterr().out
+
+
+def test_non_string_job_result_is_ignored():
+    status = FakeStatus()
+    run_for([Job("a", 900, lambda now: 42)], status, 10)
+    assert status.calls == [("a", True, None)]
+
+
 def test_job_runs_once_at_startup():
     ran = []
     run_for([Job("a", 3600, lambda now: ran.append(now))], FakeStatus(), 10)
