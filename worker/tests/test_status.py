@@ -20,3 +20,13 @@ def test_records_worker_status_in_qualidade_bucket():
     assert bucket == "qualidade"
     assert line.startswith("worker_status,job=openmeteo ")
     assert "ok=false" in line and 'error="boom"' in line and "duration_s=1.5" in line
+
+
+def test_influx_sink_has_an_explicit_60s_http_timeout():
+    from sentinela_worker.sinks.influx import HTTP_TIMEOUT_MS, InfluxSink
+    sink = InfluxSink("http://127.0.0.1:9", "org", "token")   # no connection is made
+    try:
+        assert HTTP_TIMEOUT_MS == 60_000
+        assert sink._client.api_client.configuration.timeout == 60_000
+    finally:
+        sink.close()
