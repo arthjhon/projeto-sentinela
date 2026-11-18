@@ -77,7 +77,7 @@ base=$tmp/compose.base.yml
 sed -e '/^    name: sentinela-influxdb-/d' -e 's/127\.0\.0\.1:8086:8086/127.0.0.1:18086:8086/' \
   "$repo/infra/stack/compose.yml" \
   | awk '/^  worker:/ {skip=1; next} /^networks:/ {skip=1; next} /^[^ #]/ {skip=0} !skip' >"$base"
-if grep -q -e 'worker:' -e 'supabase' "$base"; then echo "test compose still has worker/supabase"; exit 1; fi
+if grep -v '^ *#' "$base" | grep -q -e 'worker:' -e 'supabase' -e 'pg:'; then echo "test compose still has worker/external network"; exit 1; fi
 if grep -q 'sentinela-influxdb-' "$base"; then echo "test compose still names real volumes"; exit 1; fi
 conf=$repo/infra/stack/telegraf/telegraf.conf
 

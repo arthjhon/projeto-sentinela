@@ -15,7 +15,7 @@ fails=0
 trap 'rm -rf "$tmp"' EXIT
 
 export ALLOWED_BIND_ROOT="$tmp/proj"
-export SUPABASE_NETWORK="supabase-test-net"
+export SUPABASE_NETWORK="sentinela-pg"
 mkdir -p "$ALLOWED_BIND_ROOT"
 
 pass() { echo "PASS: $1"; }
@@ -90,6 +90,9 @@ fixture ipam 1 "ipam"
 fixture label_docker 1 "label not allowed"
 fixture external_ok 0 "OK"
 fixture external_no_capdrop 1 "cap_drop"
+# C1 (R30): only the worker may join the external (sentinela-pg) network.
+fixture external_influxdb 1 "influxdb: only service worker may join an external network"
+fixture external_telegraf 1 "telegraf: only service worker may join an external network"
 fixture hostname_db 1 "hostname must start"
 fixture hostname_kong 1 "hostname must start"
 fixture domainname 1 "must start with sentinela-"
@@ -136,6 +139,10 @@ cat >"$tmp/unk.json" <<'JSON'
 {"services":{"influxdb":{"image":"influxdb:2.7.12","some_future_key":{"a":1}}}}
 JSON
 expect "unknown service key" 1 "some_future_key" "$tmp/unk.json"
+cat >"$tmp/netlist.json" <<'JSON'
+{"services":{"influxdb":{"image":"influxdb:2.7.12","networks":["pg"]}},"networks":{"pg":{"external":true,"name":"sentinela-pg"}}}
+JSON
+expect "non-map service networks" 1 "networks must be a map" "$tmp/netlist.json"
 
 # Regex anchors: a trailing newline in the tag must not slip past `$`.
 printf '%s\n' '{"services":{"worker":{"image":"ghcr.io/arthjhon/sentinela-worker:0123456789abcdef0123456789abcdef01234567\n"}}}' >"$tmp/nl.json"

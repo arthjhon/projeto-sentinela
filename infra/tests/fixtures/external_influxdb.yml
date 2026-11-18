@@ -1,0 +1,11 @@
+services:
+  influxdb:
+    image: influxdb:2.7.12
+    cap_drop: [ALL]
+    networks:
+      default: {}
+      pg: {}
+networks:
+  pg:
+    external: true
+    name: ${SUPABASE_NETWORK}

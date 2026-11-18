@@ -11,7 +11,10 @@
 #
 # Env:
 #   ALLOWED_BIND_ROOT  absolute dir bind sources must live under (default /srv/sentinela/stack)
-#   SUPABASE_NETWORK   the only external network a stack may join (unset = none)
+#   SUPABASE_NETWORK   the only external network a stack may join (unset = none), and
+#                      only by service `worker`. In production this is `sentinela-pg`: an
+#                      internal network that ONLY supabase-db joins (never supabase_default,
+#                      where postgres-meta/kong/studio answer without auth).
 #   EXPECTED_PROJECT   compose project name the config must carry (default sentinela-stack);
 #                      the deploy renders with `-p $EXPECTED_PROJECT`
 #
@@ -163,6 +166,17 @@ def under_root($p):
         | .key as $nk | .value as $att
         | select($top_networks[$nk].external | present)
         | deny(($att | present); "attachment options not allowed on external network \($nk)")),
+
+      # The rendered form of services.*.networks is always a map; any other shape would
+      # skip R16/R23/R26 below, so it is denied.
+      deny(($v.networks | present) and ($v.networks | type) != "object"; "networks must be a map"),
+
+      # R26: only the worker may join the external network (its only purpose: reach
+      # Postgres on the dedicated sentinela-pg network). influxdb/telegraf never.
+      deny($n != "worker"
+           and (($v.networks // {}) | if type == "object" then keys else [] end
+                | any(. as $nk | $top_networks[$nk].external | present));
+           "only service worker may join an external network"),
 
       # R23: a service on an external network must drop NET_RAW (ARP spoofing of Supabase).
       deny((($v.networks // {}) | if type == "object" then keys else [] end

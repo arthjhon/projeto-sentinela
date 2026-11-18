@@ -23,6 +23,11 @@ services:
       INFLUXD_QUERY_MEMORY_BYTES: "67108864"
       INFLUXD_QUERY_MAX_MEMORY_BYTES: "268435456"
     mem_limit: 768m
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "influx", "ping"]
       interval: 10s
@@ -44,9 +49,16 @@ services:
       MQTT_TELEGRAF_USER: ${MQTT_TELEGRAF_USER:?MQTT_TELEGRAF_USER is required}
       MQTT_TELEGRAF_PASS: ${MQTT_TELEGRAF_PASS:?MQTT_TELEGRAF_PASS is required}
     mem_limit: 128m
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # Coletores (Open-Meteo, ANA). Sem portas, sem volumes, raiz somente leitura.
-  # A rede externa do Supabase serve so para o worker alcancar o Postgres.
+  # Coletores (Open-Meteo, ANA) e detector. Sem portas, sem volumes, raiz somente leitura.
+  # Rede externa: so a sentinela-pg (interna, criada a mao), onde so o supabase-db
+  # entra. Nunca a supabase_default: la o postgres-meta (meta:8080) executa SQL como
+  # supabase_admin sem autenticacao. Saida para a internet: rede default do projeto.
   worker:
     image: ghcr.io/arthjhon/sentinela-worker:${WORKER_TAG:?WORKER_TAG is required}
     restart: unless-stopped
@@ -67,11 +79,16 @@ services:
       PG_WORKER_DSN: ${PG_WORKER_DSN:?PG_WORKER_DSN is required}
     networks:
       default: {}
-      supabase: {}
+      pg: {}
     mem_limit: 384m
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
-  supabase:
+  pg:
     external: true
     name: ${SUPABASE_NETWORK:?SUPABASE_NETWORK is required}
 

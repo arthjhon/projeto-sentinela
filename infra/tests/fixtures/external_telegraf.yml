@@ -1,0 +1,9 @@
+services:
+  telegraf:
+    image: telegraf:1.33.3
+    cap_drop: [ALL]
+    networks: [pg]
+networks:
+  pg:
+    external: true
+    name: ${SUPABASE_NETWORK}
