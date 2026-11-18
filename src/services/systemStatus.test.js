@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, buoyStatus, badgeState,
+  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, buoyStatus, badgeState, mqttBrokerStatus,
 } from './systemStatus';
 
 const NOW = new Date('2026-11-18T12:00:00Z');
@@ -149,5 +149,22 @@ describe('empty worker tables', () => {
     expect(snap.rows).toHaveLength(1);
     expect(snap.rows[0].detalhe).toBe('worker ainda não reportou');
     expect(badgeState({ supabase: snap.supabase, rows: snap.rows, jobs: snap.jobs })).toBe('degradado');
+  });
+});
+
+describe('mqttBrokerStatus', () => {
+  const now = NOW.getTime();
+  it('connected is ok', () => {
+    expect(mqttBrokerStatus(true, null, now).estado).toBe('ok');
+  });
+  it('disconnected up to 30 s is degradado', () => {
+    expect(mqttBrokerStatus(false, now - 10_000, now).estado).toBe('degradado');
+    expect(mqttBrokerStatus(false, now - 30_000, now).estado).toBe('degradado');
+  });
+  it('disconnected over 30 s is falha', () => {
+    expect(mqttBrokerStatus(false, now - 31_000, now).estado).toBe('falha');
+  });
+  it('disconnected with unknown start (never connected) is degradado first, not crash', () => {
+    expect(mqttBrokerStatus(false, null, now).estado).toBe('degradado');
   });
 });

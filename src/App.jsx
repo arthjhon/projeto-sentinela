@@ -17,6 +17,7 @@ const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const SensorsPage = lazy(() => import('./pages/admin/SensorsPage'));
+const StatusPage = lazy(() => import('./pages/admin/StatusPage'));
 const UsersPage = lazy(() => import('./pages/admin/UsersPage'));
 const OtaPage = lazy(() => import('./pages/admin/OtaPage'));
 const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
@@ -56,6 +57,7 @@ function App() {
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={lazyElement(AdminDashboard)} />
               <Route path="sensors" element={lazyElement(SensorsPage)} />
+              <Route path="status" element={lazyElement(StatusPage)} />
               <Route path="users" element={lazyElement(UsersPage)} />
               <Route path="ota" element={lazyElement(OtaPage)} />
               <Route path="settings" element={lazyElement(SettingsPage)} />

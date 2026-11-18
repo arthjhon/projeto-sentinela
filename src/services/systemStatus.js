@@ -71,6 +71,14 @@ export function buoyStatus({ modo, deviceId, availability, lastMessageAt, now = 
   return { estado: 'ok', detalhe: null };
 }
 
+/** Broker MQTT (só na página): conectado ok; caído ≤ 30 s degradado; > 30 s falha. */
+export function mqttBrokerStatus(connected, disconnectedSinceMs, now = Date.now()) {
+  if (connected) return { estado: 'ok', detalhe: 'Conectado' };
+  const down = Number.isFinite(disconnectedSinceMs) ? toMs(now) - disconnectedSinceMs : 0;
+  if (down > 30_000) return { estado: 'falha', detalhe: `Desconectado há ${Math.round(down / 1000)} s` };
+  return { estado: 'degradado', detalhe: 'Conectando / reconectando…' };
+}
+
 /**
  * Selo do cabeçalho. `supabase` = {estado} (auth + REST combinados) ou null antes da primeira
  * rodada; `rows` = system_status já após staleness; `jobs` = saída de jobsToStatus.

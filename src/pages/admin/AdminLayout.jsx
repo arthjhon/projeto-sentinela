@@ -1,7 +1,7 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users, Cpu, SlidersHorizontal, Rss, Eye } from 'lucide-react';
+import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users, Cpu, SlidersHorizontal, Rss, Eye, HeartPulse } from 'lucide-react';
 import { SystemStatusProvider } from '../../contexts/SystemStatusContext';
 import StatusBadge from '../../components/admin/StatusBadge';
 import './AdminLayout.css';
@@ -46,6 +46,14 @@ const AdminLayout = () => {
             >
               <ActivitySquare size={20} />
               <span>Bóias</span>
+            </NavLink>
+
+            <NavLink
+              to="/admin/status"
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            >
+              <HeartPulse size={20} />
+              <span>Status</span>
             </NavLink>
 
             {(currentUser?.role === 'admin' || currentUser?.role === 'visualizador') && (

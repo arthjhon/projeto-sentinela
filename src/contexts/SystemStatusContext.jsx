@@ -25,7 +25,7 @@ export function SystemStatusProvider({ children }) {
       try {
         const [auth, rest] = await Promise.all([checkSupabaseAuth(), fetchRest()]);
         if (cancelled || !guard.isLatest(token)) return;
-        setState(buildSnapshot({ auth, rest, now: new Date() }));
+        setState({ ...buildSnapshot({ auth, rest, now: new Date() }), checkedAt: Date.now() });
       } catch (e) {
         if (cancelled || !guard.isLatest(token)) return;
         // Nunca derruba o layout: trata como Supabase em falha.
@@ -34,6 +34,7 @@ export function SystemStatusProvider({ children }) {
           supabase: { estado: 'falha', detalhe: String(e?.message ?? e).slice(0, 200) },
           rows: null,
           jobs: null,
+          checkedAt: Date.now(),
         });
       } finally {
         guard.finish(token);
