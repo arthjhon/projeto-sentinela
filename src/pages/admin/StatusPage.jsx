@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useSystemStatus } from '../../contexts/SystemStatusContext';
 import { useMqtt } from '../../hooks/useMqtt';
@@ -6,7 +6,7 @@ import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { getMqttTopics } from '../../config/fleet';
 import { topicsForRegistry, normalizeModo } from '../../services/buoyRegistry';
 import {
-  buoyStatus, mqttBrokerStatus, BADGE_META,
+  buoyStatus, mqttBrokerStatus, inMqttGrace, BADGE_META,
 } from '../../services/systemStatus';
 import {
   fetchSensorHealth, healthForDevice, estadoMeta, eventTone, fmtDate,
@@ -63,6 +63,7 @@ const StatusPage = () => {
   const [healthRows, setHealthRows] = useState([]);
   const [healthError, setHealthError] = useState(false);
   const [downSince, setDownSince] = useState(() => Date.now());
+  const [connectedSince, setConnectedSince] = useState(null);
 
   const connectedRef = useRef(connected);
   useEffect(() => { connectedRef.current = connected; }, [connected]);
@@ -71,6 +72,7 @@ const StatusPage = () => {
     const id = setInterval(() => {
       setNow(Date.now());
       // Desde quando o broker está fora (referência: montagem, se nunca conectou).
+      setConnectedSince((prev) => (connectedRef.current ? (prev ?? Date.now()) : null));
       setDownSince((prev) => (connectedRef.current ? null : (prev ?? Date.now())));
     }, 5000);
     return () => clearInterval(id);
@@ -80,18 +82,19 @@ const StatusPage = () => {
     if (registry.length) addTopics(topicsForRegistry(registry));
   }, [registry, addTopics]);
 
-  const loadHealth = () => fetchSensorHealth().then(
-    (rows) => { setHealthRows(rows); setHealthError(false); },
-    () => setHealthError(true),
-  );
+  const healthAliveRef = useRef(true);
+  const loadHealth = useCallback(() => fetchSensorHealth().then(
+    (rows) => { if (healthAliveRef.current) { setHealthRows(rows); setHealthError(false); } },
+    () => { if (healthAliveRef.current) setHealthError(true); },
+  ), []);
   useEffect(() => {
-    let cancelled = false;
-    fetchSensorHealth().then(
-      (rows) => { if (!cancelled) { setHealthRows(rows); setHealthError(false); } },
-      () => { if (!cancelled) setHealthError(true); },
-    );
-    return () => { cancelled = true; };
-  }, []);
+    healthAliveRef.current = true;
+    loadHealth();
+    const id = setInterval(() => {
+      if (document.visibilityState !== 'hidden') loadHealth();
+    }, 30_000);
+    return () => { healthAliveRef.current = false; clearInterval(id); };
+  }, [loadHealth]);
 
   const handleRefresh = () => { sys.refresh(); loadHealth(); };
 
@@ -128,10 +131,13 @@ const StatusPage = () => {
     const availability = d ? messages[`${d}/availability`] : undefined;
     const st = d ? messages[`${d}/status`] : undefined;
     const health = st && typeof st === 'object' ? st : {};
-    const estado = buoyStatus({ modo, deviceId: d, availability, lastMessageAt: lastAt, now });
+    const grace = d && modo === 'campo' && inMqttGrace(connected, connectedSince, now);
+    const estado = grace
+      ? { estado: 'desconhecido', detalhe: 'aguardando conexão MQTT' }
+      : buoyStatus({ modo, deviceId: d, availability, lastMessageAt: lastAt, now });
     const sh = d ? healthForDevice(healthRows, d, modo) : { sensores: [], pior: 'ok' };
     return { r, d, modo, availability, lastAt, health, estado, sh };
-  }), [registry, messages, receivedAt, healthRows, now]);
+  }), [registry, messages, receivedAt, healthRows, now, connected, connectedSince]);
 
   const badgeMeta = BADGE_META[sys.badge] ?? BADGE_META.verificando;
 
@@ -162,9 +168,9 @@ const StatusPage = () => {
       <section className="status-section glass">
         <h2>Plataforma</h2>
         <StatusItem name="Supabase — autenticação"
-          estado={sb?.auth?.estado ?? 'desconhecido'} detalhe={sb ? sb.auth.detalhe : 'Verificando…'} checked={sbChecked} />
+          estado={sb?.auth?.estado ?? 'desconhecido'} detalhe={sb ? (sb.auth?.detalhe ?? sb.detalhe) : 'Verificando…'} checked={sbChecked} />
         <StatusItem name="Supabase — REST"
-          estado={sb?.rest?.estado ?? 'desconhecido'} detalhe={sb ? sb.rest.detalhe : 'Verificando…'} checked={sbChecked} />
+          estado={sb?.rest?.estado ?? 'desconhecido'} detalhe={sb ? (sb.rest?.detalhe ?? sb.detalhe) : 'Verificando…'} checked={sbChecked} />
         <StatusItem name="Broker MQTT" estado={broker.estado} detalhe={broker.detalhe} checked="agora" />
         <StatusItem {...workerRow('influxdb', 'InfluxDB')} />
         <StatusItem {...workerRow('telegraf_ingestao', 'Ingestão Telegraf')} />
@@ -178,7 +184,8 @@ const StatusPage = () => {
         {sys.jobs?.map((j) => (
           <StatusItem key={j.componente}
             name={JOB_LABEL[j.componente.replace(/^job_/, '')] ?? j.componente}
-            estado={j.estado} detalhe={j.detalhe} checked={null} />
+            estado={j.estado} detalhe={j.detalhe}
+            checked={j.verificado_em ? ageOf(j.verificado_em, now) : null} />
         ))}
       </section>
 

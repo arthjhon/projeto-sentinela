@@ -41,12 +41,13 @@ export function classifySupabaseHealth({ ok, status, elapsedMs, error } = {}) {
 
 /** Jobs do worker como componentes: atrasado ou ok=false → falha; nota parcial → ok com detalhe. */
 export function jobsToStatus(jobs, now = new Date()) {
-  return jobStaleness(jobs, now).map((j) => {
+  return jobStaleness(jobs, now).map((j, i) => {
     const bad = j.atrasado || j.ok === false;
     return {
       componente: `job_${j.job}`,
       estado: bad ? 'falha' : 'ok',
       detalhe: jobTitle(j) ?? null,
+      verificado_em: jobs[i]?.ultima_execucao ?? jobs[i]?.ultimo_sucesso ?? null,
     };
   });
 }
@@ -149,6 +150,21 @@ export function buildSnapshot({ auth, rest, now = new Date() }) {
     rows = [{ componente: 'worker', estado: 'desconhecido', detalhe: 'worker ainda não reportou', verificado_em: null }];
   }
   return { loading: false, supabase: sb, rows, jobs: jobsToStatus(rest.jobs, now) };
+}
+
+/** Falha inesperada da rodada → estado do contexto, mesmo formato do caminho normal. */
+export function buildErrorSnapshot(e, checkedAt = Date.now()) {
+  const detalhe = String(e?.message ?? e).slice(0, 200);
+  const falha = { estado: 'falha', detalhe };
+  return { loading: false, supabase: { auth: falha, rest: falha, ...falha }, rows: null, jobs: null, checkedAt };
+}
+
+export const MQTT_GRACE_MS = 15_000;
+
+/** Bóia de campo não é julgada enquanto o broker não conectou há ≥ 15 s (evita flash vermelho). */
+export function inMqttGrace(connected, connectedSinceMs, now = Date.now()) {
+  if (!connected || !Number.isFinite(connectedSinceMs)) return true;
+  return toMs(now) - connectedSinceMs < MQTT_GRACE_MS;
 }
 
 /** Uma rodada por vez; só o resultado da rodada mais recente vale. */

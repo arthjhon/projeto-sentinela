@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  fetchRest, checkSupabaseAuth, buildSnapshot, createPollGuard, badgeState,
+  fetchRest, checkSupabaseAuth, buildSnapshot, buildErrorSnapshot, createPollGuard, badgeState,
 } from '../services/systemStatus';
 
 // Um único laço de polling (30 s, pausado com a aba oculta), sem MQTT, compartilhado por
@@ -29,13 +29,7 @@ export function SystemStatusProvider({ children }) {
       } catch (e) {
         if (cancelled || !guard.isLatest(token)) return;
         // Nunca derruba o layout: trata como Supabase em falha.
-        setState({
-          loading: false,
-          supabase: { estado: 'falha', detalhe: String(e?.message ?? e).slice(0, 200) },
-          rows: null,
-          jobs: null,
-          checkedAt: Date.now(),
-        });
+        setState(buildErrorSnapshot(e));
       } finally {
         guard.finish(token);
       }

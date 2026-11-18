@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, buoyStatus, badgeState, mqttBrokerStatus,
+  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, buoyStatus, badgeState, mqttBrokerStatus, buildErrorSnapshot, inMqttGrace,
 } from './systemStatus';
 
 const NOW = new Date('2026-11-18T12:00:00Z');
@@ -166,5 +166,34 @@ describe('mqttBrokerStatus', () => {
   });
   it('disconnected with unknown start (never connected) is degradado first, not crash', () => {
     expect(mqttBrokerStatus(false, null, now).estado).toBe('degradado');
+  });
+});
+
+describe('buildErrorSnapshot', () => {
+  it('has auth and rest entries so the page never dereferences undefined', () => {
+    const snap = buildErrorSnapshot(new Error('boom'), 1);
+    expect(snap.supabase.estado).toBe('falha');
+    expect(snap.supabase.auth.detalhe).toBe('boom');
+    expect(snap.supabase.rest.estado).toBe('falha');
+    expect(snap.rows).toBeNull();
+  });
+});
+
+describe('jobsToStatus verificado_em', () => {
+  it('carries ultima_execucao', () => {
+    const out = jobsToStatus([{ job: 'ana', ok: true, ultimo_sucesso: ago(1000), ultima_execucao: ago(500) }], NOW);
+    expect(out[0].verificado_em).toBe(ago(500));
+  });
+});
+
+describe('inMqttGrace', () => {
+  const now = NOW.getTime();
+  it('true while disconnected or never connected', () => {
+    expect(inMqttGrace(false, null, now)).toBe(true);
+    expect(inMqttGrace(true, null, now)).toBe(true);
+  });
+  it('true for first 15 s after connect, false after', () => {
+    expect(inMqttGrace(true, now - 14_000, now)).toBe(true);
+    expect(inMqttGrace(true, now - 15_000, now)).toBe(false);
   });
 });
