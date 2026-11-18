@@ -183,6 +183,40 @@
   background-color: var(--success);
 }
 
+.status-dot.amber {
+  background-color: var(--warning);
+}
+
+.status-dot.red {
+  background-color: var(--danger);
+}
+
+.status-dot.neutral {
+  background-color: var(--text-muted);
+}
+
+a.header-status {
+  text-decoration: none;
+}
+
+.header-status--amber {
+  color: var(--warning);
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.header-status--red {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.header-status--neutral {
+  color: var(--text-muted);
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
 .admin-content {
   flex: 1;
   overflow-y: auto;

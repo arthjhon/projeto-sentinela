@@ -2,6 +2,8 @@ import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users, Cpu, SlidersHorizontal, Rss, Eye } from 'lucide-react';
+import { SystemStatusProvider } from '../../contexts/SystemStatusContext';
+import StatusBadge from '../../components/admin/StatusBadge';
 import './AdminLayout.css';
 
 const AdminLayout = () => {
@@ -14,6 +16,7 @@ const AdminLayout = () => {
   };
 
   return (
+    <SystemStatusProvider>
     <div className="admin-container">
       <div className="bg-gradient-main"></div>
 
@@ -110,10 +113,7 @@ const AdminLayout = () => {
                 <Eye size={14} /> Modo Demonstração — Somente Leitura
               </span>
             )}
-            <div className="header-status">
-              <span className="status-dot green"></span>
-              Sistema Operacional
-            </div>
+            <StatusBadge />
           </div>
         </header>
 
@@ -122,6 +122,7 @@ const AdminLayout = () => {
         </div>
       </main>
     </div>
+    </SystemStatusProvider>
   );
 };
 
