@@ -30,7 +30,8 @@ export function formatCoords(lat, lng) {
 
 /** Idade de um evento: "há 4 s", "há 3 min", "há 2 h". */
 export function formatAge(ms) {
-  if (!Number.isFinite(ms) || ms < 0) return '--';
+  if (!Number.isFinite(ms)) return '--';
+  if (ms < 0) return 'agora'; // relógio adiantado / primeira renderização
   const s = Math.round(ms / 1000);
   if (s < 60) return `há ${s} s`;
   const min = Math.floor(s / 60);

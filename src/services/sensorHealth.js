@@ -56,7 +56,7 @@ export function healthForDevice(rows, deviceId, modo) {
   return { sensores, pior };
 }
 
-export const JOB_INTERVAL_S = { openmeteo: 3600, ana: 900, detector: 300 };
+export const JOB_INTERVAL_S = { openmeteo: 3600, ana: 900, detector: 300, status: 60 };
 
 /** Job atrasado: último sucesso há mais de 3x o intervalo, ou inexistente. */
 export function jobStaleness(jobs, now = new Date()) {

@@ -27,7 +27,8 @@ describe('formatos', () => {
     expect(formatAge(3 * 60_000 + 5_000)).toBe('há 3 min');
     expect(formatAge(2 * 3_600_000)).toBe('há 2 h');
     expect(formatAge(null)).toBe('--');
-    expect(formatAge(-1)).toBe('--');
+    expect(formatAge(-1)).toBe('agora');
+    expect(formatAge(-5_000)).toBe('agora');
   });
   it('intervalo', () => {
     expect(formatInterval(5_020)).toBe('~5 s');

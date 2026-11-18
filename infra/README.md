@@ -305,6 +305,8 @@ Os passos 7 a 15 são feitos **nesta ordem**, uma vez. A branch entra na `main` 
 worker e migration juntos), então tudo o que o worker precisa tem de existir antes do primeiro
 deploy dele:
 
+0. **Antes do merge na `main`** (o site deploya sozinho no push): aplicar
+   `supabase/migrations/20261118_system_status.sql` em produção (passo 9).
 1. Pré-requisitos do worker: rede `sentinela-pg` + override do Supabase (passo 7), acesso ao GHCR
    (passo 8).
 2. Migration, role `sentinela_worker` e `PG_WORKER_DSN` (passo 9).
@@ -409,6 +411,11 @@ existe. Tudo abaixo passa por `docker exec` no container.
 
    Aplicar também `supabase/migrations/20261118_system_status.sql` do mesmo jeito (tabela
    `system_status` da página de status; depende do role criado acima e é idempotente).
+
+   **Aplicar `20261118_system_status.sql` em produção ANTES do merge na `main`**: o site faz deploy
+   automático a cada push na `main`, e sem a tabela a página e o selo de status mostram
+   "tabela system_status ausente — migration pendente?" (selo Degradado em toda rota admin) até a
+   migration ser aplicada.
 
    Impacto: cria objetos novos, revoga escrita de `anon`/`authenticated` nas 3 tabelas novas e
    adiciona uma policy de SELECT e um GRANT SELECT para `sentinela_worker` em `app_settings` e

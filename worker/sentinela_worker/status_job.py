@@ -22,6 +22,8 @@ STALE = timedelta(minutes=15)      # (2, 15] min degradado; beyond (or no point)
 INGESTAO_FLUX = (
     f'from(bucket:"{SOURCE_BUCKET}") |> range(start:-24h)'
     ' |> filter(fn:(r)=> r._measurement=="sensores")'
+    ' |> keep(columns:["_time","device_id","_field","_value"])'
+    ' |> last()'                                   # per series (pushdown)
     ' |> group(columns:["device_id"]) |> max(column:"_time")'
     ' |> keep(columns:["device_id","_time"])'
 )
@@ -123,7 +125,7 @@ def check_ingestao(sink, registry, now: datetime) -> StatusRow:
 
 
 def check_worker(version: str, started_at: datetime, now: datetime) -> StatusRow:
-    return StatusRow("worker", "ok", f"versão {version}; ativo {age_text(now - started_at)}",
+    return StatusRow("worker", "ok", f"versão {version[:7]}; ativo {age_text(now - started_at)}",
                      {"versao": version, "iniciado_em": started_at.isoformat()}, now)
 
 

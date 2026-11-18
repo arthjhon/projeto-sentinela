@@ -6,8 +6,9 @@ import { jobStaleness, jobTitle } from './sensorHealth';
 
 export const STATE_RANK = { ok: 0, desconhecido: 1, degradado: 2, falha: 3 };
 
-export const STALE_AFTER_MS = 180_000;
+export const STALE_AFTER_MS = 360_000;
 export const SLOW_MS = 2000;
+const EXPECTED_COMPONENTS = ['influxdb', 'telegraf_ingestao', 'worker'];
 
 const toMs = (t) => (t instanceof Date ? t.getTime() : typeof t === 'number' ? t : new Date(t).getTime());
 
@@ -28,7 +29,7 @@ export function applyStaleness(rows, now = new Date(), maxAgeMs = STALE_AFTER_MS
     if (r.estado === 'nao_monitorado') return r;
     const t = r.verificado_em ? new Date(r.verificado_em).getTime() : NaN;
     if (Number.isFinite(t) && n - t <= maxAgeMs) return r;
-    return { ...r, estado: 'desconhecido', detalhe: 'status desatualizado — worker parado?' };
+    return { ...r, estado: 'desconhecido', detalhe: 'status atrasado — worker parado ou lento?' };
   });
 }
 
@@ -72,12 +73,13 @@ export function buoyStatus({ modo, deviceId, availability, lastMessageAt, now = 
   return { estado: 'ok', detalhe: null };
 }
 
-/** Broker MQTT (só na página): conectado ok; caído ≤ 30 s degradado; > 30 s falha. */
+/** Broker MQTT (só na página): conectado ok; caído ≤ 10 s desconhecido (conectando); 10–30 s degradado; > 30 s falha. */
 export function mqttBrokerStatus(connected, disconnectedSinceMs, now = Date.now()) {
   if (connected) return { estado: 'ok', detalhe: 'Conectado' };
   const down = Number.isFinite(disconnectedSinceMs) ? toMs(now) - disconnectedSinceMs : 0;
   if (down > 30_000) return { estado: 'falha', detalhe: `Desconectado há ${Math.round(down / 1000)} s` };
-  return { estado: 'degradado', detalhe: 'Conectando / reconectando…' };
+  if (down > 10_000) return { estado: 'degradado', detalhe: 'Reconectando…' };
+  return { estado: 'desconhecido', detalhe: 'Conectando…' };
 }
 
 /**
@@ -123,31 +125,51 @@ async function fetchJobsTimed(timeoutMs = REST_TIMEOUT_MS) {
   return data ?? [];
 }
 
-/** Leitura REST completa com timeout; nunca rejeita: {rows, jobs} ou {error}. */
+const MISSING_TABLE_RE = /PGRST205|42P01|does not exist|could not find the table/i;
+
+/** Tabela system_status ausente (migration pendente): PostgREST PGRST205 ou Postgres 42P01. */
+export function isMissingTableError(err) {
+  return MISSING_TABLE_RE.test(`${err?.code ?? ''} ${err?.message ?? err ?? ''}`);
+}
+
+/**
+ * Leitura REST com timeout; nunca rejeita. `supabase_rest` vem do fetch de worker_jobs
+ * (tabela antiga); system_status ausente é `rowsMissing`, não falha de REST.
+ * Retorna {rows, jobs, rowsMissing} ou {error} (worker_jobs falhou).
+ */
 export async function fetchRest(timeoutMs = REST_TIMEOUT_MS) {
-  try {
-    const [rows, jobs] = await withTimeout(
-      Promise.all([fetchSystemStatus(timeoutMs), fetchJobsTimed(timeoutMs)]), timeoutMs + 500);
-    return { rows, jobs };
-  } catch (error) {
-    return { error };
-  }
+  const guard = (p) => withTimeout(p, timeoutMs + 500);
+  const [rowsR, jobsR] = await Promise.allSettled([
+    guard(fetchSystemStatus(timeoutMs)), guard(fetchJobsTimed(timeoutMs)),
+  ]);
+  if (jobsR.status === 'rejected') return { error: jobsR.reason };
+  if (rowsR.status === 'fulfilled') return { rows: rowsR.value, jobs: jobsR.value };
+  if (isMissingTableError(rowsR.reason)) return { rows: [], jobs: jobsR.value, rowsMissing: true };
+  return { rows: [], jobs: jobsR.value, rowsError: rowsR.reason };
 }
 
 /** Resultado de uma rodada → estado do contexto (puro). */
 export function buildSnapshot({ auth, rest, now = new Date() }) {
   const restFailed = Boolean(rest.error);
+  const rowsErr = rest.rowsError
+    ? { estado: 'falha', detalhe: String(rest.rowsError?.message ?? rest.rowsError).slice(0, 200) }
+    : null;
   const sb = {
     auth: classifySupabaseHealth(auth),
     rest: restFailed
       ? { estado: 'falha', detalhe: String(rest.error?.message ?? rest.error).slice(0, 200) }
-      : { estado: 'ok', detalhe: null },
+      : (rowsErr ?? { estado: 'ok', detalhe: null }),
   };
   sb.estado = worstState([sb.auth.estado, sb.rest.estado]);
   if (restFailed) return { loading: false, supabase: sb, rows: null, jobs: null };
   let rows = applyStaleness(rest.rows, now);
-  if (!(rest.rows ?? []).length && !(rest.jobs ?? []).length) {
-    rows = [{ componente: 'worker', estado: 'desconhecido', detalhe: 'worker ainda não reportou', verificado_em: null }];
+  if (rest.rowsMissing) {
+    rows = [{ componente: 'worker', estado: 'desconhecido', detalhe: 'tabela system_status ausente — migration pendente?', verificado_em: null }];
+  } else {
+    const have = new Set(rows.map((r) => r.componente));
+    const missing = EXPECTED_COMPONENTS.filter((c) => !have.has(c));
+    rows = [...rows, ...missing.map((c) => (
+      { componente: c, estado: 'desconhecido', detalhe: 'sem dados do worker', verificado_em: null }))];
   }
   return { loading: false, supabase: sb, rows, jobs: jobsToStatus(rest.jobs, now) };
 }

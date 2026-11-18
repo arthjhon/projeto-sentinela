@@ -8,7 +8,7 @@ const TONE_CLASS = {
   ok: 'badge-online', warn: 'badge-warning', bad: 'badge-offline',
   neutral: 'badge-planejada', info: 'sh-info',
 };
-const JOB_LABEL = { openmeteo: 'Open-Meteo', ana: 'ANA', detector: 'Detector' };
+const JOB_LABEL = { openmeteo: 'Open-Meteo', ana: 'ANA', detector: 'Detector', status: 'Status (worker)' };
 
 const fmt = fmtDate;
 
@@ -72,7 +72,8 @@ export function HealthEvents({ deviceId, modo }) {
 /** Linha do cabeçalho: "Coleta: Open-Meteo ✓ · ANA ✓ · Detector ✓". */
 export function CollectionHealth({ jobs, unavailable = false }) {
   if (unavailable) return <span className="text-muted sh-collection">Saúde indisponível</span>;
-  const list = jobStaleness(jobs, new Date());
+  // O job `status` é sinal da página de status (Plataforma → Worker), não coleta de dados.
+  const list = jobStaleness(jobs, new Date()).filter((j) => j.job !== 'status');
   if (!list.length) return null;
   return (
     <span className="sh-collection">

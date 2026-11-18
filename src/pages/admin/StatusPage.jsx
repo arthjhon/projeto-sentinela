@@ -30,7 +30,8 @@ const TONE_CLASS = {
 };
 const BADGE_CLASS = { green: 'badge-online', amber: 'badge-warning', red: 'badge-offline', neutral: 'badge-planejada' };
 
-const JOB_LABEL = { openmeteo: 'Open-Meteo', ana: 'ANA', detector: 'Detector de saúde dos sensores' };
+const JOB_LABEL = { openmeteo: 'Open-Meteo', ana: 'ANA', detector: 'Detector de saúde dos sensores', status: 'Status (worker)' };
+const WORKER_JOB = 'job_status';
 const INFRA = ['Disco', 'Backup', 'Túnel cloudflared', 'Deploy implantado'];
 
 const ageOf = (iso, now) => {
@@ -114,6 +115,8 @@ const StatusPage = () => {
     return { name, estado: r.estado, detalhe: r.detalhe, checked: ageOf(r.verificado_em, now) };
   };
 
+  const statusJob = sys.jobs?.find((j) => j.componente === WORKER_JOB) ?? null;
+  const collectionJobs = sys.jobs?.filter((j) => j.componente !== WORKER_JOB) ?? null;
   const sb = sys.supabase;
   const sbChecked = sys.checkedAt ? formatAge(now - sys.checkedAt) : null;
   const broker = mqttBrokerStatus(connected, downSince, now);
@@ -141,8 +144,9 @@ const StatusPage = () => {
 
   const badgeMeta = BADGE_META[sys.badge] ?? BADGE_META.verificando;
 
-  const connLabel = (b) => {
-    if (!b.d) return 'sem hardware';
+  // Detalhe de conexão mostrado uma vez: o do estado, ou (sem detalhe) o rótulo do LWT.
+  const connDetail = (b) => {
+    if (b.estado.detalhe) return b.estado.detalhe;
     if (b.availability === 'online') return 'online';
     if (b.availability === 'offline') return 'offline';
     return 'sem LWT';
@@ -175,13 +179,17 @@ const StatusPage = () => {
         <StatusItem {...workerRow('influxdb', 'InfluxDB')} />
         <StatusItem {...workerRow('telegraf_ingestao', 'Ingestão Telegraf')} />
         <StatusItem {...workerRow('worker', 'Worker')} />
+        {statusJob && (
+          <StatusItem name="Status (worker)" estado={statusJob.estado} detalhe={statusJob.detalhe}
+            checked={statusJob.verificado_em ? ageOf(statusJob.verificado_em, now) : null} />
+        )}
       </section>
 
       <section className="status-section glass">
         <h2>Coleta</h2>
         {sys.jobs === null && <p className="text-muted status-empty">Indisponível (leitura REST falhou).</p>}
-        {sys.jobs?.length === 0 && <p className="text-muted status-empty">Nenhum job registrado.</p>}
-        {sys.jobs?.map((j) => (
+        {collectionJobs?.length === 0 && <p className="text-muted status-empty">Nenhum job registrado.</p>}
+        {collectionJobs?.map((j) => (
           <StatusItem key={j.componente}
             name={JOB_LABEL[j.componente.replace(/^job_/, '')] ?? j.componente}
             estado={j.estado} detalhe={j.detalhe}
@@ -215,7 +223,7 @@ const StatusPage = () => {
                     <td><span className={`badge ${b.modo === 'campo' ? 'badge-online' : 'badge-planejada'}`}>{b.modo === 'campo' ? 'Campo' : 'Bancada'}</span></td>
                     <td>
                       <StatePill estado={b.estado.estado} />
-                      <div className="status-item-detail text-muted">{connLabel(b)}{b.estado.detalhe ? ` · ${b.estado.detalhe}` : ''}</div>
+                      <div className="status-item-detail text-muted">{connDetail(b)}</div>
                     </td>
                     <td>{b.lastAt ? formatAge(now - b.lastAt) : '—'}</td>
                     <td title={writeIso ? fmtDate(writeIso) : undefined}>{writeIso ? ageOf(writeIso, now) : '—'}</td>

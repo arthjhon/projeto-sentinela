@@ -160,3 +160,14 @@ def test_registry_failure_does_not_stop_other_rows(monkeypatch):
     run_status(NOW, FakeSink(), lambda: object(), "v1", START)
     by = {r.componente: r for r in calls[0]}
     assert by["telegraf_ingestao"].estado == "falha" and by["influxdb"].estado == "ok"
+
+
+def test_check_worker_shows_short_version_keeps_full_in_dados():
+    from datetime import datetime, timezone
+    from sentinela_worker.status_job import check_worker
+    now = datetime(2026, 11, 18, 12, tzinfo=timezone.utc)
+    full = "0123456789abcdef0123456789abcdef01234567"
+    row = check_worker(full, now, now)
+    assert "versão 0123456;" in row.detalhe
+    assert full not in row.detalhe
+    assert row.dados["versao"] == full

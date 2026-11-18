@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, buoyStatus, badgeState, mqttBrokerStatus, buildErrorSnapshot, inMqttGrace,
+  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, buoyStatus, badgeState, mqttBrokerStatus, buildErrorSnapshot, inMqttGrace, fetchRest,
 } from './systemStatus';
+import { supabase } from '../lib/supabase';
+
+vi.mock('../lib/supabase', () => ({ supabase: { from: vi.fn() } }));
 
 const NOW = new Date('2026-11-18T12:00:00Z');
 const ago = (ms) => new Date(NOW.getTime() - ms).toISOString();
@@ -18,15 +21,19 @@ describe('worstState', () => {
 });
 
 describe('applyStaleness', () => {
-  it('test_stale_rows_become_desconhecido: row verified 4 min ago', () => {
+  it('test_stale_rows_become_desconhecido: row verified 7 min ago (limit 360 s)', () => {
     const rows = [
-      { componente: 'worker', estado: 'ok', detalhe: null, verificado_em: ago(4 * 60_000) },
+      { componente: 'worker', estado: 'ok', detalhe: null, verificado_em: ago(7 * 60_000) },
       { componente: 'influxdb', estado: 'ok', detalhe: null, verificado_em: ago(60_000) },
     ];
     const out = applyStaleness(rows, NOW);
     expect(out[0].estado).toBe('desconhecido');
-    expect(out[0].detalhe).toBe('status desatualizado — worker parado?');
+    expect(out[0].detalhe).toBe('status atrasado — worker parado ou lento?');
     expect(out[1].estado).toBe('ok');
+  });
+  it('a 5 min old row is still fresh (scheduler is sequential, ANA can take ~150 s)', () => {
+    const rows = [{ componente: 'worker', estado: 'ok', detalhe: null, verificado_em: ago(5 * 60_000) }];
+    expect(applyStaleness(rows, NOW)[0].estado).toBe('ok');
   });
   it('treats a missing/invalid timestamp as stale', () => {
     expect(applyStaleness([{ componente: 'x', estado: 'ok', verificado_em: null }], NOW)[0].estado)
@@ -40,6 +47,15 @@ describe('classifySupabaseHealth', () => {
     expect(classifySupabaseHealth({ ok: true, status: 200, elapsedMs: 2500 }).estado).toBe('degradado');
     expect(classifySupabaseHealth({ ok: false, status: 0, elapsedMs: 5000, error: 'timeout' }).estado).toBe('falha');
     expect(classifySupabaseHealth({ ok: false, status: 503, elapsedMs: 50 }).estado).toBe('falha');
+  });
+});
+
+describe('jobsToStatus status job', () => {
+  it('status job uses a 60 s interval: 4 min without success is falha', () => {
+    const out = jobsToStatus([{ job: 'status', ok: true, erro: null, ultimo_sucesso: ago(4 * 60_000) }], NOW);
+    expect(out[0]).toMatchObject({ componente: 'job_status', estado: 'falha' });
+    const fresh = jobsToStatus([{ job: 'status', ok: true, erro: null, ultimo_sucesso: ago(90_000) }], NOW);
+    expect(fresh[0].estado).toBe('ok');
   });
 });
 
@@ -142,13 +158,64 @@ describe('createPollGuard', () => {
 });
 
 describe('empty worker tables', () => {
-  it('zero rows and zero jobs gives a desconhecido entry, not green', () => {
+  it('zero rows and zero jobs gives desconhecido entries for every expected component', () => {
     const snap = buildSnapshot({
       auth: { ok: true, status: 200, elapsedMs: 50 }, rest: { rows: [], jobs: [] }, now: NOW,
     });
-    expect(snap.rows).toHaveLength(1);
-    expect(snap.rows[0].detalhe).toBe('worker ainda não reportou');
+    expect(snap.rows.map((r) => r.componente)).toEqual(['influxdb', 'telegraf_ingestao', 'worker']);
+    for (const r of snap.rows) {
+      expect(r.estado).toBe('desconhecido');
+      expect(r.detalhe).toBe('sem dados do worker');
+    }
     expect(badgeState({ supabase: snap.supabase, rows: snap.rows, jobs: snap.jobs })).toBe('degradado');
+  });
+  it('an expected component missing from system_status is desconhecido', () => {
+    const rows = [
+      { componente: 'influxdb', estado: 'ok', detalhe: null, verificado_em: NOW.toISOString() },
+      { componente: 'worker', estado: 'ok', detalhe: null, verificado_em: NOW.toISOString() },
+    ];
+    const snap = buildSnapshot({ auth: { ok: true, status: 200, elapsedMs: 50 }, rest: { rows, jobs: [] }, now: NOW });
+    const ing = snap.rows.find((r) => r.componente === 'telegraf_ingestao');
+    expect(ing).toMatchObject({ estado: 'desconhecido', detalhe: 'sem dados do worker' });
+    expect(snap.rows.find((r) => r.componente === 'influxdb').estado).toBe('ok');
+  });
+});
+
+describe('fetchRest with a missing system_status table', () => {
+  const mockTables = (statusErr, jobsRes) => {
+    supabase.from.mockImplementation((t) => ({
+      select: () => ({
+        abortSignal: () => Promise.resolve(t === 'system_status'
+          ? (statusErr ? { data: null, error: statusErr } : { data: [], error: null })
+          : jobsRes),
+      }),
+    }));
+  };
+  const okAuth = { ok: true, status: 200, elapsedMs: 50 };
+
+  it('PGRST205 is desconhecido "migration pendente", REST stays ok', async () => {
+    mockTables({ code: 'PGRST205', message: "Could not find the table 'public.system_status' in the schema cache" },
+      { data: [], error: null });
+    const rest = await fetchRest();
+    expect(rest.rowsMissing).toBe(true);
+    const snap = buildSnapshot({ auth: okAuth, rest, now: NOW });
+    expect(snap.supabase.rest.estado).toBe('ok');
+    expect(snap.rows[0]).toMatchObject({
+      estado: 'desconhecido', detalhe: 'tabela system_status ausente — migration pendente?' });
+  });
+  it('Postgres 42P01 is treated the same', async () => {
+    mockTables({ code: '42P01', message: 'relation "system_status" does not exist' }, { data: [], error: null });
+    expect((await fetchRest()).rowsMissing).toBe(true);
+  });
+  it('other system_status errors are REST falha', async () => {
+    mockTables({ code: '500', message: 'boom' }, { data: [], error: null });
+    const snap = buildSnapshot({ auth: okAuth, rest: await fetchRest(), now: NOW });
+    expect(snap.supabase.rest.estado).toBe('falha');
+  });
+  it('worker_jobs failing is REST falha', async () => {
+    mockTables(null, { data: null, error: { message: 'down' } });
+    const snap = buildSnapshot({ auth: okAuth, rest: await fetchRest(), now: NOW });
+    expect(snap.supabase.rest).toMatchObject({ estado: 'falha', detalhe: 'down' });
   });
 });
 
@@ -157,15 +224,19 @@ describe('mqttBrokerStatus', () => {
   it('connected is ok', () => {
     expect(mqttBrokerStatus(true, null, now).estado).toBe('ok');
   });
-  it('disconnected up to 30 s is degradado', () => {
-    expect(mqttBrokerStatus(false, now - 10_000, now).estado).toBe('degradado');
+  it('disconnected up to 10 s (initial connecting) is desconhecido, not degradado', () => {
+    expect(mqttBrokerStatus(false, now - 5_000, now).estado).toBe('desconhecido');
+    expect(mqttBrokerStatus(false, now - 10_000, now).estado).toBe('desconhecido');
+  });
+  it('disconnected 10-30 s is degradado', () => {
+    expect(mqttBrokerStatus(false, now - 11_000, now).estado).toBe('degradado');
     expect(mqttBrokerStatus(false, now - 30_000, now).estado).toBe('degradado');
   });
   it('disconnected over 30 s is falha', () => {
     expect(mqttBrokerStatus(false, now - 31_000, now).estado).toBe('falha');
   });
-  it('disconnected with unknown start (never connected) is degradado first, not crash', () => {
-    expect(mqttBrokerStatus(false, null, now).estado).toBe('degradado');
+  it('disconnected with unknown start (never connected) does not crash', () => {
+    expect(mqttBrokerStatus(false, null, now).estado).toBe('desconhecido');
   });
 });
 
