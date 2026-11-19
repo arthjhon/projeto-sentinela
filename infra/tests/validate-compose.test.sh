@@ -201,7 +201,8 @@ else
 fi
 
 # Static analysis, pinned image.
-if docker run --rm -v "$here/..:/mnt:ro" -w /mnt "$SHELLCHECK_IMAGE" bin/validate-compose.sh tests/validate-compose.test.sh; then
+if docker run --rm -v "$here/..:/mnt:ro" -w /mnt "$SHELLCHECK_IMAGE" bin/validate-compose.sh tests/validate-compose.test.sh \
+  bin/mqtt-user.sh tests/mqtt-user.test.sh; then
   pass "shellcheck"
 else
   fail "shellcheck"

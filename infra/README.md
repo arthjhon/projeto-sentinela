@@ -841,7 +841,9 @@ o job de teste: `"required_status_checks": {"strict": true, "contexts": ["test"]
   Atualizar o destino (tabela do passo 12) e aplicar: `.env` → `stack-deploy.sh none`; include do
   nginx → `nginx -t && systemctl reload nginx`; arquivo do backup → nada. Entre o `delete` e a
   aplicação o consumidor recebe 401 (Telegraf reenvia o buffer; site sem histórico por instantes).
-- **Senha MQTT do Telegraf**: trocar no HiveMQ, depois `.env` e `stack-deploy.sh none`.
+- **Senha MQTT do Telegraf**: `sudo infra/bin/mqtt-user.sh add svc/telegraf` (rotaciona e imprime a nova
+  senha), colocar em `MQTT_TELEGRAF_PASS` no `.env` e `stack-deploy.sh none`. Entre o `add` e o deploy
+  o Telegraf é recusado (reenvia o buffer). Ver "Rotação e vazamento" na seção Broker MQTT.
 - **`INFLUX_ADMIN_TOKEN`**: só vale no setup inicial. Para trocar, criar outro token de operador
   (`influx auth create --operator --description admin-<data>`), pôr no `.env`, testar, apagar o
   antigo. O container guarda o token antigo na config do CLI (`/etc/influxdb2/influx-configs`).
@@ -952,32 +954,43 @@ Só precisa de bash e docker. O container é achado pelos labels do compose
 (`project=sentinela-stack`, `service=mosquitto`); `MQTT_CONTAINER` sobrescreve.
 
 ```bash
-sudo infra/bin/mqtt-user.sh add <usuario>   # imprime a senha UMA vez (40 caracteres aleatorios)
+sudo infra/bin/mqtt-user.sh add <usuario>   # imprime a senha UMA vez (40 caracteres aleatórios)
 sudo infra/bin/mqtt-user.sh del <usuario>
-sudo infra/bin/mqtt-user.sh list            # so nomes, nunca hashes
+sudo infra/bin/mqtt-user.sh list            # só nomes, nunca hashes
 ```
 
 - `<usuario>`: device id (`[A-Za-z0-9_-]{1,40}`) ou exatamente `svc/telegraf` / `svc/ota`; qualquer
   outro valor sai com exit 2.
-- `add` num usuario existente **rotaciona** a senha (a antiga deixa de valer no HUP). Nunca duplica linha.
-- A senha nao aparece em argv de nenhum processo (host nem container): vai por stdin do `docker exec -i`
-  e o hash e gerado dentro do container. O `passwd` e reescrito em arquivo temporario no mesmo diretorio
-  e trocado por `mv`; dono 1883 e modo 600 depois de cada operacao. Em seguida o script manda `SIGHUP`
-  (recarrega `passwd` e ACL sem derrubar conexoes). Capture a senha direto, sem eco:
-  `sudo infra/bin/mqtt-user.sh add svc/telegraf > /root/.telegraf-pass` ou copie do terminal e limpe o scrollback.
-- Teste: `infra/tests/mqtt-user.test.sh` (broker descartavel com a config real).
+- `add` num usuário existente **rotaciona** a senha. Nunca duplica linha; ids que parecem número
+  (`100`, `1e2`, `0100`) são comparados como texto e não se atropelam.
+- A senha não aparece em argv de nenhum processo (host nem container): vai por stdin do `docker exec -i`
+  e o hash é gerado dentro do container. O texto puro só existe em `/dev/shm` (tmpfs); no volume só
+  entra o hash. O `passwd` é reescrito em arquivo temporário no mesmo diretório, sob `flock`, conferido
+  (número de linhas) e trocado por `mv`; dono 1883 e modo 600 depois de cada operação. Em seguida o
+  script manda `SIGHUP` (recarrega `passwd` e ACL). Se o HUP falhar, o hash já vale: o script ainda
+  imprime a senha, avisa no stderr e sai com 1; rodar `sudo docker kill -s HUP <container>`.
+- Não deixar a senha em arquivo nem no histórico: copie do terminal direto para o destino (`.env`,
+  secret, `secrets.h`). Se usar um arquivo intermediário, apague-o (`shred -u`) logo depois.
+- Teste: `infra/tests/mqtt-user.test.sh` (broker descartável com a config real).
 
 **Bootstrap (primeira vez, depois do deploy do broker):**
 
-1. `add svc/telegraf` -> `MQTT_TELEGRAF_PASS` no `.env` da stack (`MQTT_BROKER=tcp://mosquitto:1883`,
+1. `add svc/telegraf` → `MQTT_TELEGRAF_PASS` no `.env` da stack (`MQTT_BROKER=tcp://mosquitto:1883`,
    `MQTT_TELEGRAF_USER=svc/telegraf`).
-2. `add svc/ota` -> segredo da Edge Function OTA (`MQTT_OTA_URL` aponta para `wss://mqtt.arthlabs.dev/mqtt`).
-3. `add <device_id>` para cada boia -> `secrets.h` da placa (usuario = device id).
+2. `add svc/ota` → segredo da Edge Function OTA (`MQTT_OTA_URL` aponta para `wss://mqtt.arthlabs.dev/mqtt`).
+3. `add <device_id>` para cada boia → `secrets.h` da placa (usuário = device id).
 
-**Decisao de projeto:** as credenciais das boias e do `svc/ota` autenticam necessariamente pelo
-`wss://mqtt.arthlabs.dev/mqtt` publico (a abordagem C nao tem outro caminho; o 1883 nao sai da rede
-do compose). Mitigacoes: senhas aleatorias de 32+ caracteres, Cloudflare na frente, `max_connections`
-no broker e rotacao com `mqtt-user.sh add` (rotacao) se houver suspeita de vazamento.
+**Rotação e vazamento:** o `SIGHUP` recarrega `passwd` e ACL, mas vale para **novas** conexões; uma
+sessão já aberta com a senha antiga não é derrubada pelo HUP (não verificado se o broker a
+reavalia; tratar como mantida). Em suspeita de vazamento: `add <usuario>` e depois
+`sudo docker restart <container do mosquitto>` para derrubar as sessões abertas (as boias
+reconectam sozinhas; as retidas persistem em `/mosquitto/data`). Para o `svc/telegraf`, atualizar
+o `.env` e rodar `stack-deploy.sh none` antes ou logo depois, senão o Telegraf é recusado.
+
+**Decisão de projeto:** as credenciais das boias e do `svc/ota` autenticam necessariamente pelo
+`wss://mqtt.arthlabs.dev/mqtt` público (a abordagem C não tem outro caminho; o 1883 não sai da rede
+do compose). Mitigações: senhas aleatórias de 32+ caracteres, Cloudflare na frente, `max_connections`
+no broker e rotação com `mqtt-user.sh add` (rotação) se houver suspeita de vazamento.
 
 **Backup:** o volume é o único lugar das credenciais. Perder o volume = reprovisionar todas as
 credenciais (boias incluídas). Incluir `sentinela-mosquitto-data` no backup da VM (o timer do

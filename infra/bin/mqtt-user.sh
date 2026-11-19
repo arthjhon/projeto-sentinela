@@ -11,7 +11,7 @@
 #
 # The password never appears in any argv: it is generated here and fed to the
 # container through `docker exec -i` stdin; hashing (mosquitto_passwd -U) runs inside
-# the container. The passwd file is rewritten into a temp file in the same dir and
+# the container (plaintext only in tmpfs). The passwd file is rewritten into a temp file in the same dir and
 # `mv`d over, so a concurrent SIGHUP never reads a half-written file; owner 1883,
 # mode 600 after every operation.
 #
@@ -54,7 +54,7 @@ gen_password() {
   printf '%s' "$p"
 }
 
-reload() { docker kill -s HUP "$ct" >/dev/null || die "could not signal the broker (SIGHUP)"; }
+reload() { docker kill -s HUP "$ct" >/dev/null; }
 
 cmd=${1:-}
 case $cmd in
@@ -77,20 +77,34 @@ case $cmd in
     ;;
   add)
     password=$(gen_password) || exit 1
-    # stdin: "user:password" (plaintext, hashed in place by mosquitto_passwd -U).
+    # stdin: "user:password" (plaintext). It is hashed by mosquitto_passwd -U in a tmpfs
+    # file (/dev/shm); only the hashed result touches the data volume. awk compares as
+    # strings ($1 "") because ids like 100 / 1e2 / 0100 would compare equal as numbers.
+    # flock serialises concurrent runs; the line-count guard refuses a bad rewrite.
     printf '%s:%s\n' "$user" "$password" | docker exec -i "$ct" sh -c '
       set -e
       umask 077
       p='"$PASSWD"'
       n=$p.new.$$
-      trap "rm -f $n $n.h" EXIT
-      cat > "$n.h"
-      mosquitto_passwd -U "$n.h" >/dev/null 2>&1
-      { if [ -e "$p" ]; then awk -F: -v u="$1" "\$1 != u" "$p"; fi; cat "$n.h"; } > "$n"
+      h=/dev/shm/mqtt-user.$$
+      trap "rm -f $n $h" EXIT
+      exec 9> "$p.lock"
+      flock 9
+      cat > "$h"
+      mosquitto_passwd -U "$h" >/dev/null 2>&1
+      old=$(wc -l < "$p")
+      if awk -F: -v u="$1" "(\$1 \"\") == u { f = 1 } END { exit !f }" "$p"; then want=$old; else want=$((old + 1)); fi
+      { awk -F: -v u="$1" "(\$1 \"\") != u" "$p"; cat "$h"; } > "$n"
+      [ "$(wc -l < "$n")" -eq "$want" ] || { echo "line count mismatch, refusing" >&2; exit 4; }
       chown 1883:1883 "$n"
       chmod 600 "$n"
       mv "$n" "$p"' _ "$user" || die "could not update $PASSWD"
-    reload
+    if ! reload; then
+      # The hash is already live; never lose the only copy of the password.
+      printf '%s\n' "$password"
+      echo "mqtt-user: password stored but broker NOT reloaded; run: docker kill -s HUP $ct" >&2
+      exit 1
+    fi
     printf '%s\n' "$password"
     ;;
   del)
@@ -100,15 +114,19 @@ case $cmd in
       p='"$PASSWD"'
       n=$p.new.$$
       trap "rm -f $n" EXIT
-      awk -F: -v u="$1" "\$1 == u { f = 1 } END { exit !f }" "$p" || exit 3
-      awk -F: -v u="$1" "\$1 != u" "$p" > "$n"
+      exec 9> "$p.lock"
+      flock 9
+      awk -F: -v u="$1" "(\$1 \"\") == u { f = 1 } END { exit !f }" "$p" || exit 3
+      old=$(wc -l < "$p")
+      awk -F: -v u="$1" "(\$1 \"\") != u" "$p" > "$n"
+      [ "$(wc -l < "$n")" -eq $((old - 1)) ] || { echo "line count mismatch, refusing" >&2; exit 4; }
       chown 1883:1883 "$n"
       chmod 600 "$n"
       mv "$n" "$p"' _ "$user"
     rc=$?
     [ "$rc" -eq 3 ] && die "user '$user' not found"
     [ "$rc" -eq 0 ] || die "could not update $PASSWD"
-    reload
+    reload || die "user removed but broker NOT reloaded; run: docker kill -s HUP $ct"
     echo "removed $user" >&2
     ;;
 esac

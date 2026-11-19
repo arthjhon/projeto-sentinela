@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2015,SC2317  # `cond && pass || fail` (pass never fails); trap fn and test_* via dispatcher
+# shellcheck disable=SC2015,SC2016,SC2317  # `cond && pass || fail` (pass never fails); trap fn and test_* via dispatcher
 # Live test for infra/bin/mqtt-user.sh against a throwaway eclipse-mosquitto
 # container running the real config (own network and data volume, mqtt-user-test-*
 # names, all removed on exit). Probe: infra/tests/mqtt_probe.py in a python image
@@ -24,7 +24,8 @@ pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1"; fails=$((fails + 1)); }
 
 teardown() {
-  [ -n "$poller_pid" ] && kill "$poller_pid" 2>/dev/null
+  # shellcheck disable=SC2086
+  [ -n "$poller_pid" ] && kill $poller_pid 2>/dev/null
   docker rm -f -v "$broker" >/dev/null 2>&1
   docker volume rm -f "$vol" >/dev/null 2>&1
   docker network rm "$net" >/dev/null 2>&1
@@ -122,33 +123,66 @@ test_file_perms() {
   local st
   st=$(docker exec "$broker" stat -c '%u:%g %a' /mosquitto/data/passwd)
   [ "$st" = "1883:1883 600" ] && pass "passwd stays 1883:1883 mode 600" || fail "passwd perms ($st)"
-  docker exec "$broker" sh -c 'ls -A /mosquitto/data | grep -q "^\.passwd\|\.new"' \
-    && fail "no temp file left in data dir" || pass "no temp file left in data dir"
+  docker exec "$broker" sh -c 'ls -A /mosquitto/data /dev/shm | grep -q "passwd\.new\|mqtt-user\."' \
+    && fail "no temp file left in data dir or /dev/shm" || pass "no temp file left in data dir or /dev/shm"
 }
 test_no_password_in_ps() {
-  : >"$tmp/ps.log"
-  (
-    while [ ! -e "$tmp/stop" ]; do
-      ps -eo args >>"$tmp/ps.log" 2>/dev/null
-      docker exec "$broker" ps -o args >>"$tmp/ps.log" 2>/dev/null
-    done
-  ) &
-  poller_pid=$!
+  # Two independent pollers (host ps; container ps via docker exec), iterations counted.
+  : >"$tmp/ps.host" ; : >"$tmp/ps.ct"; rm -f "$tmp/stop"
+  ( n=0; while [ ! -e "$tmp/stop" ]; do ps -eo args >>"$tmp/ps.host" 2>/dev/null; n=$((n + 1)); echo "$n" >"$tmp/it.host"; done ) &
+  local hp=$!
+  ( n=0; while [ ! -e "$tmp/stop" ]; do docker exec "$broker" ps -o args >>"$tmp/ps.ct" 2>/dev/null; n=$((n + 1)); echo "$n" >"$tmp/it.ct"; done ) &
+  local cp=$!
+  poller_pid="$hp $cp"
   local i all=()
   for i in 1 2 3 4 5 6; do
     add_user "esp_p$i"
     all+=("${pw[esp_p$i]}")
   done
   touch "$tmp/stop"
-  wait "$poller_pid" 2>/dev/null
+  wait "$hp" "$cp" 2>/dev/null
   poller_pid=""
-  local samples leaked=0 p
-  samples=$(grep -c . "$tmp/ps.log")
+  local ih ic leaked=0 p
+  ih=$(cat "$tmp/it.host" 2>/dev/null || echo 0); ic=$(cat "$tmp/it.ct" 2>/dev/null || echo 0)
   for p in "${all[@]}"; do
-    [ -n "$p" ] && grep -qF -- "$p" "$tmp/ps.log" && leaked=1
+    [ -n "$p" ] || leaked=1
+    grep -qF -- "$p" "$tmp/ps.host" "$tmp/ps.ct" && leaked=1
   done
-  [ "$leaked" = 0 ] && [ "$samples" -gt 20 ] && pass "no password in ps (host+container, $samples lines polled)" \
-    || fail "password seen in ps or poller idle (leaked=$leaked samples=$samples)"
+  [ "$leaked" = 0 ] && [ "$ih" -gt 10 ] && [ "$ic" -gt 3 ] \
+    && pass "no password in ps (host $ih polls, container $ic polls)" \
+    || fail "password seen in ps or pollers idle (leaked=$leaked host=$ih container=$ic)"
+}
+test_numeric_looking_ids() {
+  add_user 100; add_user 1e2; add_user 0100
+  local first=${pw[100]}
+  add_user 100
+  can_publish 1e2 "${pw[1e2]}" 1e2/sensores && pass "1e2 survives rotation of 100" || fail "1e2 survives rotation of 100"
+  can_publish 0100 "${pw[0100]}" 0100/sensores && pass "0100 survives rotation of 100" || fail "0100 survives rotation of 100"
+  can_publish 100 "$first" 100/sensores && fail "100 old password refused" || pass "100 old password refused"
+  can_publish 100 "${pw[100]}" 100/sensores && pass "100 new password works" || fail "100 new password works"
+  mu del 1e2 >/dev/null 2>&1
+  can_publish 100 "${pw[100]}" 100/sensores && pass "del 1e2 leaves 100" || fail "del 1e2 leaves 100"
+  mu list | grep -qx 0100 && pass "del 1e2 leaves 0100 listed" || fail "del 1e2 leaves 0100 listed"
+  mu list | grep -qx 1e2 && fail "1e2 gone after del" || pass "1e2 gone after del"
+}
+test_concurrent_adds() {
+  local i before after
+  before=$(mu list | wc -l)
+  for i in 1 2 3 4 5 6 7 8; do mu add "esp_k$i" >/dev/null 2>&1 & done
+  wait
+  after=$(mu list | wc -l)
+  [ $((after - before)) = 8 ] && pass "8 concurrent adds all land" || fail "concurrent adds lost updates ($before -> $after)"
+}
+test_reload_failure_keeps_password() {
+  mkdir "$tmp/shim"
+  real=$(command -v docker)
+  printf '#!/bin/sh\n[ "$1" = kill ] && exit 1\nexec %s "$@"\n' "$real" >"$tmp/shim/docker"
+  chmod +x "$tmp/shim/docker"
+  local out rc
+  out=$(PATH="$tmp/shim:$PATH" MQTT_CONTAINER=$broker bash "$script" add esp_h 2>/dev/null)
+  rc=$?
+  [ "$rc" = 1 ] && [ "${#out}" -ge 32 ] && pass "HUP failure: exit 1 and password still printed" \
+    || fail "HUP failure handling (rc=$rc len=${#out})"
 }
 test_missing_container() {
   MQTT_CONTAINER=$run-nonexistent bash "$script" list >/dev/null 2>&1
@@ -156,6 +190,7 @@ test_missing_container() {
 }
 
 for t in test_bootstrap_and_publish test_rotation test_del test_invalid_names test_service_names_accepted \
+  test_numeric_looking_ids test_concurrent_adds test_reload_failure_keeps_password \
   test_list_no_hashes test_file_perms test_no_password_in_ps test_missing_container; do
   echo "--- $t"
   "$t"
