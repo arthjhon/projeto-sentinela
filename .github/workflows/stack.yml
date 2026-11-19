@@ -52,8 +52,8 @@ jobs:
       - name: Influx bootstrap and backup
         run: bash infra/tests/influx-ops.test.sh
 
-      - name: MQTT ACL check
-        run: bash infra/tests/mqtt-acl-check.test.sh
+      - name: MQTT credential provisioning
+        run: bash infra/tests/mqtt-user.test.sh
 
       - name: Mosquitto ACL (live broker)
         run: bash infra/tests/mosquitto.test.sh

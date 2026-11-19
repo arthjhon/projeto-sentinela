@@ -1,65 +1,5 @@
 # Infra — Sentinela
 
-## MQTT ACL (pré-requisito)
-
-Antes de subir a stack de dados, o broker HiveMQ Cloud precisa separar as permissões por
-credencial (spec §7.3). A configuração é manual, no Access Management do cluster; o script
-abaixo apenas verifica o resultado.
-
-### O que o painel publica hoje
-
-Levantado com `rg -n "\.publish\(" src` (o único ponto de publicação é o wrapper
-`publish` do hook; a única página que o chama é a de OTA):
-
-- `src/hooks/useMqtt.js:126` — `clientRef.current.publish(topic, msg)` (wrapper genérico)
-- `src/pages/admin/OtaPage.jsx:219` — `publish(cmdTopic, cmd)`, com
-  `cmdTopic = <deviceId>/ota/command` (`OtaPage.jsx:215`)
-
-Não há publicação de ping no código atual.
-
-### Credenciais
-
-- **Credencial do browser (existente):** perde publish em `+/sensores`, `+/status` e
-  `+/availability`. Mantém publish em `+/ota/command` (e subscribe como hoje).
-- **Credencial do Telegraf (nova):** somente subscribe em `+/sensores` e `+/status`,
-  sem nenhum publish.
-
-As credenciais ficam fora do git (cofre/variáveis de ambiente).
-
-### Verificação
-
-```bash
-read -rs MQTT_PASS; export MQTT_PASS   # fora do histórico do shell e do argv
-infra/bin/mqtt-acl-check.sh <broker_host> <user> <device_id>
-```
-
-A senha é lida da variável de ambiente obrigatória `MQTT_PASS` (sem ela, exit 2).
-
-Publica `{"ph":0}` em `<device_id>/sensores` com MQTT v5 / QoS 1 (porta 8883, TLS) e
-interpreta a resposta do broker:
-
-| Saída | Exit | Significado |
-| --- | --- | --- |
-| `ACL OK: publish rejected` | 0 | o broker negou o publish (esperado para a credencial do browser) |
-| `ACL FAIL: publish accepted` | 1 | o broker aceitou o publish |
-| `error: ...` | 2 | uso incorreto ou falha de conexão/autenticação (resultado inconclusivo) |
-
-Sanidade: rodar com a credencial do device deve imprimir `ACL FAIL`. Atenção: o teste com a
-credencial do device publica de fato uma leitura `{"ph":0}` no tópico do device informado;
-use um `device_id` de teste.
-
-Usa `mosquitto_pub` do PATH ou, se ausente, a imagem `eclipse-mosquitto:2.0.22` via docker.
-O `mosquitto_pub` não recebe a senha na linha de comando: ela vai num arquivo de
-configuração temporário com modo 600, removido ao sair; no fallback docker o arquivo é
-montado somente leitura no container. O script em si também não recebe a senha por
-argumento. Limitação: o arquivo existe brevemente em disco.
-
-Teste local do script (broker mosquitto descartável, sem tocar em broker real):
-
-```bash
-infra/tests/mqtt-acl-check.test.sh
-```
-
 ## Stack de dados na VM — runbook
 
 Fluxo do deploy (spec §7.7):
@@ -1007,23 +947,37 @@ primeira partida o serviço cria o arquivo vazio (dono `mosquitto`, modo 600); d
 sobrescreve. Contas de serviço: `svc/telegraf` (subscribe) e `svc/ota` (publica `+/ota/command`);
 cada boia usa o próprio device id como usuário.
 
-Adicionar usuário sem senha em argv nem em log (a senha entra por stdin; o hash é gerado num
-arquivo temporário só com o usuário novo e depois anexado ao `passwd`):
+Provisionamento com `infra/bin/mqtt-user.sh`, na VM, como operador com acesso ao Docker (`sudo`).
+Só precisa de bash e docker. O container é achado pelos labels do compose
+(`project=sentinela-stack`, `service=mosquitto`); `MQTT_CONTAINER` sobrescreve.
 
 ```bash
-read -rs NEWPASS   # fora do histórico e do argv; sem export (não vaza para processos filhos)
-CT=$(sudo docker ps -q --filter label=com.docker.compose.project=sentinela-stack --filter label=com.docker.compose.service=mosquitto)
-printf '%s:%s\n' 'svc/telegraf' "$NEWPASS" | sudo docker exec -i "$CT" sh -c '
-  umask 077
-  cat > /tmp/new && mosquitto_passwd -U /tmp/new && cat /tmp/new >> /mosquitto/data/passwd && rm -f /tmp/new'
-sudo docker kill -s HUP "$CT"      # recarrega passwd e ACL sem derrubar conexões
-unset NEWPASS
+sudo infra/bin/mqtt-user.sh add <usuario>   # imprime a senha UMA vez (40 caracteres aleatorios)
+sudo infra/bin/mqtt-user.sh del <usuario>
+sudo infra/bin/mqtt-user.sh list            # so nomes, nunca hashes
 ```
 
-Não rodar com um usuário que já existe (o `passwd` ficaria com duas linhas). Para trocar a senha:
-remover a linha do usuário (`mosquitto_passwd -D /mosquitto/data/passwd <usuario>`, sem senha) e
-adicionar de novo. A senha do `svc/telegraf` tem de ser a mesma de `MQTT_TELEGRAF_PASS` no `.env`
-(`MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`).
+- `<usuario>`: device id (`[A-Za-z0-9_-]{1,40}`) ou exatamente `svc/telegraf` / `svc/ota`; qualquer
+  outro valor sai com exit 2.
+- `add` num usuario existente **rotaciona** a senha (a antiga deixa de valer no HUP). Nunca duplica linha.
+- A senha nao aparece em argv de nenhum processo (host nem container): vai por stdin do `docker exec -i`
+  e o hash e gerado dentro do container. O `passwd` e reescrito em arquivo temporario no mesmo diretorio
+  e trocado por `mv`; dono 1883 e modo 600 depois de cada operacao. Em seguida o script manda `SIGHUP`
+  (recarrega `passwd` e ACL sem derrubar conexoes). Capture a senha direto, sem eco:
+  `sudo infra/bin/mqtt-user.sh add svc/telegraf > /root/.telegraf-pass` ou copie do terminal e limpe o scrollback.
+- Teste: `infra/tests/mqtt-user.test.sh` (broker descartavel com a config real).
+
+**Bootstrap (primeira vez, depois do deploy do broker):**
+
+1. `add svc/telegraf` -> `MQTT_TELEGRAF_PASS` no `.env` da stack (`MQTT_BROKER=tcp://mosquitto:1883`,
+   `MQTT_TELEGRAF_USER=svc/telegraf`).
+2. `add svc/ota` -> segredo da Edge Function OTA (`MQTT_OTA_URL` aponta para `wss://mqtt.arthlabs.dev/mqtt`).
+3. `add <device_id>` para cada boia -> `secrets.h` da placa (usuario = device id).
+
+**Decisao de projeto:** as credenciais das boias e do `svc/ota` autenticam necessariamente pelo
+`wss://mqtt.arthlabs.dev/mqtt` publico (a abordagem C nao tem outro caminho; o 1883 nao sai da rede
+do compose). Mitigacoes: senhas aleatorias de 32+ caracteres, Cloudflare na frente, `max_connections`
+no broker e rotacao com `mqtt-user.sh add` (rotacao) se houver suspeita de vazamento.
 
 **Backup:** o volume é o único lugar das credenciais. Perder o volume = reprovisionar todas as
 credenciais (boias incluídas). Incluir `sentinela-mosquitto-data` no backup da VM (o timer do
