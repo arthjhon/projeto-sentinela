@@ -66,6 +66,35 @@ describe('buildOtaCommand', () => {
     expect(codeOf({ ...ok, versao: '   ' })).toBe('no_version');
   });
 
+  it('refuses a version longer than 32 characters', () => {
+    expect(codeOf({ ...ok, versao: 'v'.repeat(32) })).toBeNull();
+    expect(codeOf({ ...ok, versao: 'v'.repeat(33) })).toBe('too_large');
+  });
+
+  it('refuses a payload over 512 bytes (firmware MQTT_RX_MAX_PAYLOAD)', () => {
+    // A long object name pushes the url past the limit.
+    const longPath = `${'x'.repeat(400)}.bin`;
+    expect(codeOf({ ...ok, arquivo_path: longPath })).toBe('too_large');
+  });
+
+  it('measures the payload in bytes, not characters', () => {
+    // 32 two-byte characters: 32 chars (allowed) but 64 bytes in the payload.
+    const versao = 'ç'.repeat(32);
+    const pathLen = 512 - Buffer.byteLength(
+      JSON.stringify({ url: `${BASE}/storage/v1/object/public/firmware/.bin`, version: versao, sha256: SHA }),
+    );
+    const arquivo_path = `${'x'.repeat(pathLen)}.bin`;
+    expect(codeOf({ ...ok, versao, arquivo_path })).toBeNull();
+    expect(codeOf({ ...ok, versao, arquivo_path: `x${arquivo_path}` })).toBe('too_large');
+  });
+
+  it('accepts the largest payload the OTA page produces', () => {
+    // OtaPage names the object `<version sanitized>_<Date.now()>.bin`.
+    const versao = 'v'.repeat(32);
+    const { payload } = buildOtaCommand({ ...ok, versao, arquivo_path: `${versao}_1763500000000.bin` }, BASE);
+    expect(Buffer.byteLength(payload)).toBeLessThanOrEqual(512);
+  });
+
   it('checks status before everything else', () => {
     expect(codeOf({ ...ok, status: 'sucesso', device_id: null })).toBe('not_pending');
   });

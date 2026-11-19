@@ -45,6 +45,10 @@ async function publishOnce(topic: string, payload: string): Promise<void> {
     connectTimeout: PUBLISH_TIMEOUT_MS,
     reconnectPeriod: 0, // fail fast, never retry in the background
   });
+  // Permanent no-op listener: the `once('error')` below is consumed by the
+  // first error, and a second one (e.g. after a timeout, during endAsync)
+  // would otherwise be an unhandled 'error' event that crashes the worker.
+  client.on('error', () => {});
   let timer: number | undefined;
   const work = (async () => {
     await new Promise<void>((resolve, reject) => {

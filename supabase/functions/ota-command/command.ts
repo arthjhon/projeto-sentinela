@@ -7,7 +7,8 @@ export type OtaCommandCode =
   | 'bad_device'
   | 'bad_path'
   | 'bad_sha'
-  | 'no_version';
+  | 'no_version'
+  | 'too_large';
 
 export class OtaCommandError extends Error {
   code: OtaCommandCode;
@@ -29,6 +30,10 @@ export interface OtaDeploy {
 const DEVICE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const PATH_RE = /^[A-Za-z0-9._-]+\.bin$/;
 const SHA_RE = /^[0-9a-fA-F]{64}$/;
+// Firmware drops any MQTT message over MQTT_RX_MAX_PAYLOAD (config.h, 512
+// bytes) without a reply: refuse here instead of publishing a silent no-op.
+export const MAX_PAYLOAD_BYTES = 512;
+export const MAX_VERSION_CHARS = 32;
 
 export function buildOtaCommand(
   deploy: OtaDeploy,
@@ -46,16 +51,18 @@ export function buildOtaCommand(
   if (typeof deploy.versao !== 'string' || deploy.versao.trim() === '') {
     throw new OtaCommandError('no_version');
   }
+  if (deploy.versao.length > MAX_VERSION_CHARS) throw new OtaCommandError('too_large');
 
   const base = publicBase.replace(/\/+$/, '');
-  return {
-    topic: `${deploy.device_id}/ota/command`,
-    payload: JSON.stringify({
-      url: `${base}/storage/v1/object/public/firmware/${deploy.arquivo_path}`,
-      version: deploy.versao,
-      sha256: deploy.sha256,
-    }),
-  };
+  const payload = JSON.stringify({
+    url: `${base}/storage/v1/object/public/firmware/${deploy.arquivo_path}`,
+    version: deploy.versao,
+    sha256: deploy.sha256,
+  });
+  if (new TextEncoder().encode(payload).length > MAX_PAYLOAD_BYTES) {
+    throw new OtaCommandError('too_large');
+  }
+  return { topic: `${deploy.device_id}/ota/command`, payload };
 }
 
 /**
