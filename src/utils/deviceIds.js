@@ -1,7 +1,10 @@
+import { DEVICE_RE } from '../services/influxQueries';
+
 // Helpers puros (sem Supabase) para o histórico de uma bóia que trocou de
-// número de série. Os ids são interpolados em strings Flux: só passa o que
-// casa com DEVICE_ID_RE, o mesmo formato aceito pelo broker.
-export const DEVICE_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+// número de série. Cada id vira o parâmetro `device` de uma consulta nomeada
+// (/influx/q/*): só passa o que casa com DEVICE_ID_RE, o mesmo formato aceito
+// pelo broker e pelo proxy (fonte única: DEVICE_RE de influxQueries.js).
+export const DEVICE_ID_RE = DEVICE_RE;
 
 /** string | string[] -> ids válidos, sem duplicata, na ordem dada. */
 export function normalizeDeviceIds(input) {
@@ -32,17 +35,15 @@ export function applyDeviceIdChange(entry, newDeviceId) {
 }
 
 /**
- * Linha Flux que filtra `topic` pela união dos ids.
- * Contrato explícito: `null`/`undefined` = sem bóia selecionada (consulta da
- * frota inteira, sem filtro). Qualquer outro valor (string ou array, inclusive
- * vazio ou só com ids inválidos) = uma bóia foi selecionada, e falha fechado:
- * sem ids válidos o filtro não casa nada, nunca "todas as bóias".
+ * Escopo de uma consulta do histórico. Contrato explícito: `null`/`undefined`
+ * = sem bóia selecionada (frota inteira, devolve null). Qualquer outro valor
+ * (string ou array, inclusive vazio ou só com ids inválidos) = uma bóia foi
+ * selecionada, e falha fechado: devolve só os ids válidos, possivelmente [],
+ * e [] significa "nada", nunca "todas as bóias".
+ * @returns {string[]|null}
  */
-export function topicFilterFlux(input, suffix = 'sensores') {
-  if (input == null) return '';
-  const ids = normalizeDeviceIds(input);
-  if (!ids.length) return '|> filter(fn: (r) => false)';
-  return `|> filter(fn: (r) => ${ids.map(id => `r.topic == "${id}/${suffix}"`).join(' or ')})`;
+export function deviceScope(input) {
+  return input == null ? null : normalizeDeviceIds(input);
 }
 
 /**

@@ -1,5 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
-import { buildCsv, fetchHistoryCsv } from './exportHistoryCsv';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { buildCsv, mapExportSeries, mergeExportRows, fetchHistoryCsv } from './exportHistoryCsv';
+import { EXPORT_LIMIT } from '../services/influxQueries';
+
+afterEach(() => vi.unstubAllGlobals());
 
 // Linhas reais vindas do Influx (query pivotada de 30d), incluindo o outlier
 // de 85 que existe no histórico de 08/07.
@@ -46,30 +49,112 @@ describe('buildCsv (formato pt-BR para Excel)', () => {
   });
 });
 
-describe('fetchHistoryCsv union', () => {
-  const run = async (ids) => {
-    let body;
-    globalThis.fetch = vi.fn(async (_u, opts) => { body = opts.body; return { ok: true, text: async () => '' }; });
-    await fetchHistoryCsv('1h', ids, 'SM-01');
-    return body;
-  };
-  it('une os tópicos com or', async () => {
-    const q = await run(['snt-0001', 'esp_sururu']);
-    expect(q).toContain('r.topic == "snt-0001/sensores" or r.topic == "esp_sururu/sensores"');
+const mockInflux = (values) => vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+  ok: true, status: 200,
+  json: async () => ({ results: [{ statement_id: 0, series: [
+    { name: 'sensores', columns: ['time', 'temperatura', 'ph', 'turbidez'], values },
+  ] }] }),
+}));
+
+describe('mapExportSeries', () => {
+  it('mapeia linhas v1 para {time: Date, ...}, nulos viram vazio', () => {
+    const series = [{ columns: ['time', 'temperatura', 'ph', 'turbidez'],
+      values: [[1000, 27.5, 7.1, 12], [2000, null, 7.2, 13]] }];
+    expect(mapExportSeries(series)).toEqual([
+      { time: new Date(1000), temperatura: 27.5, ph: 7.1, turbidez: 12 },
+      { time: new Date(2000), temperatura: '', ph: 7.2, turbidez: 13 },
+    ]);
   });
-  it('string única continua funcionando', async () => {
-    expect(await run('esp_sururu')).toContain('r.topic == "esp_sururu/sensores")');
+});
+
+describe('fetchHistoryCsv', () => {
+  it('chama export e gera o CSV, sem truncar', async () => {
+    mockInflux([[1000, 27.5, 7.1, 12]]);
+    const out = await fetchHistoryCsv('24h', 'esp_sururu', 'SM-01');
+    expect(fetch.mock.calls[0][0]).toBe('/influx/q/export?periodo=24h&device=esp_sururu');
+    expect(out.rows).toBe(1);
+    expect(out.truncated).toBe(false);
+    expect(out.csv.split('\r\n')[1]).toContain(';SM-01;27,5;7,1;12');
   });
-  it('null (sem bóia) mantém sem filtro de tópico', async () => {
-    const q = await run(null);
-    expect(q).not.toContain('r.topic');
-    expect(q).not.toContain('fn: (r) => false');
+
+  it('reverte as linhas do servidor (mais novo primeiro) para ordem cronológica', async () => {
+    mockInflux([[3000, 1, 2, 3], [2000, 1, 2, 3], [1000, 1, 2, 3]]);
+    const out = await fetchHistoryCsv('24h', 'esp_sururu', 'SM-01');
+    const lines = out.csv.split('\r\n').slice(1);
+    const ts = lines.map(l => l.split(';')[0]);
+    expect(ts).toEqual([...ts].sort((a, b) => a.localeCompare(b)));
+    expect(new Set(ts).size).toBe(3);
   });
-  it('bóia selecionada sem id válido falha fechado', async () => {
-    for (const ids of [[], ['a"b']]) {
-      const q = await run(ids);
-      expect(q).toContain('|> filter(fn: (r) => false)');
-      expect(q).not.toContain('r.topic');
+
+  it('marca truncated quando atinge EXPORT_LIMIT', async () => {
+    mockInflux(Array.from({ length: EXPORT_LIMIT }, (_, i) => [i * 1000, 1, 2, 3]));
+    const out = await fetchHistoryCsv('30d', 'esp_sururu', 'SM-01');
+    expect(out.rows).toBe(EXPORT_LIMIT);
+    expect(out.truncated).toBe(true);
+  });
+
+  it('exige bóia e período válidos, sem chamar fetch', async () => {
+    const f = vi.fn();
+    vi.stubGlobal('fetch', f);
+    await expect(fetchHistoryCsv('24h', undefined, 'SM-01')).rejects.toThrow(/bóia/);
+    await expect(fetchHistoryCsv('9d', 'esp_sururu', 'SM-01')).rejects.toThrow(/Período/);
+    expect(f).not.toHaveBeenCalled();
+  });
+});
+
+describe('export com vários seriais (união)', () => {
+  const cols = ['time', 'temperatura', 'ph', 'turbidez'];
+  const resp = (values) => ({ ok: true, status: 200, json: async () => ({
+    results: [{ statement_id: 0, series: values.length ? [{ name: 'sensores', columns: cols, values }] : undefined }],
+  }) });
+
+  it('mergeExportRows: listas DESC por serial -> uma lista em ordem cronológica', () => {
+    const r = (t) => ({ time: new Date(t) });
+    expect(mergeExportRows([[r(5), r(3), r(1)], [r(4), r(2)]]).map(x => x.time.getTime()))
+      .toEqual([1, 2, 3, 4, 5]);
+    expect(mergeExportRows([])).toEqual([]);
+  });
+
+  it('uma consulta export por id válido, linhas unidas em ordem crescente', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp([[4000, 4, 7.4, 1], [2000, 2, 7.2, 1]]))
+      .mockResolvedValueOnce(resp([[3000, 3, 7.3, 1], [1000, 1, 7.1, 1]]));
+    vi.stubGlobal('fetch', f);
+    const out = await fetchHistoryCsv('24h', ['snt-0001', 'a b', 'esp_sururu'], 'SM-01');
+    expect(f.mock.calls.map(c => c[0])).toEqual([
+      '/influx/q/export?periodo=24h&device=snt-0001',
+      '/influx/q/export?periodo=24h&device=esp_sururu',
+    ]);
+    expect(out.rows).toBe(4);
+    expect(out.truncated).toBe(false);
+    const temps = out.csv.split('\r\n').slice(1).map(l => l.split(';')[2]);
+    expect(temps).toEqual(['1', '2', '3', '4']);
+  });
+
+  it('truncated se QUALQUER serial atingiu EXPORT_LIMIT', async () => {
+    const full = Array.from({ length: EXPORT_LIMIT }, (_, i) => [(EXPORT_LIMIT - i) * 1000, 1, 2, 3]);
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(resp([[1, 1, 2, 3]]))
+      .mockResolvedValueOnce(resp(full)));
+    const out = await fetchHistoryCsv('30d', ['snt-0001', 'esp_sururu'], 'SM-01');
+    expect(out.rows).toBe(EXPORT_LIMIT + 1);
+    expect(out.truncated).toBe(true);
+  });
+
+  it('bóia sem serial válido falha fechado: 0 linhas, sem consulta (nunca a frota)', async () => {
+    const f = vi.fn();
+    vi.stubGlobal('fetch', f);
+    for (const ids of [[], '', ['a"b']]) {
+      const out = await fetchHistoryCsv('24h', ids, 'SM-01');
+      expect(out).toMatchObject({ rows: 0, truncated: false });
     }
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('null (sem bóia) é erro: não há export da frota', async () => {
+    const f = vi.fn();
+    vi.stubGlobal('fetch', f);
+    await expect(fetchHistoryCsv('24h', null, 'SM-01')).rejects.toThrow(/bóia/);
+    expect(f).not.toHaveBeenCalled();
   });
 });

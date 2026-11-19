@@ -410,7 +410,7 @@ const SensorsPage = () => {
     if (!buoy.historyIds.length) return;
     setHistorico(prev => ({ ...prev, [buoy.id]: { loading: true, rows: prev[buoy.id]?.rows ?? [], error: null } }));
     try {
-      const rows = await fetchUltimasLeituras(buoy.historyIds, { limit: 50, start: '-30d' });
+      const rows = await fetchUltimasLeituras(buoy.historyIds, { periodo: '30d' });
       setHistorico(prev => ({ ...prev, [buoy.id]: { loading: false, rows, error: null } }));
     } catch (err) {
       setHistorico(prev => ({ ...prev, [buoy.id]: { loading: false, rows: [], error: err.message } }));

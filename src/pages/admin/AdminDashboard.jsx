@@ -131,13 +131,16 @@ const AdminDashboard = () => {
     setExporting(true);
     setExportError(null);
     try {
-      const { csv, rows } = await fetchHistoryCsv(period, focusedHistoryIds, focusedId);
+      const { csv, rows, truncated } = await fetchHistoryCsv(period, focusedHistoryIds, focusedId);
       if (rows === 0) {
         setExportError(`Sem leituras em ${PERIODS[period].label} para exportar.`);
         return;
       }
       const stamp = new Date().toISOString().slice(0, 10);
       downloadCsv(csv, `sentinela_${focusedId ?? 'frota'}_${period}_${stamp}.csv`);
+      if (truncated) {
+        setExportError('Exportação truncada: o período tem mais leituras que o limite do arquivo, e as mais antigas ficaram de fora. Escolha um período menor.');
+      }
     } catch (err) {
       setExportError(err.message);
     } finally {

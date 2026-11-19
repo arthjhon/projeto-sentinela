@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useMockMode } from '../config/mockData';
 import { FLEET } from '../config/fleet';
+import { fetchNamed, rowsOf } from '../services/influxql';
 
 // "Dias monitorados" (5.3). Dois modos, conforme o toggle de dados simulados:
 //
@@ -11,9 +12,6 @@ import { FLEET } from '../config/fleet';
 //
 // Assim, ao desligar o mock (bóia em operação), o número passa a refletir o
 // dado real sem mais nenhuma mudança de código.
-
-const ORG = import.meta.env.VITE_INFLUX_ORG;
-const BUCKET = import.meta.env.VITE_INFLUX_BUCKET;
 
 const SM01 = FLEET.find(b => b.id === 'SM-01');
 
@@ -30,38 +28,19 @@ function diasDesde(date) {
   return Math.max(0, Math.floor((Date.now() - date.getTime()) / UM_DIA));
 }
 
-/** Primeira leitura real gravada, via o proxy /influx (token injetado no servidor). */
-async function fetchPrimeiraLeitura(signal) {
-  const flux = `
-from(bucket: "${BUCKET}")
-  |> range(start: -3650d)
-  |> filter(fn: (r) => r._measurement == "sensores")
-  |> first()
-  |> keep(columns: ["_time"])`;
-
-  const res = await fetch(`/influx/api/v2/query?org=${encodeURIComponent(ORG)}`, {
-    method: 'POST',
-    signal,
-    headers: { 'Content-Type': 'application/vnd.flux', Accept: 'application/csv' },
-    body: flux,
-  });
-  if (!res.ok) throw new Error(`Influx ${res.status}`);
-
-  const csv = await res.text();
-  const linhas = csv.trim().split('\n').filter(l => l && !l.startsWith('#'));
-  if (linhas.length < 2) return null;
-
-  const header = linhas[0].split(',').map(h => h.trim());
-  const iTime = header.indexOf('_time');
-  if (iTime === -1) return null;
-
-  // first() devolve uma linha por série; a mais antiga é a que interessa
+/** Data da leitura mais antiga em uma série de first() ([time, first]); null se vazia. */
+export function parsePrimeira(series) {
   let earliest = null;
-  for (const l of linhas.slice(1)) {
-    const t = new Date(l.split(',')[iTime]);
+  for (const row of rowsOf(series)) {
+    const t = new Date(row.time);
     if (!Number.isNaN(t.getTime()) && (!earliest || t < earliest)) earliest = t;
   }
   return earliest;
+}
+
+/** Primeira leitura real gravada, via a consulta nomeada /influx/q/primeira. */
+async function fetchPrimeiraLeitura(signal) {
+  return parsePrimeira(await fetchNamed('primeira', {}, { signal }));
 }
 
 /**

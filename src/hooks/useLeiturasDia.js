@@ -1,20 +1,20 @@
 import { useState, useEffect } from 'react';
+import { fetchNamed } from '../services/influxql';
 
 // Leituras gravadas no InfluxDB nas últimas 24h, somando todas as bóias.
 // Conta um campo (ph) por mensagem de /sensores — cada publicação do firmware
-// é uma leitura. Mesmo proxy /influx do useInfluxHistory (token no servidor).
+// é uma leitura. Consulta nomeada /influx/q/leituras-24h (token no servidor).
 
-const ORG = import.meta.env.VITE_INFLUX_ORG;
-const BUCKET = import.meta.env.VITE_INFLUX_BUCKET;
-
-/** Extrai o `_value` da única linha de um count() agrupado (CSV anotado). */
-export function parseCountCsv(csv) {
-  const linhas = String(csv).trim().split('\n').filter(l => l && !l.startsWith('#'));
-  if (linhas.length < 2) return 0; // sem série na janela = nenhuma leitura
-  const header = linhas[0].split(',').map(h => h.trim());
-  const iValue = header.indexOf('_value');
-  if (iValue === -1) return null;
-  const n = Number(linhas[1].split(',')[iValue]);
+/**
+ * Lê o count da consulta leituras-24h ([time, count]). Sem série na janela
+ * = nenhuma leitura (0); formato inesperado = null (falha, não zero).
+ */
+export function parseCount(series) {
+  if (!series.length) return 0;
+  const iCount = series[0].columns.indexOf('count');
+  const raw = series[0].values[0]?.[iCount];
+  if (iCount === -1 || raw == null) return null;
+  const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -24,23 +24,10 @@ export function useLeiturasDia() {
 
   useEffect(() => {
     const ctrl = new AbortController();
-    const flux = `
-from(bucket: "${BUCKET}")
-  |> range(start: -24h)
-  |> filter(fn: (r) => r._measurement == "sensores" and r._field == "ph")
-  |> group()
-  |> count()`;
-
     (async () => {
       try {
-        const res = await fetch(`/influx/api/v2/query?org=${encodeURIComponent(ORG)}`, {
-          method: 'POST',
-          signal: ctrl.signal,
-          headers: { 'Content-Type': 'application/vnd.flux', Accept: 'application/csv' },
-          body: flux,
-        });
-        if (!res.ok) throw new Error(`Influx ${res.status}`);
-        setState({ leituras: parseCountCsv(await res.text()), carregando: false });
+        const series = await fetchNamed('leituras-24h', {}, { signal: ctrl.signal });
+        setState({ leituras: parseCount(series), carregando: false });
       } catch (err) {
         if (err.name !== 'AbortError') setState({ leituras: null, carregando: false });
       }
