@@ -566,7 +566,7 @@ eco) e entra no container por `docker exec -e INFLUX_TOKEN`, nunca na linha de c
 | --- | --- | --- |
 | `telegraf` | write `iot` | `INFLUX_TELEGRAF_TOKEN` no `.env` |
 | `worker` | read `iot`; write `externos`, `qualidade` | `INFLUX_WORKER_TOKEN` no `.env` |
-| `nginx-publico` | read `iot` | `/etc/nginx/sentinela-influx-token.conf` (só se o proxy for ativado, passo 14b) |
+| `nginx-publico` | read `iot` | `/etc/nginx/sentinela-influx-token.conf` (só se o proxy for ativado, passo 14b; read `iot` basta para InfluxQL) |
 | `backup` | operator (exigido por `influx backup`) | `/usr/local/etc/sentinela/influx-backup.token` |
 
 ```bash
@@ -651,8 +651,9 @@ com ~96 x dias por estação com dados (passo de 15 min; 39800100 hoje sem dados
 ### 14. nginx
 
 O vhost versionado sai com o proxy `/influx/` **desligado**: todo `/influx/` responde 404 até o
-Arthur decidir a mitigação do SSRF (passo 14a). Os blocos do proxy ficam em
-`infra/nginx/sentinela-influx-proxy.conf`, incluídos só se estiverem em `/etc/nginx/sentinela.d/`.
+proxy InfluxQL ser ativado (passo 14b; não depende mais de decisão, o SSRF do Flux foi fechado, ver
+14a). Os blocos do proxy ficam em `infra/nginx/sentinela-influx-proxy.conf`, incluídos só se
+estiverem em `/etc/nginx/sentinela.d/`.
 
 ```bash
 readlink -f /etc/nginx/sites-enabled/sentinela.conf          # arquivo real do vhost
@@ -670,7 +671,7 @@ sudo install -o root -g root -m 644 infra/nginx/sentinela.conf "$(readlink -f /e
 sudo install -o root -g root -m 644 infra/nginx/sentinela-http.conf /etc/nginx/conf.d/sentinela-http.conf
 sudo nginx -t && sudo systemctl reload nginx
 H='Host: sentinela.arthlabs.dev'; U=http://127.0.0.1:8088/influx
-curl -s -o /dev/null -w '%{http_code}\n' -H "$H" -X POST "$U/api/v2/query?org=sentinela"   # 404 (desligado)
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/query?db=iot&q=SHOW%20MEASUREMENTS"   # 404 (desligado)
 curl -s -o /dev/null -w '%{http_code}\n' -H "$H" http://127.0.0.1:8088/                    # 200
 ```
 
@@ -680,59 +681,167 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "$H" http://127.0.0.1:8088/         
 - Rollback: `sudo install -m 644 /root/sentinela.conf.bak-<data> <arquivo real>`,
   `sudo rm /etc/nginx/conf.d/sentinela-http.conf`, `sudo nginx -t && sudo systemctl reload nginx`.
 
-### 14a. Proxy `/influx/` — risco de SSRF
+### 14a. Proxy `/influx/` (consultas InfluxQL nomeadas, só leitura)
 
-Qualquer visitante que alcance `POST /influx/api/v2/query` executa **Flux** no InfluxDB, e o Flux
-tem pacotes de rede. Mesmo com o token `nginx-publico` (só leitura de `iot`), uma consulta pode:
+O proxy **não aceita consulta livre**. Cada endpoint é um modelo InfluxQL fixo, preenchido só com
+parâmetros que o nginx valida (`map` em `infra/nginx/sentinela-http.conf`); parâmetro ausente ou
+inválido responde 400. Todos são `GET`; resposta = JSON do `/query` do InfluxDB (`epoch=ms`).
 
-- buscar URLs a partir do container (`http/requests`): serviços em loopback do container, a rede
-  docker da stack, o host e a internet;
-- abrir conexões de banco (`sql.from(driverName: "postgres", dataSourceName: ...)`) para qualquer
-  host alcançável, inclusive o Postgres do Supabase se houver rota.
+| Endpoint | Parâmetros | Consulta |
+| --- | --- | --- |
+| `/influx/q/history` | `campo` = ph\|turbidez\|temperatura; `periodo` = 1h\|24h\|7d\|30d; `device` opcional | `mean(campo)` por janela (1h/30s, 24h/10m, 7d/1h, 30d/6h), `fill(none)` |
+| `/influx/q/ultimas` | `device`; `periodo` = 24h\|30d | últimas 50 leituras (`turbidez, ph, temperatura`), mais recentes primeiro |
+| `/influx/q/leituras-24h` | nenhum | `count(ph)` nas últimas 24 h |
+| `/influx/q/primeira` | nenhum | `first(ph)` de todo o histórico |
+| `/influx/q/export` | `device`; `periodo` = 1h\|24h\|7d\|30d | leituras brutas (`temperatura, ph, turbidez`) de um device, as 600000 mais recentes (`ORDER BY time DESC LIMIT 600000`, o cliente reordena); 1 por vez |
 
-Prova (reproduzida localmente em `influxdb:2.7.12` com token só-leitura; devolve o corpo do
-`/health`):
+`device` = `[A-Za-z0-9_-]{1,40}` (vira o `topic` `<device>/sensores`; sem aspas nem contrabarra,
+então o modelo não precisa de escape). Todo o resto de `/influx/` (incluindo `/influx/query` e
+`/influx/api/v2/*`) responde 404; método diferente de GET responde 403. `GET /influx/health` fica.
+Os mesmos modelos existem em `src/services/influxQueries.js` (usado pelo proxy de desenvolvimento
+do Vite); se um mudar, o outro muda junto.
+
+**Por que não `q` livre.** Duas rodadas de revisão mostraram que consulta livre não dá para
+proteger no nginx:
+
+- Flux (`POST /api/v2/query`): `http/requests` e `sql.from` fazem o InfluxDB buscar URLs e abrir
+  conexões de banco (SSRF para loopback, rede da stack, host, internet, Postgres do Supabase).
+- InfluxQL livre não tem função de rede, mas **não passa** pelo controlador de consultas do Flux
+  (`INFLUXD_QUERY_*` não valem). Um único GET anônimo de ~1,8 KB derruba o container (OOM com
+  `mem_limit: 768m`): `SELECT * FROM sensores,sensores,...` repetido, dezenas de subqueries,
+  várias instruções separadas por `;`, ou `GROUP BY time(1s)` desde `time > 0`.
+  `INFLUXD_INFLUXQL_MAX_SELECT_SERIES` não pega `FROM` repetido (é a mesma série), e
+  `..._MAX_SELECT_POINT` é aceito mas **não é aplicado** no 2.7.12. Uma lista de regex sobre `q`
+  não é confiável (o Go aceita `%53ELECT` e outras codificações).
+
+Com modelos fixos essas formas não podem ser expressas. O que o nginx garante (cada item tem
+teste em `infra/tests/influx-proxy.test.sh`):
+
+- A URL do upstream é montada pelo nginx; a query string do cliente nunca é repassada (`u`/`p`
+  legados valem **antes** do `Authorization` no InfluxDB 2.x: repassá-los deixaria qualquer token
+  vazado ser usado pela internet). `q`, `db`, `rp`, `epoch`, `chunked` e o resto são ignorados.
+- O `Authorization` do cliente é sobrescrito pelo token `nginx-publico` (só leitura de `iot`).
+- Corpo da requisição nunca é repassado; corpo acima de 1 KiB dá 413.
+- Escrita/DDL (`INTO`, `DROP`, `CREATE`, `DELETE`) não são expressáveis; o token só-leitura é a
+  segunda camada.
+
+**Custo.** `INFLUXD_INFLUXQL_MAX_SELECT_BUCKETS=1000` e `..._SERIES=100` (efetivos, verificados),
+`GOMEMLIMIT=500MiB` (`infra/stack/compose.yml`); no nginx `limit_req` 5 r/s por IP (burst 10) e
+`limit_conn` (4 consultas simultâneas no total, 3 por IP, 1 `export` por vez; excesso → 429).
+Leitura crua só existe em `ultimas` (LIMIT 50) e `export` (um device, no máximo 30 dias, as 600000 mais recentes).
+Todas as respostas dos endpoints nomeados levam `Cache-Control: no-store`.
+Medido: 30 dias de uma bóia a 5 s com 3 campos (518 mil linhas, 14 MB) pesam ~315 MB acima da base
+de ~110 MB.
+
+**Risco por volume do topic.** O custo do `export` depende do volume de **um** topic, e esse volume
+pode ser inflado de fora: o Telegraf aceita `+/sensores` e a credencial MQTT dos dispositivos é
+pública (o bundle a carrega) enquanto a ACL do broker não for fechada. Medido a 768m +
+`GOMEMLIMIT`: 2,07 M de linhas em um topic → 200 (564 MiB); 4,67 M → OOM. Por isso o modelo tem
+`LIMIT 600000` (30 dias a 5 s = 518 mil linhas, com folga; com `ORDER BY time DESC`, se truncar, perde as leituras mais antigas, não as recentes): o mesmo topic de 4,67 M linhas passa a
+responder 200, 16,7 MB, 456 MiB, sem OOM (regressão em `infra/tests/influx-proxy.test.sh`, que
+semeia 4,2 M de linhas). O `LIMIT` é a contenção; **a correção de raiz é fechar a ACL do MQTT**
+(topo deste runbook), para que só o dispositivo certo publique no próprio topic. Os outros modelos
+agregam (`history`, `leituras-24h`, `primeira`) ou têm `LIMIT 50` (`ultimas`), então a **memória**
+delas é limitada pelos tetos de volume e não cresce com o número de leituras. O `limit_conn
+influx_export 1` mantém um export por vez.
+
+**Risco por cardinalidade (`MAX_SELECT_SERIES=100`).** O teto de séries é um limite de
+**cardinalidade**, não de volume: ele conta todas as séries de `sensores` (uma por `topic`) nos
+shards do intervalo consultado. Os modelos agregados da frota (`primeira`, sem limite de tempo e
+com retenção infinita; `leituras-24h` e `history` sem `device`) falham quando o total passa de 100
+séries, seja por crescimento legítimo da frota, seja por inundação de topics: com a credencial MQTT
+pública, qualquer um que publique em 101 topics `X/sensores` distintos derruba essas consultas, e
+`primeira` falha para sempre (a série nunca sai do intervalo). Sintoma: a consulta devolve
+HTTP 200 com `{"results":[{"statement_id":0,"error":"max-select-series limit exceeded: (101/100)"}]}`
+(mensagem observada no `influxdb:2.7.12`; o painel mostra a frota sem dados). O valor `100` está
+**provisório**: precisa da medição de §14b antes da ativação. A correção de raiz é a ACL do HiveMQ
+(só o dispositivo certo publica no próprio topic; pré-requisito no topo deste runbook).
+Contenção enquanto a ACL não fecha: limpar os topics falsos (§14b, "Limpeza").
+
+**DBRP.** A API InfluxQL precisa mapear `db`/`rp` para um bucket. No `influxdb:2.7.12` o mapeamento
+`iot`/`autogen` já existe de forma virtual (somente leitura), então `db=iot` funciona sem nada
+extra (verificado em container descartável). O `influx-bootstrap.sh` cria mesmo assim o mapeamento
+explícito (`influx v1 dbrp create --db iot --rp autogen --bucket-id <iot> --default`, idempotente:
+"exists" se já houver), para não depender desse comportamento em outras versões. Conferir:
+`docker exec influxdb influx v1 dbrp list --org sentinela` (com `INFLUX_TOKEN` de admin).
+
+Teste ao vivo (InfluxDB com `mem_limit` 768m e os limites do `compose.yml`, nginx 1.22.1, token
+só-leitura real; imagens fixadas, tudo descartável): `bash infra/tests/influx-proxy.test.sh`.
+
+### 14b. Ativar o proxy
+
+Pré-requisito: `influx-bootstrap.sh` já rodado (cria o token `nginx-publico` e o DBRP) e os limites
+InfluxQL do `compose.yml` implantados pelo pipeline: deploy do CI ou
+`sudo /usr/local/sbin/stack-deploy.sh none` (recria o InfluxDB; os dados ficam no volume e o
+Telegraf bufferiza as escritas). Não usar `docker compose up` direto: fora do `stack-deploy.sh` o
+projeto/`.env` podem ser outros e criar um segundo `influxdb` sobre o mesmo volume. Conferir:
+`sudo docker inspect <container-influxdb> | grep INFLUXQL` (id: `docker ps -q --filter
+label=com.docker.compose.project=sentinela-stack --filter label=com.docker.compose.service=influxdb`).
+`sentinela-http.conf` instalado (passo 14). ACL do MQTT fechada (topo deste runbook) ou, até lá, a
+medição abaixo.
+
+**Medir a cardinalidade antes de ativar** (com o token de **operador**, direto no container, nunca
+pelo proxy público; o token vem de `read -rs`, não fica no histórico):
 
 ```bash
-curl -s -X POST 'https://sentinela.arthlabs.dev/influx/api/v2/query?org=sentinela' \
-  -H 'Content-Type: application/vnd.flux' --data 'import "http/requests"
-import "array"
-r = requests.get(url: "http://127.0.0.1:8086/health")
-array.from(rows: [{status: r.statusCode, body: string(v: r.body)}])'
+C=$(sudo docker ps -q --filter label=com.docker.compose.project=sentinela-stack --filter label=com.docker.compose.service=influxdb)
+read -rs INFLUX_TOKEN; export INFLUX_TOKEN
+# Flux: não passa pelo teto de séries, então responde mesmo acima de 100 (_value = nº de séries)
+sudo docker exec -e INFLUX_TOKEN "$C" influx query -o sentinela \
+  'import "influxdata/influxdb" influxdb.cardinality(bucket: "iot", start: -30d, predicate: (r) => r._measurement == "sensores")'
+# InfluxQL (API v1): a mesma contagem; acima do teto devolve o próprio erro max-select-series
+sudo docker exec "$C" curl -s -G http://localhost:8086/query -H "Authorization: Token $INFLUX_TOKEN" \
+  --data-urlencode db=iot --data-urlencode 'q=SHOW SERIES EXACT CARDINALITY FROM sensores'
+# quais topics existem (funciona mesmo acima do teto)
+sudo docker exec "$C" curl -s -G http://localhost:8086/query -H "Authorization: Token $INFLUX_TOKEN" \
+  --data-urlencode db=iot --data-urlencode 'q=SHOW TAG VALUES FROM sensores WITH KEY = "topic"'
 ```
 
-O que já existe: limites de consulta no `compose.yml` (`INFLUXD_QUERY_CONCURRENCY=4`,
-`INFLUXD_QUERY_QUEUE_SIZE=10`, `INFLUXD_QUERY_MEMORY_BYTES=64 MiB`,
-`INFLUXD_QUERY_MAX_MEMORY_BYTES=256 MiB`, confirmados em `/api/v2/config` e no log de start), e o
-proxy só aceita `POST` com corpo de até 16 KiB e 5 r/s por IP. Isso limita o custo de uma consulta
-abusiva, **não** o SSRF. Opções (decisão do Arthur):
+Regra de decisão: se a contagem estiver perto de 100 (ou for esperado crescer além), ou subir
+`INFLUXD_INFLUXQL_MAX_SELECT_SERIES` depois de medir a memória (cada série a mais custa memória em
+`primeira`/`history` da frota; repetir a medição de §14a), ou limitar `primeira` no tempo. Não
+ativar com o valor atual sem essa medição. Os topics que não são dispositivos reais indicam
+inundação.
 
-| Opção | O que é | Prós | Contras |
-| --- | --- | --- | --- |
-| **(a) recomendada** | Migrar as leituras do frontend para InfluxQL v1 (`/query`) com mapeamento DBRP do bucket `iot`; o nginx expõe só `GET /influx/query` com `db` fixo | InfluxQL não tem pacotes de rede: elimina o SSRF na origem | Mudança no `useInfluxHistory` e criação do DBRP (`influx v1 dbrp create`) |
-| (b) | Firewall de saída para o container do InfluxDB (cadeia `DOCKER-USER`: só respostas a conexões estabelecidas) | Sem mudar o frontend | Não cobre o loopback do próprio container nem a rede da stack; regra de host fora do compose (drift) |
-| (c) | Aceitar o risco | Nada a fazer | Visitante anônimo usa o InfluxDB como cliente HTTP/SQL de dentro da VM |
+**Limpeza de topics falsos** (apaga dados: conferir o topic com `SHOW TAG VALUES` antes, fazer
+backup, §15; repetir por topic):
 
-### 14b. Ativar o proxy (só depois da decisão acima)
+```bash
+sudo docker exec -e INFLUX_TOKEN "$C" influx delete --org sentinela --bucket iot \
+  --start 1970-01-01T00:00:00Z --stop "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --predicate '_measurement="sensores" AND topic="X/sensores"'
+unset INFLUX_TOKEN
+```
+
+(Usa o mesmo `INFLUX_TOKEN` exportado acima; sintaxe verificada no `influxdb:2.7.12`: remove a série
+e a contagem volta ao normal. Enquanto a ACL do HiveMQ não fechar, o atacante pode republicar.)
 
 ```bash
 sudo install -o root -g root -m 600 /dev/null /etc/nginx/sentinela-influx-token.conf
 sudoedit /etc/nginx/sentinela-influx-token.conf    # set $influx_token "<token nginx-publico>";
+sudo install -o root -g root -m 644 infra/nginx/sentinela-http.conf /etc/nginx/conf.d/sentinela-http.conf
 sudo install -o root -g root -m 644 infra/nginx/sentinela-influx-proxy.conf /etc/nginx/sentinela.d/influx-proxy.conf
 sudo nginx -t && sudo systemctl reload nginx
 H='Host: sentinela.arthlabs.dev'; U=http://127.0.0.1:8088/influx
-curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/health"                       # 200
-curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/api/v2/query?org=sentinela"   # 403 (GET)
-curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/api/v2/buckets"              # 404
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/health"                                          # 200
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/q/history?campo=ph&periodo=1h"                   # 200
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/q/history?campo=ph&periodo=2h"                   # 400
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/q/primeira"                                      # 200
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" -G "$U/query" --data-urlencode 'q=SHOW DATABASES'    # 404
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" -X POST "$U/api/v2/query?org=sentinela"              # 404
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/api/v2/buckets"                                  # 404
 ```
 
 Desativar: `sudo rm /etc/nginx/sentinela.d/influx-proxy.conf && sudo nginx -t && sudo systemctl reload nginx`.
 
-- Só `POST /influx/api/v2/query` e `GET /influx/health` chegam ao InfluxDB; o resto de `/influx/` é
-  404. Corpo máximo 16 KiB; `limit_req` 5 r/s por IP com burst 10 (429 acima disso).
-- Validado localmente com `nginx:1.22.1` (versão do Debian 12): desligado, todo `/influx/` 404 e o
-  SPA 200; ligado, POST 200, GET 403, buckets/write 404, corpo de 20 KB 413, 25 requisições do mesmo
-  IP → 6 x 429, outro IP logo depois → 200, cabeçalhos `X-Influxdb-*` ocultos.
+- Só os 5 endpoints `/influx/q/*` e `GET /influx/health` chegam ao InfluxDB; o resto de `/influx/` é
+  404 (ou 403/400/413/429, conforme acima).
+- Validado localmente com `nginx:1.22.1` (versão do Debian 12) e `influxdb:2.7.12`
+  (`infra/tests/influx-proxy.test.sh`): cada endpoint devolve os valores esperados sobre 30 dias de
+  dados semeados; parâmetros inválidos (aspas, barra, `;`, período fora da lista, device longo) 400;
+  `/influx/query`, Flux e `/api/v2/*` 404; `q`, `u`/`p` e `Authorization` do cliente ignorados; as
+  formas de OOM da revisão passadas como `q` não têm efeito; 4 exports simultâneos de 30 dias dão
+  1 x 200 e 3 x 429; o InfluxDB continua de pé.
 
 ### 15. Backup (timer systemd)
 

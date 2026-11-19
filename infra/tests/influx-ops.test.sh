@@ -60,6 +60,11 @@ perms() {
 [ "$(perms worker)" = '["read:iot","write:externos","write:qualidade"]' ] && pass "worker perms" || fail "worker perms $(perms worker)"
 [ "$(perms nginx-publico)" = '["read:iot"]' ] && pass "nginx-publico perms" || fail "nginx perms $(perms nginx-publico)"
 
+dbrp=$(ix v1 dbrp list --db iot --json | sed -n '/^\]/q;p')
+[ "$(jq -r '[.[] | select(.database == "iot" and .retention_policy == "autogen" and .virtual == false and .default == true)] | length' <<<"$dbrp]" 2>/dev/null)" = 1 ] \
+  && pass "explicit DBRP iot/autogen" || fail "dbrp: $dbrp"
+[[ $out1 == *"dbrp iot/autogen: created"* ]] && pass "bootstrap run 1 created the DBRP" || fail "dbrp not created on run 1"
+
 q() { INFLUX_TOKEN=$1 docker exec -e INFLUX_TOKEN -e INFLUX_ORG=sentinela "$ctr" influx query "from(bucket:\"$2\") |> range(start:-1m)" >/dev/null 2>&1; }
 q "$t_ngx" iot && pass "nginx token reads iot" || fail "nginx token cannot read iot"
 q "$t_ngx" qualidade && fail "nginx token reads qualidade" || pass "nginx token denied on qualidade"
@@ -70,7 +75,7 @@ out2=$(SENTINELA_ENV_FILE="$tmp/env" bash "$bin/influx-bootstrap.sh" </dev/null 
 grep -q 'NEW TOKEN' <<<"$out2" && fail "run 2 created tokens" || pass "run 2 created nothing"
 leak=0; for t in "$admin" "$t_tel" "$t_wrk" "$t_ngx" "$t_bak"; do [[ $out2 == *"$t"* ]] && leak=1; done
 [ "$leak" -eq 0 ] && pass "run 2 prints no existing token" || fail "run 2 leaked a token"
-[ "$(grep -c ': exists' <<<"$out2")" -eq 6 ] && pass "run 2 reports 6 existing objects" || fail "run 2: $out2"
+[ "$(grep -c ': exists' <<<"$out2")" -eq 7 ] && pass "run 2 reports 7 existing objects" || fail "run 2: $out2"
 [ "$(ix auth list --json | jq length)" -eq 5 ] && pass "no duplicate tokens" || fail "duplicate tokens"
 
 # ---- backup ---------------------------------------------------------------------

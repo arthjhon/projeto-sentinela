@@ -22,6 +22,17 @@ services:
       INFLUXD_QUERY_QUEUE_SIZE: "10"
       INFLUXD_QUERY_MEMORY_BYTES: "67108864"
       INFLUXD_QUERY_MAX_MEMORY_BYTES: "268435456"
+      # InfluxQL (the public /influx/q/* named queries) does NOT go through the Flux
+      # controller above. Verified on 2.7.12: BUCKETS and SERIES are enforced
+      # (a GROUP BY time(1s) from time > 0 is refused instead of OOM-killing
+      # the container); POINT is accepted but not enforced for any query shape.
+      # BUCKETS: largest real GROUP BY time is 168 buckets. SERIES: fleet is
+      # a handful of devices. GOMEMLIMIT makes the Go GC work harder before the
+      # 768m cgroup limit (3 concurrent 30-day raw exports survive with it).
+      INFLUXD_INFLUXQL_MAX_SELECT_BUCKETS: "1000"
+      INFLUXD_INFLUXQL_MAX_SELECT_POINT: "2000000"
+      INFLUXD_INFLUXQL_MAX_SELECT_SERIES: "100"
+      GOMEMLIMIT: 500MiB
     mem_limit: 768m
     logging:
       driver: local

@@ -3,6 +3,9 @@
 # after the first stack deploy). Creates what is missing, skips what exists:
 #
 #   buckets  externos, qualidade        (infinite retention; iot comes from setup)
+#   dbrp     iot -> iot/autogen         (InfluxQL v1 mapping used by the /influx/
+#                                        proxy; 2.7 also maps it virtually, the
+#                                        explicit mapping is kept for other versions)
 #   tokens   telegraf       write iot
 #            worker         read iot; write externos, qualidade
 #            nginx-publico  read iot
@@ -88,6 +91,16 @@ for b in iot externos qualidade; do
   ret=$(jq -r --arg n "$b" '[.[] | select(.name == $n)][0].retentionRules[0].everySeconds // 0' <<<"$buckets")
   [ "$ret" = 0 ] || echo "WARNING: bucket $b retention is ${ret}s (expected infinite)"
 done
+
+# Explicit DBRP for the InfluxQL proxy (db=iot). Create; a 422 "another DBRP
+# mapping ... exists" means it is already there.
+if out=$(influx v1 dbrp create --db iot --rp autogen --bucket-id "$iot" --default 2>&1); then
+  echo "dbrp iot/autogen: created"
+elif [[ $out == *"another DBRP mapping"* ]]; then
+  echo "dbrp iot/autogen: exists"
+else
+  die "cannot create DBRP for iot: $out"
+fi
 
 # Descriptions only; the list (which contains tokens) never leaves this process.
 auths=$(influx auth list | jq -c '[.[] | {description, status}]') || die "cannot list tokens"
