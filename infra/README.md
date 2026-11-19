@@ -989,24 +989,74 @@ fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já e
    antes; aplicar `supabase/migrations/20261119_firmware_deploys_path.sql`; publicar a função
    `ota-command` com as quatro variáveis (seção "Edge Function"). Assim os testes de bancada de
    OTA e rollback do firmware 5.1.0 (`BENCH.md` do firmware) já rodam contra o broker novo.
-8. **Boia: gravar o 5.1.0 por USB → `provision-board.py provision` → `snt-0001` → BENCH → limpar
-   retidos.** Existe **uma** placa física (a boia, hoje `esp_sururu`). O 5.1.0 não tem mais
-   `DEVICE_ID` nem `MQTT_PASSWORD` no `secrets.h`: a identidade vem da NVS, gravada pelo script
-   (seção "Provisionar placa"). O 5.0.x só fala com o HiveMQ e não há OTA para o 5.1.0: é USB.
+8. **Boia: gravar o 5.1.0 por USB → `provision-board.py provision` → `snt-0001` → trocar o
+   `deviceId` do SM-01 em produção → fechar os eventos de saúde do `esp_sururu` → BENCH.** Existe
+   **uma** placa física (a boia, hoje `esp_sururu`). O 5.1.0 não tem mais `DEVICE_ID` nem
+   `MQTT_PASSWORD` no `secrets.h`: a identidade vem da NVS, gravada pelo script (seção "Provisionar
+   placa"). O 5.0.x só fala com o HiveMQ e não há OTA para o 5.1.0: é USB.
    1. Gravar o 5.1.0 por USB na boia.
-   2. `provision-board.py provision --port <COM>`: a primeira placa recebe `snt-0001` (vira o SM-01
-      no passo 11).
-   3. `BENCH.md` do 5.1.0 com a boia no broker novo. Os itens que usam o painel exigem o
+   2. `provision-board.py provision --port <COM>`: a primeira placa recebe `snt-0001` (o SM-01).
+   3. **Logo em seguida**, trocar o `deviceId` do SM-01 de `esp_sururu` para `snt-0001` no registro
+      de **produção** (`app_settings.map_buoys`). A Edge Function `ota-command` acha a placa por esse
+      campo (`findDeviceId(reg, boia_id)`): sem a troca, os OTAs de bancada do item 5 iriam para
+      `esp_sururu/ota/command`. Backup da setting antes (na VM; guardar o caminho impresso):
+
+      ```bash
+      umask 077; F=~/map_buoys-$(date -u +%Y%m%dT%H%M%SZ).json
+      sudo -n docker exec supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At \
+        -c "SELECT value FROM public.app_settings WHERE key = 'map_buoys'" > "$F" \
+        && test -s "$F" && echo "backup: $F"
+      ```
+
+      Depois, no painel de produção (o atual), editar o SM-01 e trocar o campo Device ID para
+      `snt-0001`. O painel atual regrava a entrada só com `codigo`, `nome`, `lagoa`, `lat`, `lng` e
+      `deviceId`: se o backup mostrar outras chaves na entrada do SM-01, trocar pelo SQL abaixo, que
+      só mexe no `deviceId` e mantém o resto (imprime a entrada resultante):
+
+      ```bash
+      sudo -n docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+      UPDATE public.app_settings s
+         SET value = (SELECT jsonb_agg(CASE WHEN e->>'codigo' = 'SM-01'
+                                            THEN e || '{"deviceId": "snt-0001"}'
+                                            ELSE e END ORDER BY ord)
+                        FROM jsonb_array_elements(s.value) WITH ORDINALITY AS t(e, ord)),
+             updated_at = now()
+       WHERE s.key = 'map_buoys' AND jsonb_typeof(s.value) = 'array'
+      RETURNING (SELECT e FROM jsonb_array_elements(s.value) e WHERE e->>'codigo' = 'SM-01') AS sm01;
+      SQL
+      ```
+
+      O painel atual não conhece `deviceIdsAnteriores`: **daqui até o passo 11 o painel de produção
+      mostra o SM-01 com histórico vazio** (as leituras antigas seguem no InfluxDB sob `esp_sururu`;
+      nada se perde) e sem dados ao vivo (ele ainda lê o HiveMQ). O `esp_sururu` volta ao histórico
+      no passo 11.
+   4. **Logo depois da troca**, fechar os `sensor_health_events` abertos do `esp_sururu` (só agora:
+      antes disso o worker ainda lista `esp_sururu` pelo registro e reabriria os eventos).
+      Preservando o motivo original, com o `SELECT` antes do `UPDATE`:
+
+      ```bash
+      sudo -n docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+      SELECT id, sensor, estado, motivo, inicio FROM public.sensor_health_events
+       WHERE device_id = 'esp_sururu' AND fim IS NULL;
+      UPDATE public.sensor_health_events
+         SET fim = now(), motivo = concat_ws(' | ', motivo, 'encerrado: migração para snt-0001')
+       WHERE device_id = 'esp_sururu' AND fim IS NULL;
+      SQL
+      ```
+   5. `BENCH.md` do 5.1.0 com a boia no broker novo. Os itens que usam o painel exigem o
       **frontend novo rodando local** (`npm run dev` na workstation, com
       `VITE_MQTT_BROKER_URL=wss://mqtt.arthlabs.dev/mqtt` no `.env.local`, contra o Supabase de
       produção): o painel em produção ainda é o atual. Conferir com uma assinatura anônima no WSS
       (`mqtt_probe.py --url wss://mqtt.arthlabs.dev/mqtt --sub snt-0001/status --receive
       --expect allowed`): `snt-0001/availability` = `online`, `snt-0001/status` com `firmware 5.1.0`.
-   4. Limpar os retidos de bancada com a credencial dela: `mosquitto_pub -r -n` em
-      `snt-0001/ota/status` (e em `snt-0001/availability`, se sobrar de teste), para o card do SM-01
-      não herdar estado de bancada.
-9. **Do USB ao passo 11** o painel de produção (id `esp_sururu`) mostra a boia offline e o InfluxDB
-   fica sem pontos do id antigo até o passo 10: fazer 8 → 10 → 11 em sequência.
+
+   Os retidos de bancada **não** são limpos: não há como publicar como `snt-0001` sem a senha da
+   placa, que só existe na NVS dela (rotacionar com `mqtt-user.sh add snt-0001` para isso deixaria a
+   placa sem conectar; ver "Rotação da senha de uma placa"). O `snt-0001/availability` é reescrito
+   pela própria placa a cada conexão, e o OTA de teste do passo 11 sobrescreve o
+   `snt-0001/ota/status` retido.
+9. **Do USB ao passo 11** o painel de produção mostra o SM-01 offline e sem histórico (passo 8,
+   item 3) e o InfluxDB fica sem pontos novos até o passo 10: fazer 8 → 10 → 11 em sequência.
 10. **Trocar o Telegraf** só depois que a boia estiver no broker novo (passo 8): `.env` com
     `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`, `MQTT_TELEGRAF_PASS`
     e `sudo /usr/local/sbin/stack-deploy.sh none` (passo 3 de "Primeiro deploy com o broker").
@@ -1014,23 +1064,35 @@ fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já e
 11. **Frontend:** trocar o secret `VITE_MQTT_BROKER_URL` do GitHub para
     `wss://mqtt.arthlabs.dev/mqtt` e **só então** fazer merge na `main` dos commits de
     frontend (o `dev` inteiro) e aprovar o deploy do site (o painel passa a ler anônimo e a mandar
-    OTA pela Edge Function). No painel novo, editar o SM-01 e trocar o `deviceId` para `snt-0001`
-    (o id anterior `esp_sururu` é mantido automaticamente para o histórico). Teste: OTA com versão
-    descartável na própria placa (`snt-0001`, a única).
+    OTA pela Edge Function).
 
-    **Depois da edição do registro**, fechar os `sensor_health_events` abertos do `esp_sururu`
-    (só agora: antes disso o worker ainda lista `esp_sururu` pelo registro e reabriria os eventos).
-    Preservando o motivo original, com o `SELECT` antes do `UPDATE`:
+    **Com o painel novo no ar**, devolver o `esp_sururu` ao histórico do SM-01: o `deviceId` já é
+    `snt-0001` (passo 8), então reabrir e salvar o SM-01 no painel **não** acrescenta nada (o painel
+    só guarda o id antigo quando o `deviceId` muda). Fazer pelo SQL abaixo, que só acrescenta
+    `deviceIdsAnteriores: ["esp_sururu"]` à entrada do SM-01 (só se o `deviceId` dela for
+    `snt-0001`; repetir não duplica). Backup antes, com o mesmo comando do passo 8, item 3:
 
     ```bash
     sudo -n docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
-    SELECT id, sensor, estado, motivo, inicio FROM public.sensor_health_events
-     WHERE device_id = 'esp_sururu' AND fim IS NULL;
-    UPDATE public.sensor_health_events
-       SET fim = now(), motivo = concat_ws(' | ', motivo, 'encerrado: migração para snt-0001')
-     WHERE device_id = 'esp_sururu' AND fim IS NULL;
+    UPDATE public.app_settings s
+       SET value = (SELECT jsonb_agg(CASE
+                       WHEN e->>'codigo' = 'SM-01' AND e->>'deviceId' = 'snt-0001'
+                            AND NOT COALESCE(e->'deviceIdsAnteriores', '[]') ? 'esp_sururu'
+                       THEN e || jsonb_build_object('deviceIdsAnteriores',
+                                    COALESCE(e->'deviceIdsAnteriores', '[]') || '["esp_sururu"]')
+                       ELSE e END ORDER BY ord)
+                      FROM jsonb_array_elements(s.value) WITH ORDINALITY AS t(e, ord)),
+           updated_at = now()
+     WHERE s.key = 'map_buoys' AND jsonb_typeof(s.value) = 'array'
+    RETURNING (SELECT e FROM jsonb_array_elements(s.value) e WHERE e->>'codigo' = 'SM-01') AS sm01;
     SQL
     ```
+
+    Conferir: a entrada impressa tem `"deviceId": "snt-0001"` e `"deviceIdsAnteriores":
+    ["esp_sururu"]`; no painel, o modal de edição do SM-01 mostra "Seriais anteriores: esp_sururu" e
+    o "Histórico de Coletas" volta a trazer as leituras antigas. Teste: OTA com versão descartável
+    na própria placa (`snt-0001`, a única); ele também sobrescreve o `snt-0001/ota/status` retido
+    da bancada.
 12. **Apagar** os secrets `VITE_MQTT_USER` e `VITE_MQTT_PASS` do GitHub (a credencial HiveMQ
     estava no bundle público).
 13. **Uma semana estável** → apagar o cluster HiveMQ (antes de 2026-12-31) e a credencial dele.
@@ -1040,6 +1102,21 @@ commits `(frontend)` na `main` (`git revert` do mais novo para o mais antigo); v
 boia: gravar por USB o backup 5.0.4 (fala com o HiveMQ). O broker pode ficar parado no compose
 sem afetar o resto; a coluna `arquivo_path` e a função podem ficar (função sem chamador). Depois
 do passo 13 não há volta ao HiveMQ.
+
+- **Depois do passo 8, item 3** (o SM-01 já aponta para `snt-0001`), voltar ao 5.0.4 exige também
+  voltar o `deviceId` do SM-01 para `esp_sururu`, senão painel e OTA procuram uma placa que não
+  publica mais. Backup da setting antes (comando do passo 8, item 3) e então editar o SM-01 no
+  painel que estiver no ar (Device ID = `esp_sururu`) ou rodar o SQL do passo 8, item 3, com
+  `'{"deviceId": "esp_sururu"}'`. Restaurar um backup inteiro (desfaz também qualquer edição do
+  registro feita depois dele; `F` = caminho impresso pelo backup):
+
+  ```bash
+  printf "UPDATE public.app_settings SET value = \$bkp\$%s\$bkp\$::jsonb, updated_at = now() WHERE key = 'map_buoys';\n" \
+    "$(cat "$F")" | sudo -n docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1
+  ```
+- A linha `snt-0001` em `dispositivos`, o usuário `snt-0001` no broker e a NVS da placa podem
+  ficar: o 5.0.4 ignora o namespace `ident` e a gravação por USB não apaga a NVS. Gravar de novo o
+  5.1.0 por USB traz o `snt-0001` de volta sem reprovisionar.
 
 ### Primeiro deploy com o broker (ordem obrigatória; só no primeiro deploy)
 
@@ -1100,27 +1177,61 @@ no case da placa. Fechar monitores seriais (Arduino IDE etc.) antes: a porta é 
 
 - **DTR/RTS:** o script os mantém em nível baixo ao abrir a porta, para não resetar a placa nem
   cair no bootloader. O único reset é o do firmware (~500 ms depois do `OK`); a porta USB pode
-  sumir e voltar nesse momento, e o script reconecta sozinho.
+  sumir e voltar nesse momento, e o script reconecta sozinho. Verificado só no Windows (o caminho
+  suportado); no Linux o comportamento de DTR/RTS ao abrir a porta **não** foi verificado.
 - **Espera:** a placa pode levar ~30 s para atender o primeiro `IDENT?` (o `setup()` espera o Wi-Fi
-  até 30 s); o script espera até 35 s no primeiro `ident` e até 60 s a placa voltar depois do `OK`.
-- **Falha antes de a placa dizer `OK`** (ex.: `ERR bad_password`): o script desfaz (`mqtt-user.sh
-  del`; libera a reserva só se a linha foi criada nesta execução) e sai com 1. Se a senha foi
-  enviada mas o veredito não chegou, ele reconecta e só desfaz se a placa reportar `unprovisioned`.
+  até 30 s); o script espera até 45 s no primeiro `ident` e até 60 s a placa voltar depois do `OK`.
+- **Falha antes de a senha poder chegar à placa** (ex.: `ERR bad_password`, `ERR busy_provisioned`,
+  falha do `mqtt-user.sh add`): o script desfaz (`mqtt-user.sh del`; libera a reserva só se a linha
+  foi criada nesta execução) e sai com 1.
+- **Senha enviada sem veredito** (timeout, erro de porta, `ERR save_failed`, Ctrl-C): o script
+  imprime `Interrompido; verificando a placa (até 60 s). Ctrl-C de novo aborta e mantém credencial e
+  reserva.` (ou `Sem veredito da placa; ...`), reconecta e pergunta `IDENT?`. Só desfaz se a placa
+  responder `unprovisioned`. Se ela voltar com identidade, não voltar, ou vier um segundo Ctrl-C,
+  **nada é desfeito** (o aviso diz `board state unknown`), exit 1.
 - **Falha depois do `OK`** (placa não volta, Ctrl-C, registro não atualizou): **nada é desfeito**,
   porque a identidade já está na NVS da placa; credencial e reserva ficam, exit 1. Rodar `provision`
   de novo: ele concilia (placa provisionada + linha `reservado` + usuário no broker → marca
-  `provisionado` e imprime a etiqueta). Sem linha, serial diferente ou usuário do broker ausente,
-  sai com 1 e manda usar `unprov`.
-- **`unprov --port COM5`:** envia `UNPROV`, espera a placa reiniciar e confere `unprovisioned`. Não
-  mexe no registro nem no broker; o `provision` seguinte reaproveita o serial com senha nova.
+  `provisionado` e imprime a etiqueta); se a placa estiver `unprovisioned`, provisiona de novo com
+  o mesmo serial. Sem linha, serial diferente ou usuário do broker ausente, sai com 1 e manda usar
+  `unprov`.
+- **Placa trocada no meio:** depois de cada reinício o script confere que o MAC é o mesmo do
+  primeiro `IDENT?`. Se mudou, sai com 1 (`MAC changed across the restart (placa trocada?)`) sem
+  desfazer nada: conferir com `ident` qual placa está em qual porta antes de repetir.
+- **`unprov --port COM5`:** envia `UNPROV`, espera a resposta exata `OK`, espera a placa reiniciar e
+  confere `unprovisioned`. Não mexe no registro nem no broker; o `provision` seguinte reaproveita o
+  serial com senha nova. Se a placa responder `ERR clear_failed`, ela reinicia do mesmo jeito; o
+  script mostra o estado real e sai com 1: rodar `unprov` de novo (persistindo, apagar a flash).
 - **Apagar toda a flash** (ou `UNPROV`): a placa volta sem identidade, mas o MAC continua em
   `dispositivos`. Rodar `provision` de novo **reaproveita o mesmo serial** e gera senha nova
   (rotaciona a anterior).
 - **Baixar uma placa** (perdida, descartada): `py -3 infra\bin\provision-board.py retire snt-NNNN`
   remove a credencial (`mqtt-user.sh del`, só se existir: pode ser repetido após falha parcial) e
   marca `baixado`; o serial não é reaproveitado e uma
-  placa baixada não é provisionada de novo (`dispositivo_baixado`).
-- Códigos de saída: 0 ok, 1 falha (após desfazer), 2 uso incorreto.
+  placa baixada não é provisionada de novo (`dispositivo_baixado`; `dispositivo_marcar` também
+  recusa tirar uma linha de `baixado`). O `retire` **não derruba uma sessão já aberta** (o `SIGHUP`
+  do `mqtt-user.sh` só vale para conexões novas): placa perdida ou roubada → depois do `retire`,
+  `sudo docker restart <container do mosquitto>` (seção "Credenciais").
+- Códigos de saída: 0 ok; 1 falha — se a senha não pode ter chegado à placa, tudo foi desfeito; se
+  pode (placa aceitou, sem veredito, Ctrl-C), credencial e reserva ficaram e o próximo `provision`
+  concilia (ver acima); 2 uso incorreto.
+
+#### Rotação da senha de uma placa
+
+A senha de uma placa só existe na NVS dela e no hash do broker. `mqtt-user.sh add snt-NNNN`
+sozinho **quebra a placa**: o broker passa a esperar uma senha que ela não tem (`ERRO: MQTT
+recusado rc=5`). Rotação (suspeita de vazamento, placa recuperada), com a placa no USB:
+
+1. `provision-board.py unprov --port <COM>` (limpa a NVS; registro e broker intactos).
+2. `provision-board.py provision --port <COM>`: reaproveita o serial pelo MAC, `mqtt-user.sh add`
+   gera a senha nova e ela vai direto para a NVS.
+3. Em suspeita de vazamento, `sudo docker restart <container do mosquitto>` para derrubar sessões
+   abertas com a senha antiga.
+
+O `provision` numa placa já provisionada (conciliação) **não valida a senha da placa contra o
+broker**: confere só a linha do registro e a existência do usuário. Uma placa com senha errada
+(ex.: alguém rodou `add` à mão) sai como `already provisioned; nothing to do`; o sintoma é o
+`recusado rc=5` no Serial, e a correção é o `unprov` + `provision` acima.
 - Teste: `infra/tests/provision.test.sh` (pytest com fakes, imagem `python:3.12.8-slim`).
 
 ### Credenciais (volume `sentinela-mosquitto-data`)
@@ -1168,7 +1279,8 @@ sessão já aberta com a senha antiga não é derrubada pelo HUP (não verificad
 reavalia; tratar como mantida). Em suspeita de vazamento: `add <usuario>` e depois
 `sudo docker restart <container do mosquitto>` para derrubar as sessões abertas (as boias
 reconectam sozinhas; as retidas persistem em `/mosquitto/data`). Para o `svc/telegraf`, atualizar
-o `.env` e rodar `stack-deploy.sh none` antes ou logo depois, senão o Telegraf é recusado.
+o `.env` e rodar `stack-deploy.sh none` antes ou logo depois, senão o Telegraf é recusado. Para uma
+**boia** (`snt-NNNN`), `add` sozinho a deixa sem conectar: seguir "Rotação da senha de uma placa".
 
 **Decisão de projeto:** as credenciais das boias e do `svc/ota` autenticam necessariamente pelo
 `wss://mqtt.arthlabs.dev/mqtt` público (a abordagem C não tem outro caminho; o 1883 não sai da rede
