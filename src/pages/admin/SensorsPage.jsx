@@ -405,7 +405,9 @@ const SensorsPage = () => {
   // Histórico bruto: últimas leituras gravadas no InfluxDB (30 dias), sem agregação
   const abrirHistorico = async (buoy) => {
     setActiveHistoryId(buoy.id);
-    if (!buoy.deviceId) return;
+    // Ids do histórico (atual + anteriores): uma bóia sem placa agora, mas com
+    // seriais anteriores, continua mostrando as leituras gravadas sob eles.
+    if (!buoy.historyIds.length) return;
     setHistorico(prev => ({ ...prev, [buoy.id]: { loading: true, rows: prev[buoy.id]?.rows ?? [], error: null } }));
     try {
       const rows = await fetchUltimasLeituras(buoy.historyIds, { limit: 50, start: '-30d' });
@@ -806,7 +808,7 @@ const SensorsPage = () => {
                               </button>
                             </div>
                             <div className="history-body">
-                              {!buoy.deviceId ? (
+                              {!buoy.historyIds.length ? (
                                 <p className="text-muted">Bóia sem Device ID: não há leituras gravadas.</p>
                               ) : historico[buoy.id]?.loading ? (
                                 <p className="status-testing"><RotateCw size={14} className="spin" /> Buscando leituras no banco...</p>

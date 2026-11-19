@@ -12,6 +12,11 @@ describe('deviceIdsOf', () => {
       deviceIdsAnteriores: ['', null, 'a b', 'x"y', 'a'.repeat(41), 'ok_1', 'ok-2'],
     })).toEqual(['ok_1', 'ok-2']);
   });
+  it('bóia sem placa agora (deviceId null) mantém o histórico dos anteriores', () => {
+    expect(deviceIdsOf({ deviceId: null, deviceIdsAnteriores: ['esp_sururu'] })).toEqual(['esp_sururu']);
+    expect(deviceIdsOf({ deviceId: '', deviceIdsAnteriores: ['snt-0001', 'esp_sururu'] }))
+      .toEqual(['snt-0001', 'esp_sururu']);
+  });
   it('tolera bóia ausente ou sem anteriores', () => {
     expect(deviceIdsOf(undefined)).toEqual([]);
     expect(deviceIdsOf({ deviceId: 'snt-0002' })).toEqual(['snt-0002']);
