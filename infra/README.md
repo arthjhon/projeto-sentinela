@@ -921,7 +921,78 @@ boias, navegador, edge function OTA (MQTT_OTA_URL) --WSS--> Cloudflare --túnel 
 - Healthcheck sem credencial: conexão TCP nos dois listeners. Não prova auth/ACL; isso é o
   `infra/tests/mosquitto.test.sh`.
 
-### Primeiro deploy com o broker (ordem obrigatória)
+### Rollout (migração do HiveMQ)
+
+Ordem única da troca HiveMQ Cloud → mosquitto próprio. Cada passo só começa com o anterior
+conferido; mudança em produção só com o go do Arthur. Meta: concluído até 2026-12-15; o cluster
+HiveMQ precisa ser apagado antes de 2026-12-31.
+
+**Pré-requisitos (bloqueiam tudo):** correção do congelamento do hypervisor (queda de 2026-11-17,
+fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já em produção.
+
+1. **Reinstalar na VM** `stack-deploy.sh`, `validate-compose.sh` e `allowed-images` desta versão
+   (passo 3, "Atualizar", com revisão do diff). As cópias antigas não conhecem o serviço
+   `mosquitto` e **recusam** o compose novo (fail closed): sem isto o deploy do passo 4 falha
+   antes de tocar no que está rodando.
+2. **Porta livre:** `ss -ltn 'sport = :9001'` na VM não pode listar nada em `127.0.0.1:9001`
+   (nem em `0.0.0.0`); senão o `up` do mosquitto falha no bind.
+3. **Túnel:** regra de ingress de `mqtt.arthlabs.dev` **acima** do catch-all no `config.yml` do
+   cloudflared (backup do `config.yml` antes; seção "Exposição" abaixo), restart e `journalctl`.
+   O CNAME `mqtt` já foi criado pelo Arthur em 2026-11-18 (proxied, sem Access).
+4. **Primeiro deploy do broker com o Telegraf ainda no HiveMQ** (`.env` sem mudança de
+   `MQTT_BROKER`): seção "Primeiro deploy com o broker", passos 1–2.
+5. **Provisionar** `svc/telegraf`, `svc/ota` e cada boia (`esp_sururu`) com `mqtt-user.sh add`
+   (seção "Credenciais"). A senha de `svc/telegraf` vai para o cofre; o `.env` **ainda não** muda.
+6. **Prova pública** com `infra/tests/mqtt_probe.py` a partir da workstation, pelo hostname
+   público (precisa de `paho-mqtt==2.1.0` num venv; senhas só por variável de ambiente, nunca em
+   argv). Rodar antes do passo 10: nada consome o broker novo ainda, então o marcador publicado
+   pelo probe não chega ao Telegraf nem a painel.
+
+   ```bash
+   U=wss://mqtt.arthlabs.dev/mqtt
+   read -rs MQTT_FEED_PASS; export MQTT_FEED_PASS; MQTT_PASS=$MQTT_FEED_PASS; export MQTT_PASS   # senha da boia
+   # anônimo lê a telemetria
+   python3 infra/tests/mqtt_probe.py --url $U --sub esp_sururu/status --feeder esp_sururu --feeder-url $U --expect allowed
+   # anônimo não publica
+   python3 infra/tests/mqtt_probe.py --url $U --pub esp_sururu/status --observer - --obs-url $U --expect denied
+   # a boia publica no próprio prefixo, e só nele
+   python3 infra/tests/mqtt_probe.py --url $U --user esp_sururu --pub esp_sururu/status --observer - --expect allowed
+   python3 infra/tests/mqtt_probe.py --url $U --user esp_sururu --pub outra_boia/status --observer - --expect denied
+   unset MQTT_PASS MQTT_FEED_PASS
+   ```
+
+   Exit 0 em todos = ACL pública conforme. Qualquer outro resultado: parar aqui.
+7. **Banco e Edge Function cedo** (os dois são compatíveis com o painel atual: a coluna
+   `arquivo_path` é nullable e a função não tem chamador até o passo 11): `pg_dump` do Supabase
+   antes; aplicar `supabase/migrations/20261119_firmware_deploys_path.sql`; publicar a função
+   `ota-command` com as quatro variáveis (seção "Edge Function"). Assim os testes de bancada de
+   OTA e rollback do firmware 5.1.0 (`BENCH.md` do firmware) já rodam contra o broker novo.
+8. **Bancada do 5.1.0** concluída (`BENCH.md`), com uma placa de teste no broker novo.
+9. **OTA 5.1.0 para a boia via HiveMQ, com o painel ATUAL** (o 5.0.x só fala com o HiveMQ e o
+   painel novo não publica lá). Conferir que a boia aparece no broker novo
+   (`<id>/availability` = `online`, `<id>/status` com `firmware 5.1.0`). Plano B: USB.
+10. **Trocar o Telegraf** só depois que a boia estiver no broker novo: `.env` com
+    `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`, `MQTT_TELEGRAF_PASS`
+    e `sudo /usr/local/sbin/stack-deploy.sh none` (passo 3 de "Primeiro deploy com o broker").
+    Conferir pontos novos no InfluxDB.
+11. **Frontend:** trocar o secret `VITE_MQTT_BROKER_URL` do GitHub para
+    `wss://mqtt.arthlabs.dev/mqtt` e **só então** fazer merge/deploy do commit do frontend (o
+    painel passa a ler anônimo e a mandar OTA pela Edge Function). Teste: OTA com versão
+    descartável numa placa de bancada.
+12. **Apagar** os secrets `VITE_MQTT_USER` e `VITE_MQTT_PASS` do GitHub (a credencial HiveMQ
+    estava no bundle público).
+13. **Uma semana estável** → apagar o cluster HiveMQ (antes de 2026-12-31) e a credencial dele.
+
+**Rollback (até o passo 12):** voltar `VITE_MQTT_BROKER_URL` para o HiveMQ e reverter o commit
+do frontend; voltar `MQTT_BROKER`/credencial do Telegraf no `.env` e `stack-deploy.sh none`;
+boia: gravar por USB o backup 5.0.4 (fala com o HiveMQ). O broker pode ficar parado no compose
+sem afetar o resto; a coluna `arquivo_path` e a função podem ficar (função sem chamador). Depois
+do passo 13 não há volta ao HiveMQ.
+
+### Primeiro deploy com o broker (ordem obrigatória; só no primeiro deploy)
+
+Vale **uma vez**, no passo 4 do Rollout; depois que o Telegraf está no broker novo, os deploys
+seguem o fluxo normal (CI) e o rollback automático funciona.
 
 O primeiro deploy do mosquitto **não tem rollback automático**: o `rollback()` reprepara o último
 release bom, e um release anterior ao broker não tem `mosquitto/mosquitto.conf` nem `mosquitto/acl`,
@@ -931,7 +1002,11 @@ recusado e o `wait_healthy` falha. Por isso, nesta ordem:
 
 1. Deploy com o `.env` **ainda no HiveMQ** (`MQTT_BROKER` antigo): sobe o mosquitto sem que o telegraf dependa dele para autenticar.
 2. Provisionar `svc/telegraf` (e `svc/ota`) no `passwd` (próxima seção) e conferir `docker logs` do broker.
-3. Trocar o `.env` para `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`, `MQTT_TELEGRAF_PASS` e rodar `sudo /usr/local/sbin/stack-deploy.sh none` (recria só o telegraf; daqui em diante o rollback automático funciona).
+3. **Só depois que a boia estiver no broker novo** (passo 9 do Rollout: OTA 5.1.0 via HiveMQ):
+   trocar o `.env` para `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`,
+   `MQTT_TELEGRAF_PASS` e rodar `sudo /usr/local/sbin/stack-deploy.sh none` (recria só o telegraf;
+   daqui em diante o rollback automático funciona). Trocar antes deixa o InfluxDB sem dados: a
+   boia em 5.0.x ainda publica só no HiveMQ.
 
 Recuperação manual se o passo 1 falhar: o `current` já aponta para o release novo (o deploy troca o
 link antes do `up`) e o release anterior ao broker não passa mais pela validação (o `deploy` exige
@@ -973,10 +1048,11 @@ sudo infra/bin/mqtt-user.sh list            # só nomes, nunca hashes
   secret, `secrets.h`). Se usar um arquivo intermediário, apague-o (`shred -u`) logo depois.
 - Teste: `infra/tests/mqtt-user.test.sh` (broker descartável com a config real).
 
-**Bootstrap (primeira vez, depois do deploy do broker):**
+**Bootstrap (só no primeiro deploy, depois do deploy do broker):**
 
-1. `add svc/telegraf` → `MQTT_TELEGRAF_PASS` no `.env` da stack (`MQTT_BROKER=tcp://mosquitto:1883`,
-   `MQTT_TELEGRAF_USER=svc/telegraf`).
+1. `add svc/telegraf` → senha no cofre; ela entra no `.env` da stack (`MQTT_TELEGRAF_PASS`,
+   `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`) só no passo 10 do
+   Rollout, depois que a boia estiver no broker novo.
 2. `add svc/ota` → segredo da Edge Function OTA (`MQTT_OTA_URL` aponta para `wss://mqtt.arthlabs.dev/mqtt`).
 3. `add <device_id>` para cada boia → `secrets.h` da placa (usuário = device id).
 
@@ -1060,9 +1136,13 @@ SHA-256 válido e a bóia com `deviceId` no registro (`app_settings.map_buoys`).
    a coluna `arquivo_path` pode ficar (nullable, inofensiva).
 
 Falha do broker retorna 502 e marca o deploy como `falha`. Atenção: um timeout depois do PUBLISH e
-antes do PUBACK também vira `falha`, embora o dispositivo ainda possa executar o OTA (a OtaPage
-reescreve depois o status final). Sucesso não altera a linha: a OtaPage e
-o `ota/status` do dispositivo fecham o ciclo.
+antes do PUBACK (ou um erro de rede entre o navegador e a função) também vira `falha`, embora o
+dispositivo ainda possa executar o OTA. A linha **não** é reescrita depois (a OtaPage para de
+acompanhar o deploy no erro); o `ota/status` retido e a versão no card da frota mostram o que de
+fato aconteceu. Sucesso não altera a linha: a OtaPage e o `ota/status` do dispositivo fecham o ciclo.
+
+Comando acima de 512 bytes (limite `MQTT_RX_MAX_PAYLOAD` do firmware, que descarta sem responder)
+ou versão com mais de 32 caracteres: 422 `too_large`, nada é publicado.
 
 Dependência: `MQTT_OTA_URL` é o WSS público, então o envio de OTA depende do túnel cloudflared e do DNS
 (além da VM e do broker); com o túnel fora, a função responde 502.
