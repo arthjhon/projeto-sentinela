@@ -58,6 +58,9 @@ jobs:
       - name: Mosquitto ACL (live broker)
         run: bash infra/tests/mosquitto.test.sh
 
+      - name: Board provisioning script (pytest, fakes)
+        run: bash infra/tests/provision.test.sh
+
       - name: Detect worker
         id: worker
         run: |

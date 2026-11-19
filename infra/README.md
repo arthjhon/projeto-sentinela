@@ -841,7 +841,7 @@ o job de teste: `"required_status_checks": {"strict": true, "contexts": ["test"]
   Atualizar o destino (tabela do passo 12) e aplicar: `.env` → `stack-deploy.sh none`; include do
   nginx → `nginx -t && systemctl reload nginx`; arquivo do backup → nada. Entre o `delete` e a
   aplicação o consumidor recebe 401 (Telegraf reenvia o buffer; site sem histórico por instantes).
-- **Senha MQTT do Telegraf**: `sudo infra/bin/mqtt-user.sh add svc/telegraf` (rotaciona e imprime a nova
+- **Senha MQTT do Telegraf**: `sudo /usr/local/sbin/mqtt-user.sh add svc/telegraf` (rotaciona e imprime a nova
   senha), colocar em `MQTT_TELEGRAF_PASS` no `.env` e `stack-deploy.sh none`. Entre o `add` e o deploy
   o Telegraf é recusado (reenvia o buffer). Ver "Rotação e vazamento" na seção Broker MQTT.
 - **`INFLUX_ADMIN_TOKEN`**: só vale no setup inicial. Para trocar, criar outro token de operador
@@ -931,7 +931,10 @@ HiveMQ precisa ser apagado antes de 2026-12-31.
 fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já em produção.
 
 1. **Reinstalar na VM** `stack-deploy.sh`, `validate-compose.sh` e `allowed-images` desta versão
-   (passo 3, "Atualizar", com revisão do diff). As cópias antigas não conhecem o serviço
+   (passo 3, "Atualizar", com revisão do diff) e **instalar `infra/bin/mqtt-user.sh` como
+   `/usr/local/sbin/mqtt-user.sh`** (`sudo install -o root -g root -m 0755`, ao lado do
+   `stack-deploy.sh`; a VM não tem checkout do repositório e `provision-board.py` chama esse caminho
+   via `sudo -n`). As cópias antigas não conhecem o serviço
    `mosquitto` e **recusam** o compose novo (fail closed): sem isto o deploy do passo 4 falha
    antes de tocar no que está rodando.
 2. **Porta livre:** `ss -ltn 'sport = :9001'` na VM não pode listar nada em `127.0.0.1:9001`
@@ -942,20 +945,20 @@ fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já e
 4. **Merge na `main` sem o frontend → primeiro deploy do broker.** O `deploy.yml` e o `pages.yml`
    publicam o site a cada push na `main`; se o frontend novo for junto, o painel passa a ler o
    broker novo anônimo antes de o secret mudar (sem dados ao vivo) e a mandar OTA para uma função
-   que ainda não existe. Por isso os dois commits de frontend ficam **no topo** do `dev` e vão só
-   no passo 11:
-   - `feat(frontend): anonymous read-only MQTT and OTA via edge function`
-   - `fix(frontend): keep a fast device rejection and gate OTA deploy to admins`
-
-   Conferir antes do merge: `git log --oneline -2 dev` mostra exatamente esses dois, e
-   `git diff --stat dev~2 dev` só lista `src/`, `Dockerfile`, `README.md`, `.env.example` e os
-   workflows `deploy.yml`/`pages.yml`. Se aparecer commit novo depois deles, reordenar antes. O
-   merge na `main` é de `dev~2`. O push dispara o `stack.yml`: aprovar o "Deploy data stack" — é o
-   primeiro deploy do broker, com o Telegraf **ainda no HiveMQ** (`.env` sem mudança de
-   `MQTT_BROKER`; seção "Primeiro deploy com o broker", passos 1–2). O deploy do site que o mesmo
-   push dispara publica o painel atual (inalterado).
-5. **Provisionar** `svc/telegraf`, `svc/ota` e cada boia (`esp_sururu`) com `mqtt-user.sh add`
-   (seção "Credenciais"). A senha de `svc/telegraf` vai para o cofre; o `.env` **ainda não** muda.
+   que ainda não existe. Por isso **todos os commits com escopo `(frontend)` ficam no topo do `dev`**
+   e vão só no passo 11. Merge de `dev~N`, com
+   `N = $(git log --format=%s main..dev | grep -c '(frontend)')`. Conferir antes do merge que os
+   `N` commits do topo (`git log --oneline -N dev`) são exatamente os de escopo `(frontend)` e que
+   `git diff --stat dev~N dev` só lista `src/`, `Dockerfile`, `README.md`, `.env.example` e os
+   workflows `deploy.yml`/`pages.yml`. Se aparecer commit novo depois deles, reordenar antes. O push
+   dispara o `stack.yml`: aprovar o "Deploy data stack" — é o primeiro deploy do broker, com o
+   Telegraf **ainda no HiveMQ** (`.env` sem mudança de `MQTT_BROKER`; seção "Primeiro deploy com o
+   broker", passos 1–2). O deploy do site que o mesmo push dispara publica o painel atual
+   (inalterado).
+5. **Provisionar** só `svc/telegraf` e `svc/ota` com `mqtt-user.sh add` (seção "Credenciais"). A
+   senha de `svc/telegraf` vai para o cofre; o `.env` **ainda não** muda. As boias **não** são
+   criadas aqui: cada placa ganha o serial e a credencial pelo `provision-board.py` (passo 8/9).
+   Antes, aplicar `supabase/migrations/20261120_dispositivos.sql` (registro de dispositivos).
 6. **Prova pública** com `infra/tests/mqtt_probe.py` a partir da workstation, pelo hostname
    público (precisa de `paho-mqtt==2.1.0` num venv; senhas só por variável de ambiente, nunca em
    argv). Rodar antes do passo 10: nada consome o broker novo ainda, então o marcador publicado
@@ -980,28 +983,49 @@ fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já e
    antes; aplicar `supabase/migrations/20261119_firmware_deploys_path.sql`; publicar a função
    `ota-command` com as quatro variáveis (seção "Edge Function"). Assim os testes de bancada de
    OTA e rollback do firmware 5.1.0 (`BENCH.md` do firmware) já rodam contra o broker novo.
-8. **Bancada do 5.1.0** concluída (`BENCH.md`), com uma placa de teste no broker novo. Os itens
-   que usam o painel exigem o **frontend novo rodando local** (`npm run dev` na workstation, com
-   `VITE_MQTT_BROKER_URL=wss://mqtt.arthlabs.dev/mqtt` no `.env.local`, contra o Supabase de
-   produção): o painel em produção ainda é o atual. Usar na placa de teste um `DEVICE_ID` próprio
-   de bancada (não o da boia), para o `<id>/ota/status` retido dos testes de rollback não aparecer
-   no card da boia depois do passo 11; ao terminar, limpar os retidos dela com a credencial dela
-   (`mosquitto_pub -r -n` em `<id>/ota/status` e `<id>/availability`) e `mqtt-user.sh del`.
-9. **OTA 5.1.0 para a boia via HiveMQ, com o painel ATUAL** (o 5.0.x só fala com o HiveMQ e o
-   painel novo não publica lá). Conferir que a boia aparece no broker novo com uma assinatura
-   anônima no WSS (`mqtt_probe.py --url wss://mqtt.arthlabs.dev/mqtt --sub <id>/status --receive
-   --expect allowed`, ou o painel local do passo 8): `<id>/availability` = `online`,
-   `<id>/status` com `firmware 5.1.0`. Plano B: USB. Entre os passos 9 e 11 o painel de produção
-   mostra a boia offline e o InfluxDB fica sem pontos até o passo 10: fazer 9 → 10 → 11 em
-   sequência.
-10. **Trocar o Telegraf** só depois que a boia estiver no broker novo: `.env` com
+8. **Bancada e boia: gravar o 5.1.0 por USB → `provision-board.py provision` → `snt-0001` →
+   BENCH → limpar retidos.** O 5.1.0 não tem mais `DEVICE_ID` nem `MQTT_PASSWORD` no `secrets.h`:
+   a identidade vem da NVS, gravada pelo script (seção "Provisionar placa"). Sequência:
+   1. Bancada do 5.1.0 (`BENCH.md`) com uma placa de teste no broker novo. Os itens que usam o
+      painel exigem o **frontend novo rodando local** (`npm run dev` na workstation, com
+      `VITE_MQTT_BROKER_URL=wss://mqtt.arthlabs.dev/mqtt` no `.env.local`, contra o Supabase de
+      produção): o painel em produção ainda é o atual.
+   2. Gravar o 5.1.0 por USB na **boia** (o 5.0.x só fala com o HiveMQ; não há OTA para ela) e
+      rodar `provision-board.py provision --port <COM>`: a primeira placa recebe `snt-0001`
+      (a boia, que vira o SM-01 no passo 11). Placas de teste seguintes recebem `snt-0002`, ...
+      e saem com `retire` ao fim da bancada (`mqtt-user.sh del` incluso).
+   3. Conferir no broker novo com uma assinatura anônima no WSS (`mqtt_probe.py --url
+      wss://mqtt.arthlabs.dev/mqtt --sub snt-0001/status --receive --expect allowed`, ou o painel
+      local): `snt-0001/availability` = `online`, `snt-0001/status` com `firmware 5.1.0`.
+   4. Limpar os retidos de bancada de `snt-0001` (`snt-0001/ota/status`, se os testes de rollback
+      rodaram nela) com a credencial dela: `mosquitto_pub -r -n` em `snt-0001/ota/status` (e em
+      `snt-0001/availability`, se sobrar de teste), para o card do SM-01 não herdar estado de bancada.
+9. **Entre o USB e o passo 11** o painel de produção (id `esp_sururu`) mostra a boia offline e o
+   InfluxDB fica sem pontos do id antigo até o passo 10: fazer 8 → 10 → 11 em sequência. Rodar o
+   fechamento de eventos do passo 10 logo antes.
+10. **Fechar os `sensor_health_events` abertos do `esp_sururu`** (a boia passa a publicar como
+    `snt-0001`; sem isto eles ficam abertos para sempre). No Supabase da VM:
+
+    ```bash
+    sudo -n docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+    UPDATE public.sensor_health_events
+       SET fim = now(), motivo = 'migração para snt-0001'
+     WHERE device_id = 'esp_sururu' AND fim IS NULL;
+    SQL
+    ```
+
+    (Colunas conferidas em `supabase/migrations/20261117_sensor_health.sql`; rodar antes um
+    `SELECT ... WHERE device_id = 'esp_sururu' AND fim IS NULL` para ver o que será fechado.)
+
+    **Trocar o Telegraf** só depois que a boia estiver no broker novo: `.env` com
     `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`, `MQTT_TELEGRAF_PASS`
     e `sudo /usr/local/sbin/stack-deploy.sh none` (passo 3 de "Primeiro deploy com o broker").
     Conferir pontos novos no InfluxDB.
 11. **Frontend:** trocar o secret `VITE_MQTT_BROKER_URL` do GitHub para
     `wss://mqtt.arthlabs.dev/mqtt` e **só então** fazer merge na `main` dos dois commits de
     frontend (`dev` inteiro) e aprovar o deploy do site (o painel passa a ler anônimo e a mandar
-    OTA pela Edge Function). Teste: OTA com versão
+    OTA pela Edge Function). No painel novo, editar o SM-01 e trocar o `deviceId` para `snt-0001`
+    (o id anterior `esp_sururu` é mantido automaticamente para o histórico). Teste: OTA com versão
     descartável numa placa de bancada.
 12. **Apagar** os secrets `VITE_MQTT_USER` e `VITE_MQTT_PASS` do GitHub (a credencial HiveMQ
     estava no bundle público).
@@ -1026,7 +1050,7 @@ recusado e o `wait_healthy` falha. Por isso, nesta ordem:
 
 1. Deploy com o `.env` **ainda no HiveMQ** (`MQTT_BROKER` antigo): sobe o mosquitto sem que o telegraf dependa dele para autenticar.
 2. Provisionar `svc/telegraf` (e `svc/ota`) no `passwd` (próxima seção) e conferir `docker logs` do broker.
-3. **Só depois que a boia estiver no broker novo** (passo 9 do Rollout: OTA 5.1.0 via HiveMQ):
+3. **Só depois que a boia estiver no broker novo** (passo 8 do Rollout: 5.1.0 por USB + `provision-board.py`):
    trocar o `.env` para `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`,
    `MQTT_TELEGRAF_PASS` e rodar `sudo /usr/local/sbin/stack-deploy.sh none` (recria só o telegraf;
    daqui em diante o rollback automático funciona). Trocar antes deixa o InfluxDB sem dados: a
@@ -1041,6 +1065,49 @@ repositório e reenviar os quatro arquivos (CI ou deploy manual). Os containers 
 do release anterior seguem rodando enquanto o `up` não os recria; o `.previous` guarda o release
 antigo para consulta.
 
+### Provisionar placa
+
+Cada placa tem um **serial permanente** `snt-NNNN` (sequencial, nunca reaproveitado, nem depois de
+`baixado`), atribuído por MAC e guardado na tabela `dispositivos` do Supabase (registro apenas:
+painel e OTA não dependem dela). O serial é também o usuário MQTT. O firmware lê serial e senha da
+NVS (namespace `ident`); o `secrets.h` só tem os valores comuns da frota (`WIFI_*`, `MQTT_URI`,
+`OTA_URL_PREFIX`).
+
+`infra/bin/provision-board.py` roda na **workstation com a placa no USB** e fala com a VM por
+`ssh umj-sentinela` (chave, sem prompt; a VM precisa de `sudo -n` e do `/usr/local/sbin/mqtt-user.sh`
+do passo 1 do Rollout). A senha MQTT sai do `mqtt-user.sh` direto para a serial da placa: não vai
+para argv, tela, log nem arquivo.
+
+**Windows (PowerShell):**
+
+```powershell
+py -3 -m pip install pyserial==3.5
+# achar a porta: Gerenciador de Dispositivos > Portas (COM e LPT), ex.: COM5
+py -3 infra\bin\provision-board.py ident --port COM5          # só lê serial/MAC/estado
+py -3 infra\bin\provision-board.py provision --port COM5      # [--hardware ...] [--host ...]
+```
+
+Fluxo do `provision`: `IDENT?` → se a placa já está provisionada, só mostra o serial e sai →
+reserva o serial pelo MAC (`dispositivo_reservar`) → cria a credencial (`mqtt-user.sh add`) →
+`PROV` → a placa reinicia → o script reconecta na mesma porta (até 20 s) e confere que ela voltou
+com o serial → `dispositivo_marcar('provisionado')` → imprime o serial para a **etiqueta**: escrever
+no case da placa. Fechar monitores seriais (Arduino IDE etc.) antes: a porta é exclusiva.
+
+- **DTR/RTS:** o script os mantém em nível baixo ao abrir a porta, para não resetar a placa nem
+  cair no bootloader. O único reset é o do firmware (~500 ms depois do `OK`); a porta USB pode
+  sumir e voltar nesse momento, e o script reconecta sozinho.
+- **Falha no meio:** o script desfaz (`mqtt-user.sh del`; libera a reserva só se a linha foi criada
+  nesta execução) e sai com 1. Se a placa já confirmou o serial e só o registro falhou, a credencial
+  é **mantida** e o script avisa para rodar `dispositivo_marcar` à mão.
+- **Apagar toda a flash** (ou `UNPROV`): a placa volta sem identidade, mas o MAC continua em
+  `dispositivos`. Rodar `provision` de novo **reaproveita o mesmo serial** e gera senha nova
+  (rotaciona a anterior).
+- **Baixar uma placa** (perdida, descartada): `py -3 infra\bin\provision-board.py retire snt-NNNN`
+  remove a credencial (`mqtt-user.sh del`) e marca `baixado`; o serial não é reaproveitado e uma
+  placa baixada não é provisionada de novo (`dispositivo_baixado`).
+- Códigos de saída: 0 ok, 1 falha (após desfazer), 2 uso incorreto.
+- Teste: `infra/tests/provision.test.sh` (pytest com fakes, imagem `python:3.12.8-slim`).
+
 ### Credenciais (volume `sentinela-mosquitto-data`)
 
 Os usuários vivem em `/mosquitto/data/passwd`, dentro do volume `sentinela-mosquitto-data`. Na
@@ -1053,9 +1120,9 @@ Só precisa de bash e docker. O container é achado pelos labels do compose
 (`project=sentinela-stack`, `service=mosquitto`); `MQTT_CONTAINER` sobrescreve.
 
 ```bash
-sudo infra/bin/mqtt-user.sh add <usuario>   # imprime a senha UMA vez (40 caracteres aleatórios)
-sudo infra/bin/mqtt-user.sh del <usuario>
-sudo infra/bin/mqtt-user.sh list            # só nomes, nunca hashes
+sudo /usr/local/sbin/mqtt-user.sh add <usuario>   # imprime a senha UMA vez (40 caracteres aleatórios)
+sudo /usr/local/sbin/mqtt-user.sh del <usuario>
+sudo /usr/local/sbin/mqtt-user.sh list            # só nomes, nunca hashes
 ```
 
 - `<usuario>`: device id (`[A-Za-z0-9_-]{1,40}`) ou exatamente `svc/telegraf` / `svc/ota`; qualquer
@@ -1078,7 +1145,8 @@ sudo infra/bin/mqtt-user.sh list            # só nomes, nunca hashes
    `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`) só no passo 10 do
    Rollout, depois que a boia estiver no broker novo.
 2. `add svc/ota` → segredo da Edge Function OTA (`MQTT_OTA_URL` aponta para `wss://mqtt.arthlabs.dev/mqtt`).
-3. `add <device_id>` para cada boia → `secrets.h` da placa (usuário = device id).
+3. Boias: **não** usar `add` à mão; `provision-board.py provision` (seção "Provisionar placa") cria o
+   usuário `snt-NNNN` e grava a senha direto na NVS da placa. `secrets.h` não leva mais senha.
 
 **Rotação e vazamento:** o `SIGHUP` recarrega `passwd` e ACL, mas vale para **novas** conexões; uma
 sessão já aberta com a senha antiga não é derrubada pelo HUP (não verificado se o broker a
