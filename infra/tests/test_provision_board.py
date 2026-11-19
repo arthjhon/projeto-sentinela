@@ -16,10 +16,15 @@ MAC = "aa:bb:cc:dd:ee:01"
 
 
 class FakeBoard:
-    def __init__(self, calls, state="unprovisioned", serial="none", reboot_serial=None, prov_error=None):
+    def __init__(self, calls, state="unprovisioned", serial="none", reboot_serial=None, prov_error=None,
+                 reboot_fails=False, reboot_state="provisioned"):
         self.calls, self.state, self.serial = calls, state, serial
         self.reboot_serial, self.prov_error = reboot_serial, prov_error
+        self.reboot_fails, self.reboot_state = reboot_fails, reboot_state
         self.received = None
+
+    def unprov(self):
+        self.calls.append("unprov")
 
     def ident(self):
         self.calls.append("ident")
@@ -28,21 +33,35 @@ class FakeBoard:
     def prov(self, serial, password):
         self.calls.append(f"prov:{serial}")
         self.received = password
+        if self.prov_error == "UNSURE":
+            raise pb.BoardUnsure("no verdict")
         if self.prov_error:
             raise pb.BoardError(self.prov_error)
 
     def wait_reboot_ident(self, timeout_s):
         self.calls.append("reboot_ident")
-        return {"serial": self.reboot_serial, "mac": MAC, "fw": "5.1.0", "state": "provisioned"}
+        if self.reboot_fails:
+            raise pb.BoardError("board did not come back")
+        return {"serial": self.reboot_serial or "none", "mac": MAC, "fw": "5.1.0",
+                "state": self.reboot_state}
 
 
 class FakeRemote:
-    def __init__(self, calls, reserve=("snt-0001", "reservado", False), marcar_fails=False):
+    def __init__(self, calls, reserve=("snt-0001", "reservado", False), marcar_fails=False,
+                 row=None, users=None):
         self.calls, self.reserve, self.marcar_fails = calls, reserve, marcar_fails
+        self.row, self.users = row, set(users or [])
         self.scripts = []
+
+    def mqtt_list(self):
+        self.calls.append("mqtt_list")
+        return set(self.users)
 
     def sql(self, script):
         self.scripts.append(script)
+        if "WHERE mac" in script and "dispositivo_" not in script:
+            self.calls.append("lookup")
+            return f"{self.row[0]}|{self.row[1]}\n" if self.row else ""
         if "dispositivo_reservar" in script:
             self.calls.append("reservar")
             s, sit, existed = self.reserve
@@ -63,6 +82,7 @@ class FakeRemote:
 
     def mqtt_del(self, user):
         self.calls.append(f"mqtt_del:{user}")
+        self.users.discard(user)
 
 
 def run(board, remote, argv=("provision", "--port", "COM5")):
@@ -87,9 +107,33 @@ def test_provision_happy_path(capsys, caplog):
 def test_already_provisioned_stops(capsys):
     calls = []
     board = FakeBoard(calls, state="provisioned", serial="snt-0007")
-    assert run(board, FakeRemote(calls)) == 0
-    assert calls == ["ident"]
-    assert "snt-0007" in capsys.readouterr().out
+    remote = FakeRemote(calls, row=("snt-0007", "provisionado"), users={"snt-0007"})
+    assert run(board, remote) == 0
+    assert calls == ["ident", "lookup", "mqtt_list"]
+    assert "nothing to do" in capsys.readouterr().out
+
+
+def test_already_provisioned_reconciles_reserved_row(capsys):
+    calls = []
+    board = FakeBoard(calls, state="provisioned", serial="snt-0007")
+    remote = FakeRemote(calls, row=("snt-0007", "reservado"), users={"snt-0007"})
+    assert run(board, remote) == 0
+    assert "marcar:provisionado" in calls
+    assert "SERIAL: snt-0007" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("row,users", [
+    (None, {"snt-0007"}),                       # no row
+    (("snt-0002", "provisionado"), {"snt-0007"}),  # serial differs
+    (("snt-0007", "provisionado"), set()),      # broker user gone
+    (("snt-0007", "baixado"), {"snt-0007"}),
+])
+def test_already_provisioned_inconsistent_fails(row, users, capsys):
+    calls = []
+    board = FakeBoard(calls, state="provisioned", serial="snt-0007")
+    assert run(board, FakeRemote(calls, row=row, users=users)) == 1
+    assert not any(c.startswith("marcar") for c in calls)
+    assert capsys.readouterr().err
 
 
 def test_reprovision_reuses_serial(capsys):
@@ -121,13 +165,95 @@ def test_rollback_keeps_reused_row():
     assert "liberar" not in calls
 
 
-def test_rollback_on_ident_mismatch(capsys):
+def test_ident_mismatch_after_ok_keeps_everything(capsys):
     calls = []
     board = FakeBoard(calls, reboot_serial="snt-0099")
     assert run(board, FakeRemote(calls)) == 1
-    assert "mqtt_del:snt-0001" in calls and "liberar" in calls
+    assert "mqtt_del:snt-0001" not in calls and "liberar" not in calls
     assert not any(c.startswith("marcar") for c in calls)
     assert PASSWORD not in "".join(capsys.readouterr())
+
+
+def test_reboot_timeout_after_ok_does_not_undo(capsys):
+    calls = []
+    board = FakeBoard(calls, reboot_fails=True)
+    remote = FakeRemote(calls)
+    assert run(board, remote) == 1
+    assert "mqtt_del:snt-0001" not in calls and "liberar" not in calls
+    assert "KEPT" in capsys.readouterr().err
+
+
+def test_keyboard_interrupt_after_ok_does_not_undo():
+    calls = []
+    board = FakeBoard(calls)
+
+    def boom(t):
+        raise KeyboardInterrupt
+    board.wait_reboot_ident = boom
+    assert run(board, FakeRemote(calls)) == 1
+    assert "mqtt_del:snt-0001" not in calls and "liberar" not in calls
+
+
+def test_no_verdict_board_unprovisioned_undoes():
+    calls = []
+    board = FakeBoard(calls, prov_error="UNSURE", reboot_state="unprovisioned")
+    assert run(board, FakeRemote(calls)) == 1
+    assert "mqtt_del:snt-0001" in calls and "liberar" in calls
+
+
+def test_no_verdict_board_provisioned_keeps():
+    calls = []
+    board = FakeBoard(calls, prov_error="UNSURE", reboot_serial="snt-0001")
+    assert run(board, FakeRemote(calls)) == 1
+    assert "mqtt_del:snt-0001" not in calls and "liberar" not in calls
+
+
+def test_no_verdict_and_unreachable_keeps():
+    calls = []
+    board = FakeBoard(calls, prov_error="UNSURE", reboot_fails=True)
+    assert run(board, FakeRemote(calls)) == 1
+    assert "mqtt_del:snt-0001" not in calls and "liberar" not in calls
+
+
+def test_mqtt_add_failure_still_releases_new_row_and_skips_nothing_else():
+    calls = []
+    remote = FakeRemote(calls)
+
+    def bad(user):
+        calls.append("mqtt_add")
+        raise pb.RemoteError("ssh down")
+    remote.mqtt_add = bad
+    assert run(FakeBoard(calls), remote) == 1
+    assert "liberar" in calls
+
+
+def test_undo_skips_mqtt_del_if_add_never_attempted():
+    calls = []
+    pb._undo(FakeRemote(calls), "snt-0001", True, False)
+    assert calls == ["liberar"]
+
+
+def test_unprov(capsys):
+    calls = []
+    board = FakeBoard(calls, reboot_state="unprovisioned")
+    assert run(board, FakeRemote(calls), ("unprov", "--port", "COM5")) == 0
+    assert calls == ["unprov", "reboot_ident"]
+    assert "unprovisioned" in capsys.readouterr().out
+
+
+def test_unprov_fails_if_still_provisioned():
+    calls = []
+    board = FakeBoard(calls, reboot_serial="snt-0001")
+    assert run(board, FakeRemote(calls), ("unprov", "--port", "COM5")) == 1
+
+
+def test_host_leading_dash_rejected():
+    with pytest.raises(SystemExit) as e:  # argparse itself refuses a dash-leading value
+        pb.main(["provision", "--port", "COM5", "--host", "-oProxyCommand=x"], board=None, remote=None)
+    assert e.value.code == 2
+    assert pb.main(["provision", "--port", "COM5", "--host=-oProxyCommand=x"], board=None, remote=None) == 2
+    with pytest.raises(ValueError):
+        pb.SshRemote("-oProxyCommand=x")
 
 
 def test_marcar_failure_after_confirmed_board_keeps_credential(capsys):
@@ -135,13 +261,19 @@ def test_marcar_failure_after_confirmed_board_keeps_credential(capsys):
     board = FakeBoard(calls, reboot_serial="snt-0001")
     assert run(board, FakeRemote(calls, marcar_fails=True)) == 1
     assert "mqtt_del:snt-0001" not in calls and "liberar" not in calls
-    assert "dispositivo_marcar" in capsys.readouterr().err
+    assert "KEPT" in capsys.readouterr().err
 
 
 def test_retire():
     calls = []
+    assert run(None, FakeRemote(calls, users={"snt-0004"}), ("retire", "snt-0004")) == 0
+    assert calls == ["mqtt_list", "mqtt_del:snt-0004", "marcar:baixado"]
+
+
+def test_retire_idempotent_when_user_already_gone():
+    calls = []
     assert run(None, FakeRemote(calls), ("retire", "snt-0004")) == 0
-    assert calls == ["mqtt_del:snt-0004", "marcar:baixado"]
+    assert calls == ["mqtt_list", "marcar:baixado"]
 
 
 def test_retire_rejects_bad_serial():
@@ -201,8 +333,11 @@ def test_password_not_in_argv():
     assert remote.mqtt_add("snt-0001") == PASSWORD
     remote.sql("SELECT 1;")
     remote.mqtt_del("snt-0001")
+    rec.stdout = "svc/telegraf\nsnt-0001\n"
+    assert remote.mqtt_list() == {"svc/telegraf", "snt-0001"}
     for argv, kw in rec.calls:
         assert argv[0] == "ssh" and "umj-sentinela" in argv
+        assert argv[argv.index("umj-sentinela") - 1] == "--"
         assert PASSWORD not in " ".join(argv)
         assert PASSWORD not in repr(kw.get("input"))
         assert kw.get("shell") is not True
@@ -211,6 +346,7 @@ def test_password_not_in_argv():
     assert "psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At" in cmds[1]
     assert rec.calls[1][1]["input"] == "SELECT 1;"
     assert cmds[2] == "sudo -n /usr/local/sbin/mqtt-user.sh del snt-0001"
+    assert cmds[3] == "sudo -n /usr/local/sbin/mqtt-user.sh list"
 
 
 def test_remote_rejects_bad_user_and_bad_password_output(capsys):
@@ -312,3 +448,34 @@ def test_default_opener_sets_dtr_rts_low(monkeypatch):
     monkeypatch.setattr(serial, "Serial", S)
     pb.open_serial("COM5")
     assert seen == {"dtr": False, "rts": False, "port": "COM5"}
+
+
+def test_serial_board_ignores_logs_and_blank_lines():
+    def script(line):
+        if line == "IDENT?":
+            return ["", "ERRO: MQTT connect failed", f"IDENT serial=none mac={MAC} fw=5.1.0 state=unprovisioned", ""]
+        if line == "PROV snt-0001":
+            return ["", "ERRO: MQTT rc=-2", "PASS?", ""]
+        if line == PASSWORD:
+            return ["", "ERRO: wifi", "OK snt-0001", ""]
+        return ["ERR bad_command"]
+    port = FakePort(script)
+    b = pb.SerialBoard("COM5", opener=lambda p: port)
+    assert b.ident()["state"] == "unprovisioned"
+    b.prov("snt-0001", PASSWORD)
+
+
+def test_serial_board_save_failed_is_unsure():
+    def script(line):
+        return ["PASS?"] if line.startswith("PROV") else ["", "ERR save_failed", ""]
+    b = pb.SerialBoard("COM5", opener=lambda p: FakePort(script))
+    with pytest.raises(pb.BoardUnsure):
+        b.prov("snt-0001", PASSWORD)
+
+
+def test_serial_board_unprov_ok_and_err():
+    b = pb.SerialBoard("COM5", opener=lambda p: FakePort(lambda l: ["", "OK", ""]))
+    b.unprov()
+    b = pb.SerialBoard("COM5", opener=lambda p: FakePort(lambda l: ["ERR clear_failed"]))
+    with pytest.raises(pb.BoardError):
+        b.unprov()

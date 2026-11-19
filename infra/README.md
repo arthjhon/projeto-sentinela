@@ -957,24 +957,30 @@ fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já e
    (inalterado).
 5. **Provisionar** só `svc/telegraf` e `svc/ota` com `mqtt-user.sh add` (seção "Credenciais"). A
    senha de `svc/telegraf` vai para o cofre; o `.env` **ainda não** muda. As boias **não** são
-   criadas aqui: cada placa ganha o serial e a credencial pelo `provision-board.py` (passo 8/9).
+   criadas aqui: cada placa ganha o serial e a credencial pelo `provision-board.py` (passo 8).
    Antes, aplicar `supabase/migrations/20261120_dispositivos.sql` (registro de dispositivos).
 6. **Prova pública** com `infra/tests/mqtt_probe.py` a partir da workstation, pelo hostname
    público (precisa de `paho-mqtt==2.1.0` num venv; senhas só por variável de ambiente, nunca em
    argv). Rodar antes do passo 10: nada consome o broker novo ainda, então o marcador publicado
    pelo probe não chega ao Telegraf nem a painel.
 
+   A boia ainda não tem credencial neste ponto (ela só nasce no passo 8), então a prova usa um
+   usuário **temporário** `probe_tmp` (casa com a regex de device id, logo a ACL `%u/...` vale
+   igual), removido ao fim:
+
    ```bash
    U=wss://mqtt.arthlabs.dev/mqtt
-   read -rs MQTT_FEED_PASS; export MQTT_FEED_PASS; MQTT_PASS=$MQTT_FEED_PASS; export MQTT_PASS   # senha da boia
+   # na VM: sudo /usr/local/sbin/mqtt-user.sh add probe_tmp   (copiar a senha só para o read abaixo)
+   read -rs MQTT_FEED_PASS; export MQTT_FEED_PASS; MQTT_PASS=$MQTT_FEED_PASS; export MQTT_PASS   # senha do probe_tmp
    # anônimo lê a telemetria
-   python3 infra/tests/mqtt_probe.py --url $U --sub esp_sururu/status --feeder esp_sururu --feeder-url $U --expect allowed
+   python3 infra/tests/mqtt_probe.py --url $U --sub probe_tmp/status --feeder probe_tmp --feeder-url $U --expect allowed
    # anônimo não publica
-   python3 infra/tests/mqtt_probe.py --url $U --pub esp_sururu/status --observer - --obs-url $U --expect denied
-   # a boia publica no próprio prefixo, e só nele
-   python3 infra/tests/mqtt_probe.py --url $U --user esp_sururu --pub esp_sururu/status --observer - --expect allowed
-   python3 infra/tests/mqtt_probe.py --url $U --user esp_sururu --pub outra_boia/status --observer - --expect denied
+   python3 infra/tests/mqtt_probe.py --url $U --pub probe_tmp/status --observer - --obs-url $U --expect denied
+   # o usuário publica no próprio prefixo, e só nele
+   python3 infra/tests/mqtt_probe.py --url $U --user probe_tmp --pub probe_tmp/status --observer - --expect allowed
+   python3 infra/tests/mqtt_probe.py --url $U --user probe_tmp --pub outra_boia/status --observer - --expect denied
    unset MQTT_PASS MQTT_FEED_PASS
+   # na VM: sudo /usr/local/sbin/mqtt-user.sh del probe_tmp
    ```
 
    Exit 0 em todos = ACL pública conforme. Qualquer outro resultado: parar aqui.
@@ -983,56 +989,54 @@ fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já e
    antes; aplicar `supabase/migrations/20261119_firmware_deploys_path.sql`; publicar a função
    `ota-command` com as quatro variáveis (seção "Edge Function"). Assim os testes de bancada de
    OTA e rollback do firmware 5.1.0 (`BENCH.md` do firmware) já rodam contra o broker novo.
-8. **Bancada e boia: gravar o 5.1.0 por USB → `provision-board.py provision` → `snt-0001` →
-   BENCH → limpar retidos.** O 5.1.0 não tem mais `DEVICE_ID` nem `MQTT_PASSWORD` no `secrets.h`:
-   a identidade vem da NVS, gravada pelo script (seção "Provisionar placa"). Sequência:
-   1. Bancada do 5.1.0 (`BENCH.md`) com uma placa de teste no broker novo. Os itens que usam o
-      painel exigem o **frontend novo rodando local** (`npm run dev` na workstation, com
+8. **Boia: gravar o 5.1.0 por USB → `provision-board.py provision` → `snt-0001` → BENCH → limpar
+   retidos.** Existe **uma** placa física (a boia, hoje `esp_sururu`). O 5.1.0 não tem mais
+   `DEVICE_ID` nem `MQTT_PASSWORD` no `secrets.h`: a identidade vem da NVS, gravada pelo script
+   (seção "Provisionar placa"). O 5.0.x só fala com o HiveMQ e não há OTA para o 5.1.0: é USB.
+   1. Gravar o 5.1.0 por USB na boia.
+   2. `provision-board.py provision --port <COM>`: a primeira placa recebe `snt-0001` (vira o SM-01
+      no passo 11).
+   3. `BENCH.md` do 5.1.0 com a boia no broker novo. Os itens que usam o painel exigem o
+      **frontend novo rodando local** (`npm run dev` na workstation, com
       `VITE_MQTT_BROKER_URL=wss://mqtt.arthlabs.dev/mqtt` no `.env.local`, contra o Supabase de
-      produção): o painel em produção ainda é o atual.
-   2. Gravar o 5.1.0 por USB na **boia** (o 5.0.x só fala com o HiveMQ; não há OTA para ela) e
-      rodar `provision-board.py provision --port <COM>`: a primeira placa recebe `snt-0001`
-      (a boia, que vira o SM-01 no passo 11). Placas de teste seguintes recebem `snt-0002`, ...
-      e saem com `retire` ao fim da bancada (`mqtt-user.sh del` incluso).
-   3. Conferir no broker novo com uma assinatura anônima no WSS (`mqtt_probe.py --url
-      wss://mqtt.arthlabs.dev/mqtt --sub snt-0001/status --receive --expect allowed`, ou o painel
-      local): `snt-0001/availability` = `online`, `snt-0001/status` com `firmware 5.1.0`.
-   4. Limpar os retidos de bancada de `snt-0001` (`snt-0001/ota/status`, se os testes de rollback
-      rodaram nela) com a credencial dela: `mosquitto_pub -r -n` em `snt-0001/ota/status` (e em
-      `snt-0001/availability`, se sobrar de teste), para o card do SM-01 não herdar estado de bancada.
-9. **Entre o USB e o passo 11** o painel de produção (id `esp_sururu`) mostra a boia offline e o
-   InfluxDB fica sem pontos do id antigo até o passo 10: fazer 8 → 10 → 11 em sequência. Rodar o
-   fechamento de eventos do passo 10 logo antes.
-10. **Fechar os `sensor_health_events` abertos do `esp_sururu`** (a boia passa a publicar como
-    `snt-0001`; sem isto eles ficam abertos para sempre). No Supabase da VM:
-
-    ```bash
-    sudo -n docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
-    UPDATE public.sensor_health_events
-       SET fim = now(), motivo = 'migração para snt-0001'
-     WHERE device_id = 'esp_sururu' AND fim IS NULL;
-    SQL
-    ```
-
-    (Colunas conferidas em `supabase/migrations/20261117_sensor_health.sql`; rodar antes um
-    `SELECT ... WHERE device_id = 'esp_sururu' AND fim IS NULL` para ver o que será fechado.)
-
-    **Trocar o Telegraf** só depois que a boia estiver no broker novo: `.env` com
+      produção): o painel em produção ainda é o atual. Conferir com uma assinatura anônima no WSS
+      (`mqtt_probe.py --url wss://mqtt.arthlabs.dev/mqtt --sub snt-0001/status --receive
+      --expect allowed`): `snt-0001/availability` = `online`, `snt-0001/status` com `firmware 5.1.0`.
+   4. Limpar os retidos de bancada com a credencial dela: `mosquitto_pub -r -n` em
+      `snt-0001/ota/status` (e em `snt-0001/availability`, se sobrar de teste), para o card do SM-01
+      não herdar estado de bancada.
+9. **Do USB ao passo 11** o painel de produção (id `esp_sururu`) mostra a boia offline e o InfluxDB
+   fica sem pontos do id antigo até o passo 10: fazer 8 → 10 → 11 em sequência.
+10. **Trocar o Telegraf** só depois que a boia estiver no broker novo (passo 8): `.env` com
     `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`, `MQTT_TELEGRAF_PASS`
     e `sudo /usr/local/sbin/stack-deploy.sh none` (passo 3 de "Primeiro deploy com o broker").
     Conferir pontos novos no InfluxDB.
 11. **Frontend:** trocar o secret `VITE_MQTT_BROKER_URL` do GitHub para
-    `wss://mqtt.arthlabs.dev/mqtt` e **só então** fazer merge na `main` dos dois commits de
-    frontend (`dev` inteiro) e aprovar o deploy do site (o painel passa a ler anônimo e a mandar
+    `wss://mqtt.arthlabs.dev/mqtt` e **só então** fazer merge na `main` dos commits de
+    frontend (o `dev` inteiro) e aprovar o deploy do site (o painel passa a ler anônimo e a mandar
     OTA pela Edge Function). No painel novo, editar o SM-01 e trocar o `deviceId` para `snt-0001`
     (o id anterior `esp_sururu` é mantido automaticamente para o histórico). Teste: OTA com versão
     descartável numa placa de bancada.
+
+    **Depois da edição do registro**, fechar os `sensor_health_events` abertos do `esp_sururu`
+    (só agora: antes disso o worker ainda lista `esp_sururu` pelo registro e reabriria os eventos).
+    Preservando o motivo original, com o `SELECT` antes do `UPDATE`:
+
+    ```bash
+    sudo -n docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+    SELECT id, sensor, estado, motivo, inicio FROM public.sensor_health_events
+     WHERE device_id = 'esp_sururu' AND fim IS NULL;
+    UPDATE public.sensor_health_events
+       SET fim = now(), motivo = concat_ws(' | ', motivo, 'encerrado: migração para snt-0001')
+     WHERE device_id = 'esp_sururu' AND fim IS NULL;
+    SQL
+    ```
 12. **Apagar** os secrets `VITE_MQTT_USER` e `VITE_MQTT_PASS` do GitHub (a credencial HiveMQ
     estava no bundle público).
 13. **Uma semana estável** → apagar o cluster HiveMQ (antes de 2026-12-31) e a credencial dele.
 
-**Rollback (até o passo 12):** voltar `VITE_MQTT_BROKER_URL` para o HiveMQ e reverter os dois
-commits de frontend na `main` (`git revert` dos dois, nova ordem: o `fix` primeiro); voltar `MQTT_BROKER`/credencial do Telegraf no `.env` e `stack-deploy.sh none`;
+**Rollback (até o passo 12):** voltar `VITE_MQTT_BROKER_URL` para o HiveMQ e reverter os
+commits `(frontend)` na `main` (`git revert` do mais novo para o mais antigo); voltar `MQTT_BROKER`/credencial do Telegraf no `.env` e `stack-deploy.sh none`;
 boia: gravar por USB o backup 5.0.4 (fala com o HiveMQ). O broker pode ficar parado no compose
 sem afetar o resto; a coluna `arquivo_path` e a função podem ficar (função sem chamador). Depois
 do passo 13 não há volta ao HiveMQ.
@@ -1085,6 +1089,7 @@ py -3 -m pip install pyserial==3.5
 # achar a porta: Gerenciador de Dispositivos > Portas (COM e LPT), ex.: COM5
 py -3 infra\bin\provision-board.py ident --port COM5          # só lê serial/MAC/estado
 py -3 infra\bin\provision-board.py provision --port COM5      # [--hardware ...] [--host ...]
+py -3 infra\bin\provision-board.py unprov --port COM5         # limpa a identidade da placa
 ```
 
 Fluxo do `provision`: `IDENT?` → se a placa já está provisionada, só mostra o serial e sai →
@@ -1096,14 +1101,24 @@ no case da placa. Fechar monitores seriais (Arduino IDE etc.) antes: a porta é 
 - **DTR/RTS:** o script os mantém em nível baixo ao abrir a porta, para não resetar a placa nem
   cair no bootloader. O único reset é o do firmware (~500 ms depois do `OK`); a porta USB pode
   sumir e voltar nesse momento, e o script reconecta sozinho.
-- **Falha no meio:** o script desfaz (`mqtt-user.sh del`; libera a reserva só se a linha foi criada
-  nesta execução) e sai com 1. Se a placa já confirmou o serial e só o registro falhou, a credencial
-  é **mantida** e o script avisa para rodar `dispositivo_marcar` à mão.
+- **Espera:** a placa pode levar ~30 s para atender o primeiro `IDENT?` (o `setup()` espera o Wi-Fi
+  até 30 s); o script espera até 35 s no primeiro `ident` e até 60 s a placa voltar depois do `OK`.
+- **Falha antes de a placa dizer `OK`** (ex.: `ERR bad_password`): o script desfaz (`mqtt-user.sh
+  del`; libera a reserva só se a linha foi criada nesta execução) e sai com 1. Se a senha foi
+  enviada mas o veredito não chegou, ele reconecta e só desfaz se a placa reportar `unprovisioned`.
+- **Falha depois do `OK`** (placa não volta, Ctrl-C, registro não atualizou): **nada é desfeito**,
+  porque a identidade já está na NVS da placa; credencial e reserva ficam, exit 1. Rodar `provision`
+  de novo: ele concilia (placa provisionada + linha `reservado` + usuário no broker → marca
+  `provisionado` e imprime a etiqueta). Sem linha, serial diferente ou usuário do broker ausente,
+  sai com 1 e manda usar `unprov`.
+- **`unprov --port COM5`:** envia `UNPROV`, espera a placa reiniciar e confere `unprovisioned`. Não
+  mexe no registro nem no broker; o `provision` seguinte reaproveita o serial com senha nova.
 - **Apagar toda a flash** (ou `UNPROV`): a placa volta sem identidade, mas o MAC continua em
   `dispositivos`. Rodar `provision` de novo **reaproveita o mesmo serial** e gera senha nova
   (rotaciona a anterior).
 - **Baixar uma placa** (perdida, descartada): `py -3 infra\bin\provision-board.py retire snt-NNNN`
-  remove a credencial (`mqtt-user.sh del`) e marca `baixado`; o serial não é reaproveitado e uma
+  remove a credencial (`mqtt-user.sh del`, só se existir: pode ser repetido após falha parcial) e
+  marca `baixado`; o serial não é reaproveitado e uma
   placa baixada não é provisionada de novo (`dispositivo_baixado`).
 - Códigos de saída: 0 ok, 1 falha (após desfazer), 2 uso incorreto.
 - Teste: `infra/tests/provision.test.sh` (pytest com fakes, imagem `python:3.12.8-slim`).
