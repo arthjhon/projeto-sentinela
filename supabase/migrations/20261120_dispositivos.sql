@@ -1,8 +1,12 @@
 -- Device registry: permanent serial (snt-NNNN) per ESP board, keyed by MAC.
 -- Registry only: nothing in panel/OTA/firmware_deploys depends on it. Written exclusively by the
 -- provisioning script, which calls the functions below as `postgres` (ssh + docker exec psql).
--- Idempotent: safe to re-run. Requires 20261117_sensor_health.sql (profiles). Touches no existing table.
+-- Idempotent: safe to re-run. Applied after 20261117_sensor_health.sql; the RLS policy reads
+-- public.profiles (Supabase base schema). Touches no existing table.
 -- MAC normalization (lowercase aa:bb:..) is the caller's job; the CHECK rejects anything else.
+-- Grants: anon/authenticated lose everything except the admin-only SELECT below; service_role keeps
+-- the Supabase default ALL on the table and EXECUTE on the functions (same posture as the earlier
+-- migrations: service_role is server-side only and bypasses RLS anyway).
 
 CREATE TABLE IF NOT EXISTS public.dispositivos (
   serial          text        PRIMARY KEY CHECK (serial ~ '^snt-[0-9]{4}$'),
@@ -28,7 +32,11 @@ CREATE POLICY dispositivos_admin_read ON public.dispositivos
 
 -- ---------------------------------------------------------------- functions
 -- Existing MAC -> its row unchanged (error 'dispositivo_baixado' if retired).
--- New MAC -> next serial over ALL rows (incl. baixado), so a serial is never reused.
+-- New MAC -> next serial over ALL rows (incl. baixado), so a retired serial is never reused.
+-- Exception: dispositivo_liberar_reserva deletes a 'reservado' row, so if it was the highest
+-- number, that number is handed out again. This only happens when the board never received it
+-- (the provisioning script releases only after the board reported "unprovisioned" or before the
+-- password could reach it), so no label or broker user carries it.
 CREATE OR REPLACE FUNCTION public.dispositivo_reservar(p_mac text, p_hardware text)
 RETURNS TABLE(serial text, situacao text)
 LANGUAGE plpgsql
@@ -62,19 +70,27 @@ BEGIN
 END;
 $$;
 
+-- 'baixado' is terminal: marking a retired row as anything else raises 'dispositivo_baixado'
+-- (marking it 'baixado' again is a no-op, so retire stays idempotent).
 CREATE OR REPLACE FUNCTION public.dispositivo_marcar(p_serial text, p_situacao text)
 RETURNS void
 LANGUAGE plpgsql
 SET search_path = public, pg_temp
 AS $$
+DECLARE
+  v_atual text;
 BEGIN
-  UPDATE public.dispositivos d
-     SET situacao = p_situacao,
-         provisionado_em = CASE WHEN p_situacao = 'provisionado' THEN now() ELSE d.provisionado_em END
-   WHERE d.serial = p_serial;
+  SELECT d.situacao INTO v_atual FROM public.dispositivos d WHERE d.serial = p_serial FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'dispositivo_inexistente' USING ERRCODE = 'P0001';
   END IF;
+  IF v_atual = 'baixado' AND p_situacao IS DISTINCT FROM 'baixado' THEN
+    RAISE EXCEPTION 'dispositivo_baixado' USING ERRCODE = 'P0001';
+  END IF;
+  UPDATE public.dispositivos d
+     SET situacao = p_situacao,
+         provisionado_em = CASE WHEN p_situacao = 'provisionado' THEN now() ELSE d.provisionado_em END
+   WHERE d.serial = p_serial;  -- row locked above: it exists
 END;
 $$;
 

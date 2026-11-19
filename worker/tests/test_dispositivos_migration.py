@@ -14,7 +14,9 @@ pytestmark = pytest.mark.skipif(not DSN, reason="TEST_PG_DSN not set")
 
 MIGRATIONS = pathlib.Path(__file__).resolve().parents[2] / "supabase" / "migrations"
 MIGRATION = MIGRATIONS / "20261120_dispositivos.sql"
-BASE = [MIGRATIONS / "20261117_sensor_health.sql"]  # creates profiles dependencies used by RLS
+# Declared prerequisite of the migration under test (applied first, as in production). It does not
+# create public.profiles: that table (used by the RLS policy) already exists in the Supabase schema.
+BASE = [MIGRATIONS / "20261117_sensor_health.sql"]
 ADMIN = "00000000-0000-0000-0000-0000000000a1"
 OPER = "00000000-0000-0000-0000-0000000000a2"
 MAC1, MAC2, MAC3 = "aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02", "aa:bb:cc:dd:ee:03"
@@ -99,6 +101,20 @@ def test_marcar_provisionado_sets_timestamp(conn):
                         " WHERE serial=%s", (s,)).fetchone() == ("provisionado", True)
     expect_error(conn, psycopg.errors.RaiseException,
                  "SELECT public.dispositivo_marcar('snt-9999', 'baixado')")
+
+
+def test_marcar_baixado_is_terminal(conn):
+    s = reserve(conn, MAC1)[0]
+    conn.execute("SELECT public.dispositivo_marcar(%s, 'provisionado')", (s,))
+    conn.execute("SELECT public.dispositivo_marcar(%s, 'baixado')", (s,))
+    for back in ("provisionado", "reservado"):
+        conn.execute("SAVEPOINT s")
+        with pytest.raises(psycopg.errors.RaiseException, match="dispositivo_baixado"):
+            conn.execute("SELECT public.dispositivo_marcar(%s, %s)", (s, back))
+        conn.execute("ROLLBACK TO s")
+    conn.execute("SELECT public.dispositivo_marcar(%s, 'baixado')", (s,))  # retire again: no-op
+    assert conn.execute("SELECT situacao FROM public.dispositivos WHERE serial=%s",
+                        (s,)).fetchone()[0] == "baixado"
 
 
 def test_liberar_only_reservado(conn):
