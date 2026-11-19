@@ -1,4 +1,4 @@
-# Stack de producao do Sentinela (VM Debian). Servicos: influxdb + telegraf + worker.
+# Stack de producao do Sentinela (VM Debian). Servicos: influxdb + telegraf + mosquitto + worker.
 # Valores vem do .env (nunca versionado).
 services:
   influxdb:
@@ -41,6 +41,8 @@ services:
     depends_on:
       influxdb:
         condition: service_healthy
+      mosquitto:
+        condition: service_healthy
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     environment:
@@ -54,6 +56,52 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Broker MQTT proprio (substitui o HiveMQ Cloud). Dois listeners (ver mosquitto/mosquitto.conf):
+  # 1883 TCP com autenticacao, so na rede do compose (nao publicado); 9001 WebSocket, publicado
+  # so em 127.0.0.1 e exposto pelo tunel cloudflared (mqtt.arthlabs.dev). Nao entra na rede
+  # externa `pg`: nao tem motivo para alcancar o Postgres.
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - mosquitto-data:/mosquitto/data
+    # A imagem declara VOLUME /mosquitto/log; o log vai para stdout, entao esse caminho
+    # vira tmpfs em vez de um volume anonimo novo (orfao) a cada recriacao do container.
+    tmpfs:
+      - /mosquitto/log
+    # O mosquitto nao sobe sem o password_file. Na primeira partida cria um arquivo vazio
+    # (dono mosquitto, modo 600); se ja existir nao e tocado (as credenciais vivem no
+    # volume). O entrypoint da imagem ja fez chown do /mosquitto antes deste comando, e o
+    # mosquitto (root no start) abre o arquivo e depois larga para o usuario mosquitto.
+    command:
+      - sh
+      - -c
+      - |
+        if [ -e /mosquitto/data/passwd ]; then :; else
+          (umask 077; : > /mosquitto/data/passwd)
+          chown mosquitto:mosquitto /mosquitto/data/passwd
+        fi
+        exec mosquitto -c /mosquitto/config/mosquitto.conf
+    mem_limit: 64m
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Sem credencial: so confere que os dois listeners aceitam conexao TCP (busybox nc).
+    # Nao prova auth/ACL (isso e o infra/tests/mosquitto.test.sh). Cada probe vira uma
+    # linha de log "New connection"/"closed its connection"; 30 s mantem o ruido baixo.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 1883 && nc -z 127.0.0.1 9001"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # Coletores (Open-Meteo, ANA) e detector. Sem portas, sem volumes, raiz somente leitura.
   # Rede externa: so a sentinela-pg (interna, criada a mao), onde so o supabase-db
@@ -98,3 +146,5 @@ volumes:
     name: sentinela-influxdb-data
   influxdb-config:
     name: sentinela-influxdb-config
+  mosquitto-data:
+    name: sentinela-mosquitto-data

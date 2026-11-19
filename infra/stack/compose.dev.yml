@@ -4,20 +4,26 @@
 services:
   mosquitto:
     image: eclipse-mosquitto:2.0.22
-    # Sem bind mount: a config minima (anonimo, sem TLS) e gerada no start.
+    # O compose.yml define o mosquitto de producao (binds de config/ACL, passwd no volume,
+    # healthcheck nos dois listeners). Aqui ele e trocado por um broker anonimo sem TLS:
+    # `volumes` de overlay SOMA (merge por destino), entao !override descarta os binds
+    # de producao, que nao existem no dev. `command` e `healthcheck.test` sao substituidos.
+    volumes: !override
+      - mosquitto-data:/mosquitto/data
     command:
       - sh
       - -c
       - |
-        printf 'listener 1883\nallow_anonymous true\n' > /tmp/mosquitto.conf
+        printf 'listener 1883\nallow_anonymous true\npersistence true\npersistence_location /mosquitto/data/\n' > /tmp/mosquitto.conf
         exec mosquitto -c /tmp/mosquitto.conf
-    ports:
+    # Sem o listener 9001 no dev: o healthcheck de producao falharia.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 1883"]
+    # Ports tambem SOMAM: !override evita publicar o 9001 de producao sem listener.
+    ports: !override
       - "127.0.0.1:1883:1883"
 
   telegraf:
-    depends_on:
-      mosquitto:
-        condition: service_started
     environment:
       MQTT_BROKER: tcp://mosquitto:1883
 
@@ -28,3 +34,5 @@ volumes:
     name: sentinela-dev-influxdb-data
   influxdb-config:
     name: sentinela-dev-influxdb-config
+  mosquitto-data:
+    name: sentinela-dev-mosquitto-data

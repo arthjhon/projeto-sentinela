@@ -36,19 +36,19 @@ teardown() {
   docker image ls --format '{{.Repository}}:{{.Tag}}' "$OTHER_REPO" 2>/dev/null | xargs -r docker rmi >/dev/null 2>&1
   docker compose -p "$PROJECT" down --remove-orphans >/dev/null 2>&1
   # Explicit, test-only names (never `down -v`, never the real sentinela-influxdb-*).
-  docker volume rm "${PROJECT}_influxdb-data" "${PROJECT}_influxdb-config" >/dev/null 2>&1
+  docker volume rm "${PROJECT}_influxdb-data" "${PROJECT}_influxdb-config" "${PROJECT}_mosquitto-data" >/dev/null 2>&1
   docker network rm "${PROJECT}_default" >/dev/null 2>&1
   rm -rf "$tmp"
 }
 trap teardown EXIT
 teardown_pre() {
   docker compose -p "$PROJECT" down --remove-orphans >/dev/null 2>&1
-  docker volume rm "${PROJECT}_influxdb-data" "${PROJECT}_influxdb-config" >/dev/null 2>&1
+  docker volume rm "${PROJECT}_influxdb-data" "${PROJECT}_influxdb-config" "${PROJECT}_mosquitto-data" >/dev/null 2>&1
 }
 teardown_pre
 
 # ---- fixture tree ----------------------------------------------------------
-mkdir -p "$INC/telegraf" "$LIVE" "$R/usr/local/sbin" "$R/usr/local/etc/sentinela" "$R/var/log" "$R/run"
+mkdir -p "$INC/telegraf" "$INC/mosquitto" "$LIVE" "$R/usr/local/sbin" "$R/usr/local/etc/sentinela" "$R/var/log" "$R/run"
 chmod 755 "$R/srv/sentinela"
 chmod 750 "$LIVE"
 install -m 755 "$repo/infra/bin/validate-compose.sh" "$R/usr/local/sbin/validate-compose.sh"
@@ -79,21 +79,27 @@ chmod 600 "$LIVE/.env"
 
 # The real compose, minus fixed volume names (=> project-scoped test volumes)
 # and on a test port.
+# The mosquitto host port stays 9001: the validator only accepts 127.0.0.1:9001:9001.
 base=$tmp/compose.base.yml
 # The worker service and the external supabase network are dropped: the worker
 # image lives in GHCR (not pullable here) and the network does not exist.
-sed -e '/^    name: sentinela-influxdb-/d' -e 's/127\.0\.0\.1:8086:8086/127.0.0.1:18086:8086/' \
+sed -e '/^    name: sentinela-influxdb-/d' -e '/^    name: sentinela-mosquitto-data/d' \
+  -e 's/127\.0\.0\.1:8086:8086/127.0.0.1:18086:8086/' \
   "$repo/infra/stack/compose.yml" \
   | awk '/^  worker:/ {skip=1; next} /^networks:/ {skip=1; next} /^[^ #]/ {skip=0} !skip' >"$base"
 if grep -v '^ *#' "$base" | grep -q -e 'worker:' -e 'supabase' -e 'pg:'; then echo "test compose still has worker/external network"; exit 1; fi
-if grep -q 'sentinela-influxdb-' "$base"; then echo "test compose still names real volumes"; exit 1; fi
+if grep -q -e 'sentinela-influxdb-' -e 'sentinela-mosquitto-data' "$base"; then echo "test compose still names real volumes"; exit 1; fi
 conf=$repo/infra/stack/telegraf/telegraf.conf
+mconf=$repo/infra/stack/mosquitto/mosquitto.conf
+macl=$repo/infra/stack/mosquitto/acl
 
-reset_incoming() { # <compose file> [telegraf.conf]
+reset_incoming() { # <compose file> [telegraf.conf] [mosquitto.conf] [acl]
   rm -rf "$INC"
-  mkdir -p "$INC/telegraf"
+  mkdir -p "$INC/telegraf" "$INC/mosquitto"
   cp "$1" "$INC/compose.yml"
   cp "${2:-$conf}" "$INC/telegraf/telegraf.conf"
+  cp "${3:-$mconf}" "$INC/mosquitto/mosquitto.conf"
+  cp "${4:-$macl}" "$INC/mosquitto/acl"
 }
 
 run_deploy() { # <args...> -> sets out, rc
@@ -102,7 +108,7 @@ run_deploy() { # <args...> -> sets out, rc
 }
 
 live_sig() { # fingerprint of live state
-  { cat "$LIVE/compose.yml" "$LIVE/telegraf/telegraf.conf" "$LIVE/DEPLOYED" 2>/dev/null
+  { cat "$LIVE/compose.yml" "$LIVE/telegraf/telegraf.conf" "$LIVE/mosquitto/mosquitto.conf" "$LIVE/mosquitto/acl" "$LIVE/DEPLOYED" 2>/dev/null
     docker ps -q --filter "label=com.docker.compose.project=$PROJECT" | sort; } | sha256sum
 }
 
@@ -170,6 +176,21 @@ reset_incoming "$base"
 rm "$INC/telegraf/telegraf.conf"
 run_deploy none
 expect_rc "missing expected file" 1 "missing telegraf/telegraf.conf"
+
+reset_incoming "$base"
+rm "$INC/mosquitto/mosquitto.conf"
+run_deploy none
+expect_rc "missing mosquitto.conf" 1 "missing mosquitto/mosquitto.conf"
+
+reset_incoming "$base"
+rm "$INC/mosquitto/acl"
+run_deploy none
+expect_rc "missing mosquitto acl" 1 "missing mosquitto/acl"
+
+reset_incoming "$base"
+echo "x:y" >"$INC/mosquitto/passwd"
+run_deploy none
+expect_rc "extra file under mosquitto/" 1 "unexpected file"
 
 # ---- raw compose check ------------------------------------------------------
 reset_incoming "$base"
@@ -273,6 +294,14 @@ else pass "no secret in stdout"; fi
 [ "$(stat -c %a "$LIVE/current/rendered.json")" = 600 ] && pass "rendered.json mode 600" || fail "rendered.json mode"
 for l in current .current compose.yml telegraf DEPLOYED; do [ -L "$LIVE/$l" ] || fail "layout: $l is not a symlink"; done
 [ "$(readlink "$LIVE/current")" = "$(readlink "$LIVE/.current")" ] && pass "layout: current == .current after success" || fail "layout pointers"
+mosq_id=$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=mosquitto)
+[ "$(docker inspect -f '{{.State.Health.Status}}' "$mosq_id" 2>/dev/null)" = healthy ] && pass "mosquitto healthy" || fail "mosquitto not healthy"
+[ -L "$LIVE/mosquitto" ] && [ "$(readlink "$LIVE/mosquitto")" = current/mosquitto ] && pass "layout: mosquitto static link" || fail "layout: mosquitto link"
+cmp -s <(docker exec "$mosq_id" cat /mosquitto/config/mosquitto.conf) "$mconf" && cmp -s <(docker exec "$mosq_id" cat /mosquitto/config/acl) "$macl" \
+  && pass "mosquitto sees the release files through the symlinks" || fail "mosquitto config inside container differs"
+[ "$(docker exec "$mosq_id" stat -c '%u:%g %a' /mosquitto/data/passwd 2>&1)" = "1883:1883 600" ] \
+  && pass "passwd created on first start (1883:1883, 600)" || fail "passwd: $(docker exec "$mosq_id" stat -c '%u:%g %a' /mosquitto/data/passwd 2>&1)"
+[ "$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' "$mosq_id")" = "${PROJECT}_mosquitto-data " ] && pass "mosquitto uses its named volume" || fail "mosquitto volume"
 cmp -s <(docker exec "$tele_id" cat /etc/telegraf/telegraf.conf) "$conf" && pass "telegraf sees the release conf through the symlinks" \
   || fail "telegraf conf inside container differs"
 [ -z "$(ls -A "$LIVE/.staging")" ] && pass "staging cleaned" || fail "staging left behind"
@@ -304,6 +333,26 @@ expect_rc "deploy policy DENY (rw bind under root)" 1 "policy: denied (2 violati
 grep -q 'deploy policy DENY: influxdb: bind must be read_only' "$LOGF" && pass "policy detail in host log" || fail "policy detail missing from log"
 [ "$(live_sig)" = "$before" ] && pass "policy DENY left live unchanged" || fail "policy DENY changed live"
 
+# ---- the broker's credentials live in the volume: a redeploy that changes the ACL
+# (bind content changed => container recreated) must keep them.
+# The seed hashes a plaintext user:password pair from stdin, never from argv.
+old_mosq=$mosq_id
+printf 'svc/seed:seedpw-%s\n' "$RANDOM" | docker exec -i "$mosq_id" sh -c \
+  'cat >/tmp/plain && cp /tmp/plain /mosquitto/data/passwd && chmod 600 /mosquitto/data/passwd && mosquitto_passwd -U /mosquitto/data/passwd && rm /tmp/plain && chown 1883:1883 /mosquitto/data/passwd' \
+  && pass "seeded a credential in the broker volume" || fail "could not seed passwd"
+seed_line=$(docker exec "$mosq_id" cat /mosquitto/data/passwd)
+macl2=$tmp/acl2
+{ cat "$macl"; echo "# changed for the redeploy test"; } >"$macl2"
+reset_incoming "$base" "$conf" "$mconf" "$macl2"
+run_deploy none
+expect_rc "redeploy with changed ACL" 0 "result: deployed"
+mosq_id=$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=mosquitto)
+[ -n "$mosq_id" ] && [ "$mosq_id" != "$old_mosq" ] && pass "mosquitto recreated on ACL change" || fail "mosquitto not recreated"
+[ "$(docker exec "$mosq_id" cat /mosquitto/data/passwd 2>&1)" = "$seed_line" ] && [[ $seed_line == svc/seed:* ]] \
+  && pass "passwd survived the redeploy (not clobbered)" || fail "passwd lost or changed on redeploy"
+cmp -s <(docker exec "$mosq_id" cat /mosquitto/config/acl) "$macl2" && pass "new ACL live in the container" || fail "ACL not updated"
+[ "$(docker inspect -f '{{.State.Health.Status}}' "$mosq_id")" = healthy ] && pass "mosquitto healthy after redeploy" || fail "mosquitto unhealthy after redeploy"
+
 # ---- health failure -> rollback ---------------------------------------------
 prev_compose=$(sha256sum <"$LIVE/compose.yml")
 prev_deployed=$(cat "$LIVE/DEPLOYED")
@@ -322,7 +371,7 @@ cmp -s "$LIVE/telegraf/telegraf.conf" "$conf" && pass "live telegraf.conf restor
 [ -n "$prev_deployed" ] && [ "$(cat "$LIVE/DEPLOYED")" = "$prev_deployed" ] && pass "DEPLOYED unchanged after rollback" || fail "DEPLOYED changed"
 influx_id=$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=influxdb)
 [ "$(docker inspect -f '{{.State.Health.Status}}' "$influx_id" 2>/dev/null)" = healthy ] && pass "influxdb healthy after rollback" || fail "influxdb not healthy after rollback"
-grep -q 'force-recreate (bind source changed): telegraf' "$LOGF" && pass "telegraf recreated on conf change" || fail "no telegraf recreate logged"
+grep -q 'force-recreate (bind source changed):.*telegraf' "$LOGF" && pass "telegraf recreated on conf change" || fail "no telegraf recreate logged"
 
 # ---- up succeeds but a service turns unhealthy -> health wait fails -> rollback
 sed 's/^    mem_limit: 128m/    mem_limit: 128m\n    healthcheck:\n      test: ["CMD", "false"]\n      interval: 2s\n      retries: 1/' \

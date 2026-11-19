@@ -1,0 +1,10 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    cap_drop: [ALL]
+    networks:
+      sb: {}
+networks:
+  sb:
+    external: true
+    name: ${SUPABASE_NETWORK}

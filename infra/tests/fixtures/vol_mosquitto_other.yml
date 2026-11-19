@@ -1,0 +1,7 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    volumes: ["vol1:/mosquitto/data"]
+volumes:
+  vol1:
+    name: sentinela-mosquitto-data-evil

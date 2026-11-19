@@ -1,0 +1,4 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    ports: ["9001:9001"]

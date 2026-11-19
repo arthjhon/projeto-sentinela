@@ -75,7 +75,7 @@ def under_root($p):
   | map(select(length > 0 and (startswith("#") | not)))) as $entries
 
 # Rule list ONE: services permitted at all.
-| ["influxdb", "telegraf", "worker"] as $svc_allowed
+| ["influxdb", "telegraf", "mosquitto", "worker"] as $svc_allowed
 
 # Rule list TWO: keys denied outright (value present = violation).
 | ["devices", "device_cgroup_rules", "gpus", "runtime", "build", "volumes_from",
@@ -97,7 +97,7 @@ def under_root($p):
 | ["no-new-privileges", "no-new-privileges:true", "no-new-privileges=true"] as $secopt_ok
 
 # Rule list FIVE: fixed volume names allowed besides <project>_<key>.
-| ["sentinela-influxdb-data", "sentinela-influxdb-config"] as $vol_names
+| ["sentinela-influxdb-data", "sentinela-influxdb-config", "sentinela-mosquitto-data"] as $vol_names
 
 # Image policy: exact entry, or the worker pattern line (40-hex tag or sha256 digest).
 | "ghcr.io/arthjhon/sentinela-worker:<sha>" as $worker_line
@@ -154,6 +154,29 @@ def under_root($p):
           | deny(($m.type == "bind" and $m.source == ($root + "/telegraf/telegraf.conf")
                   and $m.target == "/etc/telegraf/telegraf.conf" and $m.read_only == true) | not;
                  "telegraf extra mount: \($m.source // $m.target)"))
+       else empty end),
+
+      # R27: mosquitto mounts only its two read-only config files (broker config + ACL,
+      # both rsynced by CI and checked by stack-deploy). Its state lives in the named
+      # volume sentinela-mosquitto-data (any other mount of this service is denied here; R8 still
+      # bounds binds to root). No other host path (users file, certs, /etc) can reach the broker.
+      (if $n == "mosquitto" then
+         (($v.volumes // [])[] as $m
+          | deny(($m.type == "bind" and $m.read_only == true
+                  and (($m.source == ($root + "/mosquitto/mosquitto.conf") and $m.target == "/mosquitto/config/mosquitto.conf")
+                       or ($m.source == ($root + "/mosquitto/acl") and $m.target == "/mosquitto/config/acl")))
+                 or ($m.type == "volume" and $m.source == "mosquitto-data" and $m.target == "/mosquitto/data")
+                 | not;
+                 "mosquitto extra mount: \($m.source // $m.target)"))
+       else empty end),
+
+      # R28: mosquitto publishes only the WebSocket listener (9001, behind the tunnel on
+      # the loopback; R7 already forces 127.0.0.1). The TCP listener 1883 is reachable
+      # only inside the compose network, so it must never get a host port.
+      (if $n == "mosquitto" then
+         (($v.ports // [])[] as $p
+          | deny(($p.target | tostring) != "9001" or ($p.published | tostring) != "9001";
+                 "port not allowed: \($p.published // $p.target):\($p.target) (only 127.0.0.1:9001:9001)"))
        else empty end),
 
       # R15: container_name must be namespaced (no "db"/"kong" impersonation on shared nets).

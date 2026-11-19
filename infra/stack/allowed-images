@@ -3,4 +3,5 @@
 # (tag must be a 40-hex git sha, or an @sha256:<64 hex> digest). Never 'latest'.
 influxdb:2.7.12
 telegraf:1.33.3
+eclipse-mosquitto:2.0.22
 ghcr.io/arthjhon/sentinela-worker:<sha>

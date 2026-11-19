@@ -1,5 +1,5 @@
 #!/bin/bash
-# Root deploy of the Sentinela data stack (InfluxDB + Telegraf [+ worker]).
+# Root deploy of the Sentinela data stack (InfluxDB + Telegraf + Mosquitto [+ worker]).
 #
 #   stack-deploy.sh <none|40-hex-worker-sha>
 #
@@ -11,14 +11,17 @@
 # Live layout ($LIVE = /srv/sentinela/stack, root 750, only root writes):
 #   .env                         root 600, never touched here
 #   releases/<id>/               one immutable dir per deploy attempt:
-#     compose.yml  telegraf/telegraf.conf  rendered.json (validated, 600)
+#     compose.yml  telegraf/telegraf.conf  mosquitto/mosquitto.conf  mosquitto/acl
+#     rendered.json (validated, 600)
 #     DEPLOYED                   "<iso-time> <sha|none>", written only once healthy
 #   current  -> releases/<id>    what was last started (moved by one rename)
 #   .current -> releases/<id>    last-known-good: moved only after the health check
 #   .previous -> releases/<id>   the last-known-good before that
-#   compose.yml -> current/compose.yml, telegraf -> current/telegraf (static links;
-#                                the telegraf bind path $LIVE/telegraf/telegraf.conf
-#                                stays fixed while `current` flips both files at once)
+#   compose.yml -> current/compose.yml, telegraf -> current/telegraf,
+#   mosquitto -> current/mosquitto (static links; the bind paths
+#                                $LIVE/telegraf/telegraf.conf, $LIVE/mosquitto/mosquitto.conf
+#                                and $LIVE/mosquitto/acl stay fixed while `current` flips
+#                                every file at once)
 #   DEPLOYED -> .current/DEPLOYED
 # Every pointer change is an atomic rename of a symlink: a crash at any point
 # leaves .current/DEPLOYED naming a release that was healthy.
@@ -66,7 +69,7 @@
 # the first deploy must name a 40-hex sha whose image is already in GHCR.
 #
 # Output: stdout (what CI sees) carries only fixed labels, counts, service names
-# from the fixed list (influxdb, telegraf, worker) and file names from the
+# from the fixed list (influxdb, telegraf, mosquitto, worker) and file names from the
 # incoming tree. Nothing derived from validator/policy output or from the
 # rendered compose: a DENY is reported as "denied (N violation(s))". Compose
 # output and full validator/policy messages (which can contain .env values)
@@ -102,8 +105,8 @@ readonly LOG_PATH=/var/log/sentinela-stack-deploy.log
 readonly LOCK_PATH=/run/sentinela-stack-deploy.lock
 readonly ROOT_HOME=/root
 # The only files CI may ship (relative to incoming and to a release). Keep in sync with CI.
-readonly EXPECTED_FILES=(compose.yml telegraf/telegraf.conf)
-readonly EXPECTED_DIRS=(telegraf)
+readonly EXPECTED_FILES=(compose.yml telegraf/telegraf.conf mosquitto/mosquitto.conf mosquitto/acl)
+readonly EXPECTED_DIRS=(telegraf mosquitto)
 readonly MAX_FILE_BYTES=1048576
 readonly FORBIDDEN_WORDS_RE='env_file|label_file|include|extends'
 readonly HEALTH_TIMEOUT=120
@@ -273,6 +276,7 @@ check_link .current RELEASE
 check_link .previous RELEASE
 check_link compose.yml current/compose.yml
 check_link telegraf current/telegraf
+check_link mosquitto current/mosquitto
 check_link DEPLOYED .current/DEPLOYED
 command -v jq >/dev/null || { log "FATAL: jq not found"; exit 1; }
 command -v docker >/dev/null || { log "FATAL: docker not found"; exit 1; }
@@ -453,7 +457,7 @@ render() { # <stage> <compose> <out json> <tag-or-empty>
 # svc_label <name>: a service name for stdout, only from the fixed list the
 # validator allows (anything else prints as "?"; nothing from the rendered
 # compose reaches stdout verbatim).
-svc_label() { case "$1" in influxdb | telegraf | worker) printf '%s' "$1" ;; *) printf '?' ;; esac; }
+svc_label() { case "$1" in influxdb | telegraf | mosquitto | worker) printf '%s' "$1" ;; *) printf '?' ;; esac; }
 
 # Deploy-side policy, on top of the validator: binds and file-backed
 # secrets/configs only from the live EXPECTED_FILES, binds read-only, and no
@@ -535,6 +539,7 @@ changed_bind_services() {
 ensure_static_links() {
   [ -L "$LIVE/compose.yml" ] || set_link compose.yml current/compose.yml || return 1
   [ -L "$LIVE/telegraf" ] || set_link telegraf current/telegraf || return 1
+  [ -L "$LIVE/mosquitto" ] || set_link mosquitto current/mosquitto || return 1
   [ -L "$LIVE/DEPLOYED" ] || set_link DEPLOYED .current/DEPLOYED || return 1
 }
 

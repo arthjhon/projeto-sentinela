@@ -55,6 +55,9 @@ jobs:
       - name: MQTT ACL check
         run: bash infra/tests/mqtt-acl-check.test.sh
 
+      - name: Mosquitto ACL (live broker)
+        run: bash infra/tests/mosquitto.test.sh
+
       - name: Detect worker
         id: worker
         run: |
@@ -188,14 +191,16 @@ jobs:
             IdentityFile $HOME/.ssh/id_stack_deploy
           EOF
 
-      # O CI envia exatamente dois arquivos (stack-deploy recusa qualquer outro).
+      # O CI envia exatamente quatro arquivos (stack-deploy recusa qualquer outro).
       - name: Stage files
         run: |
           set -euo pipefail
           umask 022
-          install -d "$RUNNER_TEMP/incoming/telegraf"
+          install -d "$RUNNER_TEMP/incoming/telegraf" "$RUNNER_TEMP/incoming/mosquitto"
           install -m 644 infra/stack/compose.yml "$RUNNER_TEMP/incoming/compose.yml"
           install -m 644 infra/stack/telegraf/telegraf.conf "$RUNNER_TEMP/incoming/telegraf/telegraf.conf"
+          install -m 644 infra/stack/mosquitto/mosquitto.conf "$RUNNER_TEMP/incoming/mosquitto/mosquitto.conf"
+          install -m 644 infra/stack/mosquitto/acl "$RUNNER_TEMP/incoming/mosquitto/acl"
           find "$RUNNER_TEMP/incoming" -type f | sort
 
       - name: Rsync to incoming (key 1, rrsync -wo)

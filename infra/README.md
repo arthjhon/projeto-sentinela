@@ -80,20 +80,23 @@ Layout em `/srv/sentinela/stack/` (root 750; só o root escreve):
 ```text
 .env                          root 600; nunca tocado pelo script
 releases/<UTC>-<pid>/         uma por tentativa: compose.yml, telegraf/telegraf.conf,
-                              rendered.json (JSON validado, 600), DEPLOYED (só se ficou saudável)
+                              mosquitto/mosquitto.conf, mosquitto/acl, rendered.json (JSON validado, 600), DEPLOYED (só se ficou saudável)
 current  -> releases/<id>     o que foi iniciado por último
 .current -> releases/<id>     último bom conhecido: só muda depois do healthcheck
 .previous -> releases/<id>    o último bom antes desse
-compose.yml -> current/compose.yml   telegraf -> current/telegraf   DEPLOYED -> .current/DEPLOYED
+compose.yml -> current/compose.yml   telegraf -> current/telegraf   mosquitto -> current/mosquitto
+DEPLOYED -> .current/DEPLOYED
 ```
 
-Toda troca é o `rename` de um symlink (atômico): `compose.yml` e `telegraf.conf` mudam juntos, e uma
+Toda troca é o `rename` de um symlink (atômico): `compose.yml`, `telegraf.conf` e os arquivos do
+mosquitto mudam juntos, e uma
 queda em qualquer ponto deixa `.current`/`DEPLOYED` numa release que estava saudável. O deploy
 seguinte avisa (`an earlier deploy did not finish`) e segue normalmente. Releases sem ponteiro são
 apagadas. O script ignora SIGPIPE/SIGHUP e erros de escrita no stdout: a queda da sessão SSH do CI
 não interrompe o deploy no meio.
 
-O CI envia **exatamente** dois arquivos: `compose.yml` e `telegraf/telegraf.conf`. Qualquer outro
+O CI envia **exatamente** quatro arquivos: `compose.yml`, `telegraf/telegraf.conf`,
+`mosquitto/mosquitto.conf` e `mosquitto/acl`. Qualquer outro
 arquivo, symlink, hardlink, fifo, device, socket ou setuid no incoming recusa o deploy inteiro. O
 validador e a lista de imagens **não** vêm do CI: são instalados à mão (passo 3). Acrescentar um
 arquivo novo ao conjunto exige editar `EXPECTED_FILES` em `stack-deploy.sh` e reinstalar o script.
@@ -208,7 +211,7 @@ sudo install -o root -g root -m 644 authorized_keys /var/lib/sentinela-deploy/.s
 - Verificado em container Debian 12 (OpenSSH 9.2, sudo 1.9.13p3; sem o `from=`, por ser local): a
   chave 1 só escreve no incoming (leitura e shell recusados pelo rrsync); a chave 2 só executa o
   script, com `none`/40-hex; `none none`, `*`, `none;id` e `$(id)` são negados pelo sudo.
-- O CI deve enviar com `rsync -r --delete` um diretório contendo só os dois arquivos.
+- O CI deve enviar com `rsync -r --delete` um diretório contendo só os quatro arquivos.
 
 ### 6. Chave de host da VM no CI (`UMJ_KNOWN_HOSTS`)
 
@@ -549,6 +552,10 @@ O compose tem o worker, então o primeiro deploy precisa de uma tag: o sha (40 h
   git show "$SHA:infra/stack/compose.yml" | sudo -u sentinela-deploy tee /srv/sentinela/stack-incoming/compose.yml >/dev/null
   sudo -u sentinela-deploy install -d -m 755 /srv/sentinela/stack-incoming/telegraf
   git show "$SHA:infra/stack/telegraf/telegraf.conf" | sudo -u sentinela-deploy tee /srv/sentinela/stack-incoming/telegraf/telegraf.conf >/dev/null
+  sudo -u sentinela-deploy install -d -m 755 /srv/sentinela/stack-incoming/mosquitto
+  for f in mosquitto.conf acl; do
+    git show "$SHA:infra/stack/mosquitto/$f" | sudo -u sentinela-deploy tee "/srv/sentinela/stack-incoming/mosquitto/$f" >/dev/null
+  done
   sudo /usr/local/sbin/stack-deploy.sh "$SHA"
   sudo cat /srv/sentinela/stack/DEPLOYED
   sudo tail -n 50 /var/log/sentinela-stack-deploy.log
@@ -925,6 +932,10 @@ o job de teste: `"required_status_checks": {"strict": true, "contexts": ["test"]
   sudo cat /srv/sentinela/stack/.previous/DEPLOYED                       # <data> <sha|none>
   sudo cat /srv/sentinela/stack/.previous/compose.yml | sudo -u sentinela-deploy tee /srv/sentinela/stack-incoming/compose.yml >/dev/null
   sudo cat /srv/sentinela/stack/.previous/telegraf/telegraf.conf | sudo -u sentinela-deploy tee /srv/sentinela/stack-incoming/telegraf/telegraf.conf >/dev/null
+  sudo -u sentinela-deploy install -d -m 755 /srv/sentinela/stack-incoming/mosquitto
+  for f in mosquitto.conf acl; do   # um .previous anterior ao broker nao tem estes: usar os do repo
+    sudo cat "/srv/sentinela/stack/.previous/mosquitto/$f" | sudo -u sentinela-deploy tee "/srv/sentinela/stack-incoming/mosquitto/$f" >/dev/null
+  done
   sudo /usr/local/sbin/stack-deploy.sh <sha-do-.previous|none>
   ```
 - **Parar a stack** (nunca `down -v`: apagaria os volumes de dados):
@@ -941,8 +952,84 @@ o job de teste: `"required_status_checks": {"strict": true, "contexts": ["test"]
 bash infra/tests/validate-compose.test.sh   # política do validador
 bash infra/tests/stack-deploy.test.sh       # deploy ponta a ponta (projeto sentinela-stack-test)
 bash infra/tests/influx-ops.test.sh         # bootstrap + backup em InfluxDB descartável
+bash infra/tests/mosquitto.test.sh          # ACL do broker (container descartável, ~60 s)
 ```
 
 O teste do deploy roda como usuário comum com `SENTINELA_DEPLOY_ROOT=<tmp>` (prefixo de todos os
 caminhos; ignorado como root), usa volumes `sentinela-stack-test_*` e remove só o que criou; nunca
 toca nos volumes `sentinela-influxdb-*` da máquina.
+
+## Broker MQTT
+
+O broker é o Mosquitto (`eclipse-mosquitto:2.0.22`) do próprio compose da stack, na VM da UMJ;
+substitui o HiveMQ Cloud. Configuração e ACL em `infra/stack/mosquitto/` (versionadas, enviadas
+pelo CI como parte dos quatro arquivos do deploy).
+
+```text
+boias, Telegraf, edge function OTA --TCP 1883, com senha--> mosquitto (rede interna do compose; sem porta no host)
+navegador --WSS--> Cloudflare --túnel cloudflared--> 127.0.0.1:9001 (WebSocket do mosquitto; só no loopback)
+```
+
+- Listener `1883`: só dentro da rede do compose, autenticação obrigatória. Não é publicado no host.
+- Listener `9001` (WebSocket): publicado só em `127.0.0.1` (o validador recusa outra porta ou
+  outro IP). Leitura anônima de telemetria; publicar exige credencial (ACL em `mosquitto/acl`).
+- O serviço não entra na rede externa `sentinela-pg`.
+- Healthcheck sem credencial: conexão TCP nos dois listeners. Não prova auth/ACL; isso é o
+  `infra/tests/mosquitto.test.sh`.
+
+### Credenciais (volume `sentinela-mosquitto-data`)
+
+Os usuários vivem em `/mosquitto/data/passwd`, dentro do volume `sentinela-mosquitto-data`. Na
+primeira partida o serviço cria o arquivo vazio (dono `mosquitto`, modo 600); depois nunca o
+sobrescreve. Contas de serviço: `svc/telegraf` (subscribe) e `svc/ota` (publica `+/ota/command`);
+cada boia usa o próprio device id como usuário.
+
+Adicionar usuário sem senha em argv nem em log (a senha entra por stdin; o hash é gerado num
+arquivo temporário só com o usuário novo e depois anexado ao `passwd`):
+
+```bash
+read -rs NEWPASS; export NEWPASS   # fora do histórico e do argv
+CT=$(sudo docker ps -q --filter label=com.docker.compose.project=sentinela-stack --filter label=com.docker.compose.service=mosquitto)
+printf '%s:%s\n' 'svc/telegraf' "$NEWPASS" | sudo docker exec -i "$CT" sh -c '
+  umask 077
+  cat > /tmp/new && mosquitto_passwd -U /tmp/new && cat /tmp/new >> /mosquitto/data/passwd && rm -f /tmp/new'
+sudo docker kill -s HUP "$CT"      # recarrega passwd e ACL sem derrubar conexões
+unset NEWPASS
+```
+
+Não rodar com um usuário que já existe (o `passwd` ficaria com duas linhas). Para trocar a senha:
+remover a linha do usuário (`mosquitto_passwd -D /mosquitto/data/passwd <usuario>`, sem senha) e
+adicionar de novo. A senha do `svc/telegraf` tem de ser a mesma de `MQTT_TELEGRAF_PASS` no `.env`
+(`MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`).
+
+**Backup:** o volume é o único lugar das credenciais. Perder o volume = reprovisionar todas as
+credenciais (boias incluídas). Incluir `sentinela-mosquitto-data` no backup da VM (o timer do
+passo 15 cobre só o InfluxDB). O `passwd` guarda só hashes, mas é segredo: mesmo cuidado de um `.env`.
+
+### Exposição: túnel Cloudflare e DNS
+
+O WebSocket chega ao navegador por `wss://mqtt.arthlabs.dev/mqtt`. No `config.yml` do cloudflared
+da VM, adicionar a regra **acima** do catch-all (`service: http_status:404`):
+
+```yaml
+ingress:
+  - hostname: mqtt.arthlabs.dev
+    service: http://127.0.0.1:9001
+  # ...demais regras existentes...
+  - service: http_status:404
+```
+
+Depois `sudo systemctl restart cloudflared` e conferir `sudo journalctl -u cloudflared -n 30`.
+O CNAME `mqtt` para `<id-do-túnel>.cfargotunnel.com` (proxied) é criado pelo Arthur no painel da
+Cloudflare: a VM não tem `cert.pem`, então `cloudflared tunnel route dns` não funciona lá.
+
+- **Sem Cloudflare Access** nesse hostname: navegador e boia não passam por login de Access; o
+  controle é a ACL do próprio broker (anônimo só lê a telemetria que o painel já mostra).
+- O túnel só leva o WebSocket; o TCP 1883 nunca é exposto à internet.
+
+### Modo limitado
+
+O broker agora roda na mesma VM da stack. Com a VM fora do ar (ou o broker parado), o painel perde
+também o **monitoramento em tempo real** (antes o HiveMQ Cloud seguia no ar) e as boias não
+conseguem publicar nem receber OTA até a VM voltar. A queda de 2026-11-17 (fsfreeze, ~24 h) é a
+referência do impacto.
