@@ -14,6 +14,7 @@ import { PERIODS } from '../hooks/useInfluxHistory';
 const ORG = import.meta.env.VITE_INFLUX_ORG;
 const BUCKET = import.meta.env.VITE_INFLUX_BUCKET;
 
+import { topicFilterFlux } from './deviceIds';
 const COLUMNS = ['temperatura', 'ph', 'turbidez'];
 
 /** Número no padrão pt-BR (decimal com vírgula), vazio se ausente. */
@@ -84,10 +85,10 @@ function parsePivoted(csv) {
 /**
  * Busca o histórico bruto do período e devolve o CSV pronto.
  * @param {string} period    chave de PERIODS (mesma janela do gráfico)
- * @param {string} deviceId  deviceId da FLEET (ex: esp_sururu)
+ * @param {string|string[]} deviceIds  deviceId atual (+ anteriores, ver deviceIdsOf)
  * @param {string} boiaId    id da bóia para a coluna boia_id (ex: SM-01)
  */
-export async function fetchHistoryCsv(period, deviceId, boiaId) {
+export async function fetchHistoryCsv(period, deviceIds, boiaId) {
   const cfg = PERIODS[period];
   if (!cfg) throw new Error(`Período desconhecido: ${period}`);
 
@@ -97,7 +98,7 @@ export async function fetchHistoryCsv(period, deviceId, boiaId) {
 from(bucket: "${BUCKET}")
   |> range(start: ${cfg.start})
   |> filter(fn: (r) => r._measurement == "sensores")
-  ${deviceId ? `|> filter(fn: (r) => r.topic == "${deviceId}/sensores")` : ''}
+  ${topicFilterFlux(deviceIds)}
   |> filter(fn: (r) => ${COLUMNS.map(c => `r._field == "${c}"`).join(' or ')})
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> keep(columns: ["_time", ${COLUMNS.map(c => `"${c}"`).join(', ')}])

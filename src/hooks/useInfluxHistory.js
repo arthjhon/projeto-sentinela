@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 
+import { topicFilterFlux } from '../utils/deviceIds';
 // Histórico persistido no InfluxDB. Complementa (não substitui) o useMqtt:
 // o MQTT segue entregando o tempo real; este hook traz o que já foi gravado.
 //
@@ -50,9 +51,23 @@ function parseCsv(csv) {
  *
  * @param {string} field     temperatura | ph | turbidez
  * @param {string} period    chave de PERIODS
- * @param {string} deviceId  deviceId da FLEET (ex: esp_sururu)
+ * @param {string|string[]} deviceIds  deviceId atual (+ anteriores, ver deviceIdsOf)
  */
-export function useInfluxHistory(field, period, deviceId) {
+export function buildHistoryFlux(field, cfg, deviceIds) {
+  return `
+from(bucket: "${BUCKET}")
+  |> range(start: ${cfg.start})
+  |> filter(fn: (r) => r._measurement == "sensores")
+  |> filter(fn: (r) => r._field == "${field}")
+  ${topicFilterFlux(deviceIds)}
+  |> aggregateWindow(every: ${cfg.every}, fn: mean, createEmpty: false)
+  |> keep(columns: ["_time", "_value"])
+  |> sort(columns: ["_time"])`;
+}
+
+export function useInfluxHistory(field, period, deviceIds) {
+  // chave estável: o array novo a cada render não pode refazer a busca
+  const idsKey = JSON.stringify(deviceIds ?? null);
   // Estado único: data/loading/error mudam sempre juntos, e agrupá-los evita
   // três renders por transição.
   const [state, setState] = useState({ data: [], loading: false, error: null });
@@ -63,15 +78,7 @@ export function useInfluxHistory(field, period, deviceId) {
 
     const controller = new AbortController();
 
-    const flux = `
-from(bucket: "${BUCKET}")
-  |> range(start: ${cfg.start})
-  |> filter(fn: (r) => r._measurement == "sensores")
-  |> filter(fn: (r) => r._field == "${field}")
-  ${deviceId ? `|> filter(fn: (r) => r.topic == "${deviceId}/sensores")` : ''}
-  |> aggregateWindow(every: ${cfg.every}, fn: mean, createEmpty: false)
-  |> keep(columns: ["_time", "_value"])
-  |> sort(columns: ["_time"])`;
+    const flux = buildHistoryFlux(field, cfg, JSON.parse(idsKey));
 
     // A busca vive dentro desta função: setState no corpo do effect dispara
     // render em cascata (react-hooks/set-state-in-effect).
@@ -100,7 +107,7 @@ from(bucket: "${BUCKET}")
     run();
 
     return () => controller.abort();
-  }, [field, period, deviceId]);
+  }, [field, period, idsKey]);
 
   return state;
 }
@@ -136,15 +143,16 @@ export function parsePivotCsv(csv) {
 /**
  * Últimas leituras brutas (sem agregação) de uma bóia, mais recentes primeiro.
  * Mesmo filtro por `topic` do useInfluxHistory (ver comentário acima).
- * @param {string} deviceId
+ * @param {string|string[]} deviceIds
  * @param {{limit?: number, start?: string, signal?: AbortSignal}} [opts]
  */
-export async function fetchUltimasLeituras(deviceId, { limit = 50, start = '-24h', signal } = {}) {
+export async function fetchUltimasLeituras(deviceIds, { limit = 50, start = '-24h', signal } = {}) {
+  const topicFilter = topicFilterFlux(deviceIds) || '|> filter(fn: (r) => false)';
   const flux = `
 from(bucket: "${BUCKET}")
   |> range(start: ${start})
   |> filter(fn: (r) => r._measurement == "sensores")
-  |> filter(fn: (r) => r.topic == "${deviceId}/sensores")
+  ${topicFilter}
   |> keep(columns: ["_time", "_field", "_value"])
   |> group()
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")

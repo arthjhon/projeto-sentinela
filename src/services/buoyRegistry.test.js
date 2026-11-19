@@ -141,3 +141,11 @@ describe('modo (bancada/campo)', () => {
       .toMatchObject({ modo: 'bancada', modoDesde: NOW });
   });
 });
+
+describe('seed SM-01 e re-export de deviceIds', () => {
+  it('SM-01 usa snt-0001 com esp_sururu como anterior', () => {
+    const sm01 = SEED_BUOYS.find(b => b.codigo === 'SM-01');
+    expect(sm01.deviceId).toBe('snt-0001');
+    expect(sm01.deviceIdsAnteriores).toEqual(['esp_sururu']);
+  });
+});

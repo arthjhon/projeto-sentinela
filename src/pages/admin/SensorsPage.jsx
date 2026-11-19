@@ -16,7 +16,7 @@ import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { fetchUltimasLeituras } from '../../hooks/useInfluxHistory';
 import {
   getBuoyRegistry, saveBuoyRegistry, topicsForRegistry,
-  codigoEmUso, upsertRegistryEntry, LAGOA_LABEL, withModo, normalizeModo,
+  codigoEmUso, upsertRegistryEntry, deviceIdsOf, applyDeviceIdChange, LAGOA_LABEL, withModo, normalizeModo,
 } from '../../services/buoyRegistry';
 import {
   buoyStatus, STATUS_LABEL, formatCoords, formatAge, formatInterval,
@@ -125,6 +125,7 @@ const SensorsPage = () => {
       id: r.codigo,
       name: r.nome,
       deviceId: d ?? '',
+      historyIds: deviceIdsOf(r),
       location: LAGOA_LABEL[r.lagoa] ?? r.lagoa,
       modo: normalizeModo(r.modo),
       coordinates: formatCoords(r.lat, r.lng),
@@ -191,6 +192,7 @@ const SensorsPage = () => {
     setFormData({
       id: buoy.id,
       deviceId: regEntry.deviceId ?? '',
+      deviceIdsAnteriores: regEntry.deviceIdsAnteriores ?? [],
       name: regEntry.nome ?? buoy.name,
       lagoa: regEntry.lagoa ?? 'mundau',
       modo: normalizeModo(regEntry.modo),
@@ -243,7 +245,15 @@ const SensorsPage = () => {
     }
     // modoDesde depende do modo guardado, não do estado da página (pode estar stale).
     const previous = codigoOriginal ? fresh.find(r => r.codigo === codigoOriginal) : null;
-    const comModo = withModo(previous, entry, new Date().toISOString());
+    // Troca de serial: o id antigo vai para deviceIdsAnteriores (histórico do
+    // Influx). Parte do registro fresco, que é quem guarda a lista.
+    const comSerial = previous
+      ? applyDeviceIdChange(
+          { ...entry, deviceId: previous.deviceId ?? null, deviceIdsAnteriores: previous.deviceIdsAnteriores ?? [] },
+          entry.deviceId,
+        )
+      : entry;
+    const comModo = withModo(previous, comSerial, new Date().toISOString());
     await saveBuoyRegistry(upsertRegistryEntry(fresh, codigoOriginal, comModo));
   };
 
@@ -397,7 +407,7 @@ const SensorsPage = () => {
     if (!buoy.deviceId) return;
     setHistorico(prev => ({ ...prev, [buoy.id]: { loading: true, rows: prev[buoy.id]?.rows ?? [], error: null } }));
     try {
-      const rows = await fetchUltimasLeituras(buoy.deviceId, { limit: 50, start: '-30d' });
+      const rows = await fetchUltimasLeituras(buoy.historyIds, { limit: 50, start: '-30d' });
       setHistorico(prev => ({ ...prev, [buoy.id]: { loading: false, rows, error: null } }));
     } catch (err) {
       setHistorico(prev => ({ ...prev, [buoy.id]: { loading: false, rows: [], error: err.message } }));
@@ -524,7 +534,12 @@ const SensorsPage = () => {
                 </div>
                 <div className="form-group">
                   <label>Número de Série do Dispositivo</label>
-                  <input type="text" className="w-100" value={formData.deviceId} onChange={e => setFormData({...formData, deviceId: e.target.value})} placeholder="Ex: esp_sururu" style={{ fontFamily: 'monospace' }} />
+                  <input type="text" className="w-100" value={formData.deviceId} onChange={e => setFormData({...formData, deviceId: e.target.value})} placeholder="Ex: snt-0001" style={{ fontFamily: 'monospace' }} />
+                  {editingBuoy && formData.deviceIdsAnteriores?.length > 0 && (
+                    <small className="text-muted" style={{ fontFamily: 'monospace' }}>
+                      Seriais anteriores (histórico preservado): {formData.deviceIdsAnteriores.join(', ')}
+                    </small>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Nome Comercial/Apelido</label>

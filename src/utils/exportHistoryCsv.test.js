@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { buildCsv } from './exportHistoryCsv';
+import { describe, it, expect, vi } from 'vitest';
+import { buildCsv, fetchHistoryCsv } from './exportHistoryCsv';
 
 // Linhas reais vindas do Influx (query pivotada de 30d), incluindo o outlier
 // de 85 que existe no histórico de 08/07.
@@ -43,5 +43,24 @@ describe('buildCsv (formato pt-BR para Excel)', () => {
   it('campo vazio quando a leitura falta', () => {
     const out = buildCsv([{ time: new Date('2026-07-17T06:00:00Z'), ph: '', temperatura: '20', turbidez: null }], 'SM-01');
     expect(out.split('\r\n')[1]).toMatch(/;20;;$/);
+  });
+});
+
+describe('fetchHistoryCsv union', () => {
+  const run = async (ids) => {
+    let body;
+    globalThis.fetch = vi.fn(async (_u, opts) => { body = opts.body; return { ok: true, text: async () => '' }; });
+    await fetchHistoryCsv('1h', ids, 'SM-01');
+    return body;
+  };
+  it('une os tópicos com or', async () => {
+    const q = await run(['snt-0001', 'esp_sururu']);
+    expect(q).toContain('r.topic == "snt-0001/sensores" or r.topic == "esp_sururu/sensores"');
+  });
+  it('string única continua funcionando', async () => {
+    expect(await run('esp_sururu')).toContain('r.topic == "esp_sururu/sensores")');
+  });
+  it('vazio mantém sem filtro de tópico', async () => {
+    expect(await run(undefined)).not.toContain('r.topic');
   });
 });

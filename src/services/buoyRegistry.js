@@ -1,6 +1,8 @@
 import { getSetting, saveSetting } from './settings';
 import { FLEET } from '../config/fleet';
 
+export { deviceIdsOf, applyDeviceIdChange } from '../utils/deviceIds';
+
 export const MAP_BUOYS_KEY = 'map_buoys';
 
 // Rótulo de exibição de cada valor de `lagoa` (o registro só guarda a chave).
@@ -12,7 +14,7 @@ export const LAGOA_LABEL = { mundau: 'Lagoa Mundaú', manguaba: 'Lagoa Manguaba'
 // parsing/sinal num dado que já existe correto em produção (mesmas
 // coordenadas hoje hardcoded em InteractiveMap.jsx).
 export const SEED_BUOYS = [
-  { codigo: 'SM-01', nome: 'Bóia Mundaú Centro', lagoa: 'mundau',   lat: -9.6559, lng: -35.7701, deviceId: FLEET.find(f => f.id === 'SM-01')?.deviceId ?? null },
+  { codigo: 'SM-01', nome: 'Bóia Mundaú Centro', lagoa: 'mundau',   lat: -9.6559, lng: -35.7701, deviceId: FLEET.find(f => f.id === 'SM-01')?.deviceId ?? null, deviceIdsAnteriores: FLEET.find(f => f.id === 'SM-01')?.deviceIdsAnteriores ?? [] },
   { codigo: 'SM-02', nome: 'Bóia Mundaú Sul',     lagoa: 'mundau',   lat: -9.6862, lng: -35.7847, deviceId: FLEET.find(f => f.id === 'SM-02')?.deviceId ?? null },
   { codigo: 'MG-01', nome: 'Bóia Manguaba Norte', lagoa: 'manguaba', lat: -9.5873, lng: -35.8394, deviceId: FLEET.find(f => f.id === 'MG-01')?.deviceId ?? null },
 ];
