@@ -29,3 +29,6 @@ dist-ssr
 # Stack de infra: nunca versionar .env (exceto o exemplo)
 infra/stack/.env*
 !infra/stack/.env.example
+
+# Python bytecode (infra/bin, worker, tests)
+__pycache__/
