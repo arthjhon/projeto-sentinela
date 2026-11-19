@@ -7,6 +7,7 @@ import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { FLEET, getMqttTopics } from '../../config/fleet';
 import { topicsForRegistry } from '../../services/buoyRegistry';
 import { logAcao, AUDIT } from '../../services/auditLog';
+import { buildDeployRow, requestOtaCommand } from '../../services/otaCommand';
 import { sha256Hex } from '../../utils/sha256';
 import { isFreshDeployEvent, phaseFromOtaStatus } from '../../utils/otaStatus';
 import {
@@ -22,7 +23,7 @@ const ALL_TOPICS = getMqttTopics(TOPIC_SUFFIXES);
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 const OtaPage = () => {
-  const { messages, connected, publish, addTopics } = useMqtt(ALL_TOPICS);
+  const { messages, connected, addTopics } = useMqtt(ALL_TOPICS);
   const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
   const readOnly = useReadOnly();
 
@@ -179,54 +180,39 @@ const OtaPage = () => {
       setUploadProgress(100);
       appendLog(`Upload concluído: ${uploadData.path}`);
 
-      // ─── 2. Gera URL pública ───────────────────────────────────────────────
-      const { data: urlData } = supabase.storage
-        .from('firmware')
-        .getPublicUrl(uploadData.path);
-
-      const publicUrl = urlData.publicUrl;
-      appendLog(`URL pública gerada.`);
-
-      // ─── 3. Registra o deploy ─────────────────────────────────────────────
+      // ─── 2. Registra o deploy ─────────────────────────────────────────────
       // 4.2 — status='pendente' até a bóia confirmar via MQTT (o useEffect de
       // ota/status fecha o ciclo). Registrado ANTES do comando: uma recusa
       // rápida da bóia (ex.: same_version) chegaria antes do insert, e a linha
-      // ficaria 'pendente' para sempre.
+      // ficaria 'pendente' para sempre. arquivo_path é o objeto no bucket
+      // 'firmware': a Edge Function monta a URL a partir dele.
       const { data: deployRow, error: deployErr } = await supabase
         .from('firmware_deploys')
-        .insert({
-          boia_id: target.id,
-          versao: firmwareVersion,
+        .insert(buildDeployRow({
+          boiaId: target.id,
+          version: firmwareVersion,
           sha256,
-          notas_release: releaseNotes || null,
-          status: 'pendente',
-        })
+          notes: releaseNotes,
+          path: uploadData.path,
+        }))
         .select('id')
         .single();
-      if (deployErr) {
-        // não aborta o deploy: falhar aqui só nos deixa sem histórico
-        appendLog(`AVISO: não foi possível registrar o deploy no histórico (${deployErr.message}).`);
-      } else {
-        setDeployId(deployRow.id);
+      // O comando é emitido pela Edge Function a partir da linha do deploy:
+      // sem ela não há como enviá-lo.
+      if (deployErr || !deployRow) {
+        throw new Error(`Não foi possível registrar o deploy (${deployErr?.message ?? 'sem retorno'}). Comando não enviado.`);
       }
+      setDeployId(deployRow.id);
 
-      // ─── 4. Envia comando OTA via MQTT ────────────────────────────────────
+      // ─── 3. Pede à Edge Function que publique o comando OTA ───────────────
+      // O navegador não tem credencial MQTT; o sha256 e a URL são montados no
+      // servidor a partir da linha do deploy.
       setPhase('sending');
       const cmdTopic = `${target.deviceId}/ota/command`;
-      // sha256 vai junto para o firmware validar o binário antes de gravar a
-      // flash. A validação em si é do lado do ESP32 — ver implementados.md.
-      const cmd = { url: publicUrl, version: firmwareVersion, sha256 };
-      const sent = publish(cmdTopic, cmd);
-
-      if (!sent) {
-        if (deployRow) {
-          await supabase
-            .from('firmware_deploys')
-            .update({ status: 'falha', confirmado_em: new Date().toISOString() })
-            .eq('id', deployRow.id);
-          setDeployId(null);
-        }
-        throw new Error('MQTT desconectado — comando não enviado. Tente novamente.');
+      const result = await requestOtaCommand(supabase, deployRow.id);
+      if (!result.ok) {
+        setDeployId(null);
+        throw new Error(`${result.message} [${result.code}]`);
       }
       appendLog(`Comando OTA enviado → ${cmdTopic}`);
       appendLog(`Versão alvo: ${firmwareVersion}`);

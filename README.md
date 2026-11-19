@@ -63,7 +63,7 @@ O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve 
 | Tecnologia | Componente |
 |---|---|
 | **ESP32** | Microcontrolador embarcado nas bóias — coleta sensorial e transmissão MQTT |
-| **HiveMQ (Broker MQTT)** | Mensageria pub/sub para telemetria contínua e comandos OTA |
+| **Mosquitto (Broker MQTT próprio)** | Mensageria pub/sub para telemetria contínua e comandos OTA; `mqtt.arthlabs.dev` via Cloudflare Tunnel, leitura anônima no navegador e comandos OTA emitidos pela Edge Function `ota-command` |
 | **Supabase (PostgreSQL)** | Autenticação, RBAC, perfis de usuário e storage de firmware (.bin) |
 | **Telegraf** | Ingestão MQTT → InfluxDB: assina os tópicos e grava cada leitura, de forma declarativa (`telegraf/telegraf.conf`) |
 | **InfluxDB** | Banco de dados time-series para histórico massivo de leituras |
@@ -109,7 +109,7 @@ Só o `ota/status` da bóia do deploy em curso muda o estado do formulário; o �
 ### Produção
 O site roda em **`sentinela.arthlabs.dev`**, servido por nginx numa VM da UMJ por trás de um **Cloudflare Tunnel** (sem expor portas). O deploy é automático: todo push na branch `main` dispara o GitHub Actions (`deploy.yml`), que **builda no próprio runner** (`npm ci` + `vite build`, com as variáveis `VITE_*` vindas dos *secrets* do repositório) e envia só o `dist/` para a VM por **rsync** — o runner entra na tailnet via `tailscale/github-action` e usa uma chave SSH presa por `rrsync` ao diretório do site (sem shell no servidor). Nada é compilado na VM.
 
-Secrets esperados pelo workflow: `TAILSCALE_AUTHKEY`, `SSH_KEY_UMJ_RSYNC`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_MQTT_BROKER_URL`, `VITE_MQTT_USER`, `VITE_MQTT_PASS`, `VITE_INFLUX_ORG`, `VITE_INFLUX_BUCKET` e, opcional, `VITE_CARTO_BASEMAPS_KEY`.
+Secrets esperados pelo workflow: `TAILSCALE_AUTHKEY`, `SSH_KEY_UMJ_RSYNC`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_MQTT_BROKER_URL`, `VITE_INFLUX_ORG`, `VITE_INFLUX_BUCKET` e, opcional, `VITE_CARTO_BASEMAPS_KEY`.
 
 ### Failover (GitHub Pages + Cloudflare Worker)
 Para resiliência, uma cópia estática do site é publicada no **GitHub Pages** a cada push na `main` (workflow `pages.yml`). Um **Cloudflare Worker** fica na frente do domínio e faz o roteamento:
@@ -122,7 +122,7 @@ Visitante → sentinela.arthlabs.dev (Cloudflare Worker)
 
 O Worker testa a origem real (`origin-sentinela.arthlabs.dev`); se a VM estiver indisponível (timeout ou erro 5xx/52x), serve o build do GitHub Pages e injeta um banner de aviso.
 
-> **Modo limitado:** como o backend (Supabase self-hosted) roda na mesma VM, durante uma queda permanecem ativos apenas as **páginas públicas** e o **monitoramento em tempo real** (MQTT/HiveMQ, externo). **Login e painel administrativo** ficam indisponíveis até a VM voltar — o banner sinaliza isso ao visitante.
+> **Modo limitado:** como o backend (Supabase self-hosted) roda na mesma VM, durante uma queda permanecem ativas apenas as **páginas públicas** (estáticas). O broker MQTT (Mosquitto próprio) roda na mesma VM, então o **monitoramento em tempo real** também para quando a VM cai. **Login e painel administrativo** ficam indisponíveis até a VM voltar — o banner sinaliza isso ao visitante.
 
 <br/>
 

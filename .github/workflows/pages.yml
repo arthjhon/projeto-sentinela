@@ -36,8 +36,6 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_MQTT_BROKER_URL: ${{ secrets.VITE_MQTT_BROKER_URL }}
-          VITE_MQTT_USER: ${{ secrets.VITE_MQTT_USER }}
-          VITE_MQTT_PASS: ${{ secrets.VITE_MQTT_PASS }}
       - name: SPA fallback (404 -> index.html)
         run: cp dist/index.html dist/404.html
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
