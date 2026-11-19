@@ -109,7 +109,7 @@ Só o `ota/status` da bóia do deploy em curso muda o estado do formulário; o �
 ### Produção
 O site roda em **`sentinela.arthlabs.dev`**, servido por nginx numa VM da UMJ por trás de um **Cloudflare Tunnel** (sem expor portas). O deploy é automático: todo push na branch `main` dispara o GitHub Actions (`deploy.yml`), que **builda no próprio runner** (`npm ci` + `vite build`, com as variáveis `VITE_*` vindas dos *secrets* do repositório) e envia só o `dist/` para a VM por **rsync** — o runner entra na tailnet via `tailscale/github-action` e usa uma chave SSH presa por `rrsync` ao diretório do site (sem shell no servidor). Nada é compilado na VM.
 
-Secrets esperados pelo workflow: `TAILSCALE_AUTHKEY`, `SSH_KEY_UMJ_RSYNC`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_MQTT_BROKER_URL`, `VITE_INFLUX_ORG`, `VITE_INFLUX_BUCKET` e, opcional, `VITE_CARTO_BASEMAPS_KEY`.
+Secrets esperados pelo workflow: `TAILSCALE_AUTHKEY`, `SSH_KEY_UMJ_RSYNC`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_MQTT_BROKER_URL` e, opcional, `VITE_CARTO_BASEMAPS_KEY`.
 
 ### Failover (GitHub Pages + Cloudflare Worker)
 Para resiliência, uma cópia estática do site é publicada no **GitHub Pages** a cada push na `main` (workflow `pages.yml`). Um **Cloudflare Worker** fica na frente do domínio e faz o roteamento:
@@ -194,10 +194,6 @@ backend próprio no caminho.
    ```
 3. Acrescente ao `.env.local`:
    ```env
-   # Identificadores públicos: o cliente precisa deles para montar a query Flux
-   VITE_INFLUX_ORG="sentinela"
-   VITE_INFLUX_BUCKET="iot"
-
    # SEM prefixo VITE_ de propósito — ver aviso abaixo
    INFLUXDB_URL="http://<host-do-influx>:8086"
    INFLUXDB_READ_TOKEN="token_somente_leitura"
@@ -207,9 +203,11 @@ backend próprio no caminho.
 > O Vite injeta *apenas* variáveis `VITE_*` no bundle — e esse bundle é servido
 > a qualquer visitante, inclusive no site público. Um token com prefixo `VITE_`
 > viraria credencial pública.
-> O navegador chama `/influx/...` e quem anexa o token é o proxy, no servidor:
-> `server.proxy` do `vite.config.js` em desenvolvimento, `location /influx/` do
-> `nginx.conf` em produção (preenchido por `envsubst` no boot do container).
+> O navegador chama apenas `/influx/q/<nome>` (consultas InfluxQL nomeadas, só GET)
+> e quem anexa o token é o proxy, no servidor: o middleware `/influx/q/*` do
+> `vite.config.js` em desenvolvimento, o nginx do host
+> (`infra/nginx/sentinela-influx-proxy.conf`) em produção. A imagem Docker do
+> frontend não faz proxy do InfluxDB.
 > **Renomear essa variável para `VITE_INFLUX_READ_TOKEN` vaza o token.**
 
 <br/>

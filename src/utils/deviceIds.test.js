@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { deviceIdsOf, applyDeviceIdChange, mergeRegistryEdit, normalizeDeviceIds, topicFilterFlux } from './deviceIds';
+import { deviceIdsOf, applyDeviceIdChange, mergeRegistryEdit, normalizeDeviceIds, deviceScope, DEVICE_ID_RE } from './deviceIds';
+import { DEVICE_RE } from '../services/influxQueries';
 
 describe('deviceIdsOf', () => {
   it('atual primeiro, depois anteriores, sem duplicar', () => {
@@ -47,28 +48,28 @@ describe('applyDeviceIdChange', () => {
   });
 });
 
-describe('topicFilterFlux', () => {
-  it('string única', () => {
-    expect(topicFilterFlux('esp_a')).toBe('|> filter(fn: (r) => r.topic == "esp_a/sensores")');
+describe('deviceScope', () => {
+  it('string única e união', () => {
+    expect(deviceScope('esp_a')).toEqual(['esp_a']);
+    expect(deviceScope(['a', 'b', 'a'])).toEqual(['a', 'b']);
   });
-  it('união com or', () => {
-    expect(topicFilterFlux(['a', 'b'])).toBe(
-      '|> filter(fn: (r) => r.topic == "a/sensores" or r.topic == "b/sensores")');
+  it('null/undefined = sem bóia selecionada (frota)', () => {
+    expect(deviceScope(undefined)).toBeNull();
+    expect(deviceScope(null)).toBeNull();
   });
-  it('null/undefined = sem bóia selecionada, sem filtro', () => {
-    expect(topicFilterFlux(undefined)).toBe('');
-    expect(topicFilterFlux(null)).toBe('');
-  });
-  it('bóia selecionada sem id válido falha fechado (nunca todas as bóias)', () => {
-    const closed = '|> filter(fn: (r) => false)';
-    expect(topicFilterFlux([])).toBe(closed);
-    expect(topicFilterFlux('')).toBe(closed);
-    expect(topicFilterFlux(['a"b'])).toBe(closed);
-    expect(topicFilterFlux('a b')).toBe(closed);
+  it('bóia selecionada sem id válido falha fechado ([], nunca a frota)', () => {
+    expect(deviceScope([])).toEqual([]);
+    expect(deviceScope('')).toEqual([]);
+    expect(deviceScope(['a"b'])).toEqual([]);
+    expect(deviceScope('a b')).toEqual([]);
+    expect(deviceScope(["x'/sensores' OR 1=1"])).toEqual([]);
   });
   it('normalizeDeviceIds aceita string ou array', () => {
     expect(normalizeDeviceIds('x')).toEqual(['x']);
     expect(normalizeDeviceIds(['x', 'x', 'y z'])).toEqual(['x']);
+  });
+  it('mesmo formato de id que o proxy aceita', () => {
+    expect(DEVICE_ID_RE).toBe(DEVICE_RE);
   });
 });
 

@@ -1,58 +1,78 @@
 import { useState, useEffect } from 'react';
-import { topicFilterFlux } from '../utils/deviceIds';
+import { EVERY, ULTIMAS_LIMIT } from '../services/influxQueries';
+import { fetchNamedPerDevice, rowsOf } from '../services/influxql';
+
 // Histórico persistido no InfluxDB. Complementa (não substitui) o useMqtt:
 // o MQTT segue entregando o tempo real; este hook traz o que já foi gravado.
 //
-// As chamadas vão para /influx/* — um proxy (vite.config.js em dev,
-// nginx.conf em prod) que injeta o token só-leitura no lado servidor. O
-// navegador nunca vê a credencial.
+// As chamadas vão para /influx/q/<nome> (ver services/influxql.js) — consultas
+// nomeadas atendidas por um proxy (vite.config.js em dev, nginx em prod) que
+// injeta o token só-leitura no lado servidor. O navegador nunca vê a credencial
+// nem monta a consulta.
 
-const ORG = import.meta.env.VITE_INFLUX_ORG;
-const BUCKET = import.meta.env.VITE_INFLUX_BUCKET;
+// Janelas do seletor. A agregação (`every`) vive em influxQueries.js — mesma
+// fonte do proxy de dev e espelho do nginx —, então as chaves daqui e as
+// janelas aceitas pelo servidor não podem divergir.
+export const PERIODS = Object.fromEntries(
+  Object.entries(EVERY).map(([key, every]) => [key, { label: key, every }]),
+);
 
-// Janelas do seletor. `every` controla a agregação: sem ela, 30d traria
-// centenas de milhares de pontos e travaria o gráfico.
-export const PERIODS = {
-  '1h':  { label: '1h',  start: '-1h',  every: '30s' },
-  '24h': { label: '24h', start: '-24h', every: '10m' },
-  '7d':  { label: '7d',  start: '-7d',  every: '1h'  },
-  '30d': { label: '30d', start: '-30d', every: '6h'  },
-};
-
-/** Converte o CSV anotado do Influx em linhas {time, value}. */
-function parseCsv(csv) {
-  const lines = csv.trim().split('\n').filter(l => l && !l.startsWith('#'));
-  if (lines.length < 2) return [];
-
-  const header = lines[0].split(',').map(h => h.trim());
-  const iTime = header.indexOf('_time');
-  const iValue = header.indexOf('_value');
-  if (iTime === -1 || iValue === -1) return [];
-
+/** Série de history ([time, mean]) -> [{time: Date, value}], sem pontos nulos. */
+export function mapHistorySeries(series) {
   const out = [];
-  for (const line of lines.slice(1)) {
-    const cols = line.split(',');
-    const raw = cols[iValue];
-    // aggregateWindow com createEmpty:false ainda pode devolver célula vazia
-    if (raw == null || raw === '') continue;
-    const value = Number(raw);
+  for (const row of rowsOf(series)) {
+    if (row.mean == null) continue;
+    const value = Number(row.mean);
     if (Number.isNaN(value)) continue;
-    out.push({ time: new Date(cols[iTime]), value });
+    out.push({ time: new Date(row.time), value });
   }
-  return out;
+  // defensivo: garante ordem cronológica (a frota inteira chega como uma série só, a média)
+  return out.sort((x, y) => x.time - y.time);
 }
 
-/** Flux do gráfico; `deviceIds` null = frota inteira (ver topicFilterFlux). */
-export function buildHistoryFlux(field, cfg, deviceIds) {
-  return `
-from(bucket: "${BUCKET}")
-  |> range(start: ${cfg.start})
-  |> filter(fn: (r) => r._measurement == "sensores")
-  |> filter(fn: (r) => r._field == "${field}")
-  ${topicFilterFlux(deviceIds)}
-  |> aggregateWindow(every: ${cfg.every}, fn: mean, createEmpty: false)
-  |> keep(columns: ["_time", "_value"])
-  |> sort(columns: ["_time"])`;
+/**
+ * Junta o histórico de vários seriais da mesma bóia (uma lista de
+ * mapHistorySeries por id) numa série só, em ordem cronológica. Se dois ids
+ * caem na mesma janela (a troca de placa no meio de uma janela do GROUP BY),
+ * o ponto vira a média simples das médias dos ids — não ponderada pelo número
+ * de leituras de cada um, que a consulta nomeada não devolve.
+ * @param {Array<Array<{time: Date, value: number}>>} lists
+ */
+export function mergeHistorySeries(lists) {
+  if (lists.length === 1) return lists[0];
+  const byTime = new Map();
+  for (const list of lists) {
+    for (const { time, value } of list) {
+      const t = time.getTime();
+      const acc = byTime.get(t);
+      if (acc) { acc.sum += value; acc.n += 1; } else byTime.set(t, { sum: value, n: 1 });
+    }
+  }
+  return [...byTime.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([t, { sum, n }]) => ({ time: new Date(t), value: sum / n }));
+}
+
+/**
+ * Busca o gráfico de um campo/período. `deviceIds` segue o contrato de
+ * fetchNamedPerDevice: null = frota (uma consulta, sem device); bóia = uma
+ * consulta por serial válido, unidas por mergeHistorySeries; sem serial
+ * válido = [] sem consulta.
+ */
+export async function fetchHistory(field, period, deviceIds, { signal } = {}) {
+  const perId = await fetchNamedPerDevice(
+    'history', { campo: field, periodo: period }, deviceIds, { signal },
+  );
+  return mergeHistorySeries(perId.map(mapHistorySeries));
+}
+
+/** Série de ultimas -> [{time: Date, temperatura, ph, turbidez}], mais recente primeiro. */
+export function mapUltimasSeries(series) {
+  const num = (v) => (v == null || Number.isNaN(Number(v)) ? undefined : Number(v));
+  return rowsOf(series)
+    .map(r => ({ time: new Date(r.time), temperatura: num(r.temperatura), ph: num(r.ph), turbidez: num(r.turbidez) }))
+    .filter(r => !Number.isNaN(r.time.getTime()))
+    .sort((x, y) => y.time - x.time);
 }
 
 /**
@@ -63,7 +83,7 @@ from(bucket: "${BUCKET}")
  *
  * @param {string} field     temperatura | ph | turbidez
  * @param {string} period    chave de PERIODS
- * @param {string|string[]|null} deviceIds  deviceId atual (+ anteriores, ver deviceIdsOf); null = sem bóia selecionada
+ * @param {string|string[]|null} deviceIds  deviceId atual (+ anteriores, ver deviceIdsOf); null = sem bóia selecionada (frota)
  */
 export function useInfluxHistory(field, period, deviceIds) {
   // chave estável: o array novo a cada render não pode refazer a busca
@@ -73,30 +93,17 @@ export function useInfluxHistory(field, period, deviceIds) {
   const [state, setState] = useState({ data: [], loading: false, error: null });
 
   useEffect(() => {
-    const cfg = PERIODS[period];
-    if (!cfg || !field) return;
+    if (!PERIODS[period] || !field) return;
 
     const controller = new AbortController();
-
-    const flux = buildHistoryFlux(field, cfg, JSON.parse(idsKey));
 
     // A busca vive dentro desta função: setState no corpo do effect dispara
     // render em cascata (react-hooks/set-state-in-effect).
     async function run() {
       setState(s => ({ ...s, loading: true, error: null }));
       try {
-        const res = await fetch(`/influx/api/v2/query?org=${encodeURIComponent(ORG)}`, {
-          method: 'POST',
-          signal: controller.signal,
-          headers: {
-            'Content-Type': 'application/vnd.flux',
-            Accept: 'application/csv',
-          },
-          body: flux,
-        });
-        if (!res.ok) throw new Error(`Influx ${res.status}: ${await res.text()}`);
-        const csv = await res.text();
-        setState({ data: parseCsv(csv), loading: false, error: null });
+        const data = await fetchHistory(field, period, JSON.parse(idsKey), { signal: controller.signal });
+        setState({ data, loading: false, error: null });
       } catch (err) {
         // abort é troca de período/desmontagem, não falha: o efeito seguinte
         // já está buscando a janela nova
@@ -113,58 +120,23 @@ export function useInfluxHistory(field, period, deviceIds) {
 }
 
 /**
- * Converte o CSV anotado de um pivot (uma coluna por campo) em linhas
- * {time, temperatura, ph, turbidez}. Tolera várias tabelas no mesmo CSV
- * (cabeçalho repetido), como o Influx devolve quando os schemas diferem.
+ * Junta as últimas leituras de vários seriais: mais recente primeiro, só as
+ * `limit` mais recentes no total (cada serial já veio limitado a `limit`).
  */
-export function parsePivotCsv(csv) {
-  const out = [];
-  let header = null;
-  for (const line of String(csv).split('\n')) {
-    const l = line.trim();
-    if (!l) { header = null; continue; }
-    if (l.startsWith('#')) continue;
-    const cols = l.split(',');
-    if (!header) { header = cols.map(h => h.trim()); continue; }
-    const get = (name) => {
-      const i = header.indexOf(name);
-      if (i === -1 || cols[i] == null || cols[i] === '') return undefined;
-      const n = Number(cols[i]);
-      return Number.isFinite(n) ? n : undefined;
-    };
-    const iTime = header.indexOf('_time');
-    const time = iTime === -1 ? null : new Date(cols[iTime]);
-    if (!time || Number.isNaN(time.getTime())) continue;
-    out.push({ time, temperatura: get('temperatura'), ph: get('ph'), turbidez: get('turbidez') });
-  }
-  return out.sort((a, b) => b.time - a.time);
+export function mergeUltimas(lists, limit = ULTIMAS_LIMIT) {
+  return lists.flat().sort((x, y) => y.time - x.time).slice(0, limit);
 }
 
 /**
- * Últimas leituras brutas (sem agregação) de uma bóia, mais recentes primeiro.
- * Mesmo filtro por `topic` do useInfluxHistory (ver comentário acima).
- * @param {string|string[]} deviceIds
- * @param {{limit?: number, start?: string, signal?: AbortSignal}} [opts]
+ * Últimas 50 leituras brutas (sem agregação) de uma bóia, mais recentes primeiro,
+ * somando o serial atual e os anteriores (uma consulta `ultimas` por id).
+ * Mesmo filtro por `topic` do useInfluxHistory (feito no servidor). Não há
+ * `ultimas` da frota: `null`, [] ou só ids inválidos = [] sem consulta.
+ * @param {string|string[]|null} deviceIds
+ * @param {{periodo?: '24h'|'30d', signal?: AbortSignal}} [opts]
  */
-export async function fetchUltimasLeituras(deviceIds, { limit = 50, start = '-24h', signal } = {}) {
-  const topicFilter = topicFilterFlux(deviceIds) || '|> filter(fn: (r) => false)';
-  const flux = `
-from(bucket: "${BUCKET}")
-  |> range(start: ${start})
-  |> filter(fn: (r) => r._measurement == "sensores")
-  ${topicFilter}
-  |> keep(columns: ["_time", "_field", "_value"])
-  |> group()
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> sort(columns: ["_time"], desc: true)
-  |> limit(n: ${Number(limit) || 50})`;
-
-  const res = await fetch(`/influx/api/v2/query?org=${encodeURIComponent(ORG)}`, {
-    method: 'POST',
-    signal,
-    headers: { 'Content-Type': 'application/vnd.flux', Accept: 'application/csv' },
-    body: flux,
-  });
-  if (!res.ok) throw new Error(`Influx ${res.status}`);
-  return parsePivotCsv(await res.text());
+export async function fetchUltimasLeituras(deviceIds, { periodo = '24h', signal } = {}) {
+  if (deviceIds == null) return [];
+  const perId = await fetchNamedPerDevice('ultimas', { periodo }, deviceIds, { signal });
+  return mergeUltimas(perId.map(mapUltimasSeries));
 }

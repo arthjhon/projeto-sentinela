@@ -1,59 +1,150 @@
-import { describe, it, expect, vi } from 'vitest';
-import { parsePivotCsv, buildHistoryFlux, fetchUltimasLeituras } from './useInfluxHistory';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import {
+  PERIODS, mapHistorySeries, mapUltimasSeries, fetchUltimasLeituras,
+  mergeHistorySeries, fetchHistory, mergeUltimas,
+} from './useInfluxHistory';
+import { EVERY, ULTIMAS_LIMIT } from '../services/influxQueries';
 
-describe('parsePivotCsv', () => {
-  it('lê as colunas do pivot, mais recente primeiro', () => {
-    const csv = [
-      '#datatype,string,long,dateTime:RFC3339,double,double,double',
-      ',result,table,_time,ph,temperatura,turbidez',
-      ',_result,0,2026-09-29T10:00:00Z,7.1,27.5,12',
-      ',_result,0,2026-09-29T10:00:05Z,7.2,,13',
-    ].join('\n');
-    expect(parsePivotCsv(csv)).toEqual([
-      { time: new Date('2026-09-29T10:00:05Z'), ph: 7.2, temperatura: undefined, turbidez: 13 },
-      { time: new Date('2026-09-29T10:00:00Z'), ph: 7.1, temperatura: 27.5, turbidez: 12 },
-    ]);
-  });
+afterEach(() => vi.unstubAllGlobals());
 
-  it('aceita várias tabelas com cabeçalhos diferentes', () => {
-    const csv = [
-      ',result,table,_time,ph',
-      ',_result,0,2026-09-29T10:00:00Z,7',
-      '',
-      ',result,table,_time,turbidez,ph',
-      ',_result,1,2026-09-29T11:00:00Z,20,7.5',
-    ].join('\n');
-    const rows = parsePivotCsv(csv);
-    expect(rows.map(r => r.ph)).toEqual([7.5, 7]);
-    expect(rows[0].turbidez).toBe(20);
-  });
-
-  it('vazio = nenhuma linha', () => {
-    expect(parsePivotCsv('')).toEqual([]);
+describe('PERIODS', () => {
+  it('deriva as janelas de influxQueries (sem divergir)', () => {
+    expect(Object.keys(PERIODS)).toEqual(Object.keys(EVERY));
+    for (const [k, cfg] of Object.entries(PERIODS)) {
+      expect(cfg).toEqual({ label: k, every: EVERY[k] });
+    }
   });
 });
 
-describe('useInfluxHistory union filter', () => {
-  it('buildHistoryFlux junta os tópicos com or', () => {
-    const q = buildHistoryFlux('ph', { start: '-1h', every: '1m' }, ['snt-0001', 'esp_sururu']);
-    expect(q).toContain('r.topic == "snt-0001/sensores" or r.topic == "esp_sururu/sensores"');
+describe('mapHistorySeries', () => {
+  it('mapeia [time, mean] para {time: Date, value}, pulando nulos', () => {
+    const series = [{ name: 'sensores', columns: ['time', 'mean'],
+      values: [[1000, 7.1], [2000, null], [3000, 7.3]] }];
+    expect(mapHistorySeries(series)).toEqual([
+      { time: new Date(1000), value: 7.1 },
+      { time: new Date(3000), value: 7.3 },
+    ]);
   });
-  it('string única e vazio', () => {
-    expect(buildHistoryFlux('ph', { start: '-1h', every: '1m' }, 'a')).toContain('r.topic == "a/sensores")');
-    expect(buildHistoryFlux('ph', { start: '-1h', every: '1m' }, null)).not.toContain('r.topic');
+  it('vazio = []', () => {
+    expect(mapHistorySeries([])).toEqual([]);
   });
-  it('bóia selecionada sem id válido falha fechado, não vira frota inteira', () => {
-    const cfg = { start: '-1h', every: '1m' };
-    for (const ids of [[], ['a"b']]) {
-      const q = buildHistoryFlux('ph', cfg, ids);
-      expect(q).toContain('|> filter(fn: (r) => false)');
-      expect(q).not.toContain('r.topic');
+});
+
+describe('mapUltimasSeries / fetchUltimasLeituras', () => {
+  const body = { results: [{ statement_id: 0, series: [{
+    name: 'sensores', columns: ['time', 'turbidez', 'ph', 'temperatura'],
+    values: [[2000, 13, 7.2, null], [1000, 12, 7.1, 27.5]],
+  }] }] };
+
+  it('mapeia colunas, null vira undefined, mais recente primeiro', () => {
+    const series = body.results[0].series;
+    expect(mapUltimasSeries(series)).toEqual([
+      { time: new Date(2000), ph: 7.2, temperatura: undefined, turbidez: 13 },
+      { time: new Date(1000), ph: 7.1, temperatura: 27.5, turbidez: 12 },
+    ]);
+  });
+
+  it('chama a consulta nomeada ultimas', async () => {
+    const f = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => body });
+    vi.stubGlobal('fetch', f);
+    const rows = await fetchUltimasLeituras('esp_sururu', { periodo: '30d' });
+    expect(f.mock.calls[0][0]).toBe('/influx/q/ultimas?periodo=30d&device=esp_sururu');
+    expect(rows).toHaveLength(2);
+  });
+});
+
+const v1 = (columns, values) => ({ ok: true, status: 200, json: async () => ({
+  results: [{ statement_id: 0, series: values.length ? [{ name: 'sensores', columns, values }] : undefined }],
+}) });
+
+describe('mergeHistorySeries (união dos seriais)', () => {
+  const p = (t, value) => ({ time: new Date(t), value });
+  it('concatena e ordena por tempo', () => {
+    expect(mergeHistorySeries([[p(1000, 1), p(5000, 5)], [p(2000, 2), p(4000, 4)]]))
+      .toEqual([p(1000, 1), p(2000, 2), p(4000, 4), p(5000, 5)]);
+  });
+  it('mesma janela em dois seriais (troca de placa) vira a média', () => {
+    expect(mergeHistorySeries([[p(1000, 7), p(2000, 7)], [p(2000, 7.5), p(3000, 7.6)]]))
+      .toEqual([p(1000, 7), p(2000, 7.25), p(3000, 7.6)]);
+  });
+  it('lista vazia ou sem pontos = []', () => {
+    expect(mergeHistorySeries([])).toEqual([]);
+    expect(mergeHistorySeries([[], []])).toEqual([]);
+  });
+});
+
+describe('fetchHistory', () => {
+  it('null = frota: uma chamada sem device', async () => {
+    const f = vi.fn().mockResolvedValue(v1(['time', 'mean'], [[1000, 7.1]]));
+    vi.stubGlobal('fetch', f);
+    const data = await fetchHistory('ph', '24h', null);
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(f.mock.calls[0][0]).toBe('/influx/q/history?campo=ph&periodo=24h');
+    expect(data).toEqual([{ time: new Date(1000), value: 7.1 }]);
+  });
+
+  it('bóia com dois seriais: uma chamada por id, resultado unido', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(v1(['time', 'mean'], [[3000, 7.5], [2000, 7.5]]))
+      .mockResolvedValueOnce(v1(['time', 'mean'], [[1000, 7.0], [2000, 7.0]]));
+    vi.stubGlobal('fetch', f);
+    const data = await fetchHistory('ph', '1h', ['snt-0001', 'esp_sururu']);
+    expect(f.mock.calls.map(c => c[0])).toEqual([
+      '/influx/q/history?campo=ph&periodo=1h&device=snt-0001',
+      '/influx/q/history?campo=ph&periodo=1h&device=esp_sururu',
+    ]);
+    expect(data.map(d => [d.time.getTime(), d.value])).toEqual([[1000, 7.0], [2000, 7.25], [3000, 7.5]]);
+  });
+
+  it('bóia sem id válido falha fechado: [] sem chamada (nunca a frota)', async () => {
+    const f = vi.fn();
+    vi.stubGlobal('fetch', f);
+    for (const ids of [[], ['a"b'], ['a b', '']]) {
+      expect(await fetchHistory('ph', '1h', ids)).toEqual([]);
     }
+    expect(f).not.toHaveBeenCalled();
   });
-  it('fetchUltimasLeituras une os tópicos', async () => {
-    let body;
-    globalThis.fetch = vi.fn(async (_u, o) => { body = o.body; return { ok: true, text: async () => '' }; });
-    await fetchUltimasLeituras(['snt-0001', 'esp_sururu']);
-    expect(body).toContain('r.topic == "snt-0001/sensores" or r.topic == "esp_sururu/sensores"');
+});
+
+describe('mergeUltimas / fetchUltimasLeituras com vários seriais', () => {
+  const r = (t) => ({ time: new Date(t), ph: t });
+
+  it('mantém as N mais recentes entre todos os ids, mais recente primeiro', () => {
+    const a = [r(9), r(7), r(5), r(3)];
+    const b = [r(8), r(6), r(2)];
+    expect(mergeUltimas([a, b], 4)).toEqual([r(9), r(8), r(7), r(6)]);
+    expect(mergeUltimas([[], b], 4)).toEqual(b);
+  });
+
+  it(`limite padrão = ${ULTIMAS_LIMIT}`, () => {
+    const a = Array.from({ length: ULTIMAS_LIMIT }, (_, i) => r(2 * i));
+    const b = Array.from({ length: ULTIMAS_LIMIT }, (_, i) => r(2 * i + 1));
+    const out = mergeUltimas([a, b]);
+    expect(out).toHaveLength(ULTIMAS_LIMIT);
+    expect(out[0].time.getTime()).toBe(2 * ULTIMAS_LIMIT - 1);
+    expect(out.at(-1).time.getTime()).toBe(ULTIMAS_LIMIT);
+  });
+
+  it('uma consulta ultimas por id, unidas', async () => {
+    const cols = ['time', 'turbidez', 'ph', 'temperatura'];
+    const f = vi.fn()
+      .mockResolvedValueOnce(v1(cols, [[4000, 1, 7.4, 20], [2000, 1, 7.2, 20]]))
+      .mockResolvedValueOnce(v1(cols, [[3000, 1, 7.3, 20], [1000, 1, 7.1, 20]]));
+    vi.stubGlobal('fetch', f);
+    const rows = await fetchUltimasLeituras(['snt-0001', 'esp_sururu'], { periodo: '30d' });
+    expect(f.mock.calls.map(c => c[0])).toEqual([
+      '/influx/q/ultimas?periodo=30d&device=snt-0001',
+      '/influx/q/ultimas?periodo=30d&device=esp_sururu',
+    ]);
+    expect(rows.map(x => x.ph)).toEqual([7.4, 7.3, 7.2, 7.1]);
+  });
+
+  it('null, [] ou só ids inválidos = [] sem consulta (não há ultimas da frota)', async () => {
+    const f = vi.fn();
+    vi.stubGlobal('fetch', f);
+    for (const ids of [null, undefined, [], ['a b']]) {
+      expect(await fetchUltimasLeituras(ids, { periodo: '30d' })).toEqual([]);
+    }
+    expect(f).not.toHaveBeenCalled();
   });
 });
