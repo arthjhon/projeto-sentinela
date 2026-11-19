@@ -44,3 +44,19 @@ export function topicFilterFlux(input, suffix = 'sensores') {
   if (!ids.length) return '|> filter(fn: (r) => false)';
   return `|> filter(fn: (r) => ${ids.map(id => `r.topic == "${id}/${suffix}"`).join(' or ')})`;
 }
+
+/**
+ * Entrada a gravar numa edição do registro: tudo vem de `edited`, exceto os
+ * dois campos de serial, derivados do registro guardado (`previous`). Sem
+ * `previous` (cadastro novo) não há anteriores.
+ */
+export function mergeRegistryEdit(previous, edited) {
+  if (!previous) return edited;
+  return {
+    ...edited,
+    ...applyDeviceIdChange(
+      { deviceId: previous.deviceId ?? null, deviceIdsAnteriores: previous.deviceIdsAnteriores ?? [] },
+      edited.deviceId,
+    ),
+  };
+}
