@@ -19,9 +19,12 @@ Serial port control lines: DTR and RTS are forced LOW (False) BEFORE the port is
 the Heltec V3 (CP210x auto-reset circuit) and on native USB-CDC, asserting them can reset the
 board or drop it into the bootloader. The deliberate reset happens only through the firmware
 (PROV/UNPROV restart ~500 ms after OK); after it the port may vanish, so we reconnect to the
-same port name with retries (up to 60 s) before asking IDENT? again.
+same port name with retries (up to 60 s) before asking IDENT? again. The control-line behaviour
+on open was verified on Windows only (the supported path); on Linux it was not verified.
 
-Exit: 0 ok, 1 failure (after undo), 2 usage / invalid argument.
+Exit: 0 ok; 1 failure: before the password could reach the board everything is undone; once it
+may have reached the board (accepted, unsure, interrupted) credential and reservation are KEPT
+and `provision` must be run again to reconcile; 2 usage / invalid argument.
 """
 from __future__ import annotations
 
@@ -45,7 +48,7 @@ BAUD = 115200
 LINE_TIMEOUT_S = 5
 # setup() can block ~30 s on an unreachable Wi-Fi before the console is serviced again, so both
 # the first IDENT and the post-restart wait allow well over that.
-IDENT_TIMEOUT_S = 35.0
+IDENT_TIMEOUT_S = 45.0
 REBOOT_TIMEOUT_S = 60.0
 EXPECT_TIMEOUT_S = 20.0
 
@@ -56,6 +59,10 @@ class BoardError(Exception):
 
 class BoardUnsure(BoardError):
     """The password line was sent but the board's verdict (OK/ERR) never arrived."""
+
+    def __init__(self, msg: str, interrupted: bool = False):
+        super().__init__(msg)
+        self.interrupted = interrupted  # Ctrl-C (not a timeout / I/O error)
 
 
 class RemoteError(Exception):
@@ -124,15 +131,18 @@ class SshRemote:
 
     def _ssh(self, command: str, stdin: str | None = None) -> str:
         argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", self.host, command]
+        # Bytes in both directions (text=False): on Windows text mode would turn "\n" into "\r\n"
+        # on the way to psql. No input -> /dev/null, so ssh never reads the operator's console.
+        io = {"input": stdin.encode("utf-8")} if stdin is not None else {"stdin": subprocess.DEVNULL}
         try:
-            res = self._run(argv, input=stdin, capture_output=True, text=True, timeout=60, check=False)
+            res = self._run(argv, capture_output=True, text=False, timeout=60, check=False, **io)
         except subprocess.TimeoutExpired:
             raise RemoteError("ssh timed out") from None
         if res.returncode != 0:
             # stdout is never echoed (it may carry the password); stderr never does.
-            detail = (res.stderr or "").strip()[:300]
+            detail = (res.stderr or b"").decode("utf-8", "replace").strip()[:300]
             raise RemoteError(f"remote command failed (exit {res.returncode}): {detail}")
-        return res.stdout
+        return (res.stdout or b"").decode("utf-8", "replace")
 
     def sql(self, script: str) -> str:
         return self._ssh(PSQL, stdin=script)
@@ -220,7 +230,8 @@ class SerialBoard:
                     return info
         raise BoardError("no IDENT reply from the board")
 
-    def _expect(self, prefix: str, timeout_s: float = EXPECT_TIMEOUT_S) -> str:
+    def _expect(self, expected: str, timeout_s: float = EXPECT_TIMEOUT_S) -> str:
+        """Wait for a line equal to `expected` (exact match; anything else is noise)."""
         deadline = time.monotonic() + timeout_s
         noise = 0
         while noise < 50 and time.monotonic() < deadline:  # skip blank lines and firmware logs
@@ -231,7 +242,7 @@ class SerialBoard:
                 continue
             if line.startswith("ERR "):  # exact prefix with the space: "ERRO:" is a log line
                 raise BoardError(line)
-            if line.startswith(prefix):
+            if line == expected:
                 return line
             noise += 1
         raise BoardError("timeout waiting for the board")
@@ -248,13 +259,15 @@ class SerialBoard:
                 raise  # explicit refusal: nothing was saved
             # timeout, or save_failed (the board restarts; NVS state unknown): ask it afterwards
             raise BoardUnsure("no verdict from the board after the password was sent") from None
-        except (OSError, KeyboardInterrupt):
-            # I/O error or Ctrl-C after the password may have reached the board: same doubt.
-            raise BoardUnsure("interrupted after the password was sent") from None
+        except OSError:
+            # I/O error after the password may have reached the board: same doubt.
+            raise BoardUnsure("I/O error after the password was sent") from None
+        except KeyboardInterrupt:
+            raise BoardUnsure("interrupted after the password was sent", interrupted=True) from None
 
     def unprov(self) -> None:
         self._send("UNPROV")
-        self._expect("OK")
+        self._expect("OK")  # exact line "OK": "OK snt-NNNN" (a PROV reply) does not count
 
     def wait_reboot_ident(self, timeout_s: float = REBOOT_TIMEOUT_S) -> dict:
         self._close()
@@ -354,27 +367,39 @@ def do_provision(board: Board, remote: Remote, hardware: str) -> int:
 
     password = None
     add_attempted = False
-    accepted = False  # the board answered OK: identity is in its NVS, never auto-undo again
+    # keep: the password may have reached the board, so nothing is ever undone automatically.
+    # It is set BEFORE board.prov(): a Ctrl-C at any point from here on (even a second one while
+    # the board is being checked) lands in the keep path, never in _undo. Only an explicit refusal
+    # (a plain BoardError: nothing was saved) or the board itself reporting "unprovisioned" clears it.
+    keep = False
+    accepted = False  # the board answered OK: its state is known (identity in NVS)
     try:
         add_attempted = True
         password = remote.mqtt_add(serial)
-        unsure = False
+        keep = True
+        unsure = interrupted = False
         try:
             board.prov(serial, password)
             accepted = True
-        except BoardUnsure:
-            unsure = True
+        except BoardUnsure as e:
+            unsure, interrupted = True, e.interrupted
         except BoardError:
+            keep = False
             raise  # explicit refusal / nothing sent: safe to undo
-        except (OSError, KeyboardInterrupt):
+        except OSError:
             unsure = True  # anything unexpected around the password line: assume the worst
+        except KeyboardInterrupt:
+            unsure = interrupted = True
         password = None
         if unsure:
-            accepted = True  # conservative until the board proves it stored nothing
+            print("Interrompido; verificando a placa (até 60 s). Ctrl-C de novo aborta e mantém "
+                  "credencial e reserva." if interrupted else
+                  "Sem veredito da placa; verificando a placa (até 60 s). Ctrl-C aborta e mantém "
+                  "credencial e reserva.", file=sys.stderr, flush=True)
             got = _validate_ident(board.wait_reboot_ident(REBOOT_TIMEOUT_S))
             _same_board(got, info)
             if got["state"] == "unprovisioned":
-                accepted = False
+                keep = False
                 raise BoardError("board did not accept the credential")
             raise BoardError("board saved an identity but never confirmed; rerun to reconcile")
         got = _validate_ident(board.wait_reboot_ident(REBOOT_TIMEOUT_S))
@@ -386,9 +411,12 @@ def do_provision(board: Board, remote: Remote, hardware: str) -> int:
         msg = scrub(f"{type(e).__name__}: {e}", password)
         password = None
         print(f"error: {msg}", file=sys.stderr)
-        if accepted:
-            print(f"warning: board accepted {serial}; credential and reservation were KEPT. "
-                  f"Run `provision` again: it reconciles the registry, or tells you to run unprov.",
+        if keep:
+            state = (f"board accepted {serial}" if accepted
+                     else f"board state unknown (it may hold {serial})")
+            print(f"warning: {state}; credential and reservation were KEPT. Run `provision` again: "
+                  f"if the board holds {serial} it reconciles the registry; if it is unprovisioned it "
+                  f"provisions it again with the same serial; otherwise it tells you to run unprov.",
                   file=sys.stderr)
             return 1
         _undo(remote, serial, created_here, add_attempted)

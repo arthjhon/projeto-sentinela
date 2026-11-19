@@ -331,7 +331,8 @@ class Recorder:
 
     def __call__(self, argv, **kw):
         self.calls.append((argv, kw))
-        return subprocess.CompletedProcess(argv, 0, stdout=self.stdout, stderr="")
+        assert not ("input" in kw and "stdin" in kw)  # subprocess.run refuses both
+        return subprocess.CompletedProcess(argv, 0, stdout=self.stdout.encode(), stderr=b"")
 
 
 def test_password_not_in_argv():
@@ -351,7 +352,10 @@ def test_password_not_in_argv():
     cmds = [a[-1] for a, _ in rec.calls]
     assert cmds[0] == "sudo -n /usr/local/sbin/mqtt-user.sh add snt-0001"
     assert "psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At" in cmds[1]
-    assert rec.calls[1][1]["input"] == "SELECT 1;"
+    assert rec.calls[1][1]["input"] == b"SELECT 1;"  # bytes: no \n -> \r\n translation on Windows
+    for i in (0, 2, 3):  # no input: ssh must not read the operator's console
+        assert rec.calls[i][1]["stdin"] is subprocess.DEVNULL and "input" not in rec.calls[i][1]
+    assert all(kw["text"] is False for _, kw in rec.calls)
     assert cmds[2] == "sudo -n /usr/local/sbin/mqtt-user.sh del snt-0001"
     assert cmds[3] == "sudo -n /usr/local/sbin/mqtt-user.sh list"
 
@@ -367,10 +371,18 @@ def test_remote_rejects_bad_user_and_bad_password_output(capsys):
 
 def test_remote_failure_message_has_no_stdout():
     def runner(argv, **kw):
-        return subprocess.CompletedProcess(argv, 3, stdout=PASSWORD, stderr="boom")
+        return subprocess.CompletedProcess(argv, 3, stdout=PASSWORD.encode(), stderr=b"boom")
     with pytest.raises(pb.RemoteError) as e:
         pb.SshRemote("h", runner=runner).mqtt_add("snt-0001")
-    assert PASSWORD not in str(e.value)
+    assert PASSWORD not in str(e.value) and "boom" in str(e.value)
+
+
+def test_sql_multiline_sent_as_lf_bytes():
+    rec = Recorder(stdout="snt-0001|reservado|f\r\n")
+    out = pb.SshRemote("h", runner=rec).sql(pb.build_reserve_sql(MAC, "heltec_wifi_lora_32_v3"))
+    sent = rec.calls[0][1]["input"]
+    assert isinstance(sent, bytes) and b"\r" not in sent and sent.count(b"\n") == 2
+    assert isinstance(out, str) and out.strip() == "snt-0001|reservado|f"
 
 
 def test_reserve_sql_quotes_only_validated_values():
@@ -483,6 +495,12 @@ def test_serial_board_save_failed_is_unsure():
 def test_serial_board_unprov_ok_and_err():
     b = pb.SerialBoard("COM5", opener=lambda p: FakePort(lambda l: ["", "OK", ""]))
     b.unprov()
+    # only the exact line "OK" counts: a stray "OK snt-0001" or "OKAY" is noise, not the verdict
+    b = pb.SerialBoard("COM5", opener=lambda p: FakePort(lambda l: ["OK snt-0001", "OKAY", "OK"]))
+    b.unprov()
+    b = pb.SerialBoard("COM5", opener=lambda p: SilentPort(lambda l: ["OK snt-0001", "OKAY"], 1))
+    with pytest.raises(pb.BoardError):
+        b.unprov()
     b = pb.SerialBoard("COM5", opener=lambda p: FakePort(lambda l: ["ERR clear_failed"]))
     with pytest.raises(pb.BoardError):
         b.unprov()
@@ -545,6 +563,55 @@ def test_exception_in_prov_undoes_only_if_board_unprovisioned():
     board = FakeBoard(calls, prov_error="OSERROR", reboot_state="unprovisioned")
     assert run(board, FakeRemote(calls)) == 1
     assert "liberar" in calls and "mqtt_del:snt-0001" in calls
+
+
+def test_second_interrupt_during_unsure_ident_keeps_everything(capsys):
+    calls = []
+    board = FakeBoard(calls, prov_error="INTERRUPT")
+
+    def boom(t):
+        calls.append("reboot_ident")
+        raise KeyboardInterrupt  # second Ctrl-C while the board is being checked
+    board.wait_reboot_ident = boom
+    assert run(board, FakeRemote(calls)) == 1
+    assert "reboot_ident" in calls
+    assert "liberar" not in calls and "mqtt_del:snt-0001" not in calls
+    assert not any(c.startswith("marcar") for c in calls)
+    err = capsys.readouterr().err
+    assert "Interrompido; verificando a placa (até 60 s). Ctrl-C de novo aborta" in err
+    assert "KEPT" in err and "board accepted" not in err and "state unknown" in err
+
+
+def test_second_interrupt_after_serial_board_unsure_keeps_everything():
+    """Real SerialBoard: first Ctrl-C right after the password, second during the IDENT check."""
+    calls = []
+
+    class P(FakePort):
+        def write(self, data):
+            if data.decode().strip() == PASSWORD:
+                raise KeyboardInterrupt
+            super().write(data)
+    sb = pb.SerialBoard("COM5", opener=lambda p: P(lambda l: ["PASS?"]))
+
+    class B:
+        def ident(self):
+            return {"serial": "none", "mac": MAC, "fw": "5.1.0", "state": "unprovisioned"}
+
+        def prov(self, serial, password):
+            sb.prov(serial, password)
+
+        def wait_reboot_ident(self, t):
+            raise KeyboardInterrupt
+    assert run(B(), FakeRemote(calls)) == 1
+    assert "liberar" not in calls and "mqtt_del:snt-0001" not in calls
+
+
+def test_explicit_refusal_still_undoes_after_keep_flag():
+    calls = []
+    board = FakeBoard(calls, prov_error="ERR busy_provisioned")
+    assert run(board, FakeRemote(calls)) == 1
+    assert "mqtt_del:snt-0001" in calls and "liberar" in calls
+    assert "reboot_ident" not in calls
 
 
 def test_mac_change_after_ok_keeps_everything(capsys):
