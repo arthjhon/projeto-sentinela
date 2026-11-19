@@ -32,13 +32,14 @@ export function applyDeviceIdChange(entry, newDeviceId) {
 }
 
 /**
- * Linha Flux que filtra `topic` pela união dos ids. Sem ids informados = sem
- * filtro (''); ids informados mas todos inválidos = filtro que não casa nada,
- * nunca "todas as bóias".
+ * Linha Flux que filtra `topic` pela união dos ids.
+ * Contrato explícito: `null`/`undefined` = sem bóia selecionada (consulta da
+ * frota inteira, sem filtro). Qualquer outro valor (string ou array, inclusive
+ * vazio ou só com ids inválidos) = uma bóia foi selecionada, e falha fechado:
+ * sem ids válidos o filtro não casa nada, nunca "todas as bóias".
  */
 export function topicFilterFlux(input, suffix = 'sensores') {
-  const informed = (Array.isArray(input) ? input : [input]).some(Boolean);
-  if (!informed) return '';
+  if (input == null) return '';
   const ids = normalizeDeviceIds(input);
   if (!ids.length) return '|> filter(fn: (r) => false)';
   return `|> filter(fn: (r) => ${ids.map(id => `r.topic == "${id}/${suffix}"`).join(' or ')})`;

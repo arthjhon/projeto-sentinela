@@ -1,4 +1,5 @@
 import { PERIODS } from '../hooks/useInfluxHistory';
+import { topicFilterFlux } from './deviceIds';
 
 // Export do histórico do InfluxDB em CSV.
 //
@@ -14,7 +15,6 @@ import { PERIODS } from '../hooks/useInfluxHistory';
 const ORG = import.meta.env.VITE_INFLUX_ORG;
 const BUCKET = import.meta.env.VITE_INFLUX_BUCKET;
 
-import { topicFilterFlux } from './deviceIds';
 const COLUMNS = ['temperatura', 'ph', 'turbidez'];
 
 /** Número no padrão pt-BR (decimal com vírgula), vazio se ausente. */
@@ -85,7 +85,7 @@ function parsePivoted(csv) {
 /**
  * Busca o histórico bruto do período e devolve o CSV pronto.
  * @param {string} period    chave de PERIODS (mesma janela do gráfico)
- * @param {string|string[]} deviceIds  deviceId atual (+ anteriores, ver deviceIdsOf)
+ * @param {string|string[]|null} deviceIds  deviceId atual (+ anteriores, ver deviceIdsOf)
  * @param {string} boiaId    id da bóia para a coluna boia_id (ex: SM-01)
  */
 export async function fetchHistoryCsv(period, deviceIds, boiaId) {

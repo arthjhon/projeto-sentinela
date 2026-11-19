@@ -42,6 +42,14 @@ describe('useInfluxHistory union filter', () => {
     expect(buildHistoryFlux('ph', { start: '-1h', every: '1m' }, 'a')).toContain('r.topic == "a/sensores")');
     expect(buildHistoryFlux('ph', { start: '-1h', every: '1m' }, null)).not.toContain('r.topic');
   });
+  it('bóia selecionada sem id válido falha fechado, não vira frota inteira', () => {
+    const cfg = { start: '-1h', every: '1m' };
+    for (const ids of [[], ['a"b']]) {
+      const q = buildHistoryFlux('ph', cfg, ids);
+      expect(q).toContain('|> filter(fn: (r) => false)');
+      expect(q).not.toContain('r.topic');
+    }
+  });
   it('fetchUltimasLeituras une os tópicos', async () => {
     let body;
     globalThis.fetch = vi.fn(async (_u, o) => { body = o.body; return { ok: true, text: async () => '' }; });
