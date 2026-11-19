@@ -15,7 +15,7 @@ import { getMqttTopics } from '../../config/fleet';
 // vivem em config/waterQuality.js. Duplicá-las aqui criaria duas verdades.
 import { classifyParam } from '../../config/waterQuality';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
-import { topicsForRegistry } from '../../services/buoyRegistry';
+import { topicsForRegistry, deviceIdsOf } from '../../services/buoyRegistry';
 import { computeFleetAverage } from '../../utils/fleetAverage';
 import './AdminDashboard.css';
 
@@ -70,6 +70,8 @@ const AdminDashboard = () => {
     ? liveBuoys[0]
     : liveBuoys.find(b => b.codigo === selectedBuoy);
   const focusedDeviceId = focusedBuoy?.deviceId ?? null;
+  // Histórico (Influx) usa o atual + anteriores; MQTT/saúde ficam só no atual.
+  const focusedHistoryIds = useMemo(() => deviceIdsOf(focusedBuoy), [focusedBuoy]);
   const focusedId = focusedBuoy?.codigo ?? null;
 
   // ── Buffer circular de leituras ───────────────────────────────────────────────
@@ -80,7 +82,7 @@ const AdminDashboard = () => {
   // Histórico persistido (InfluxDB). Não substitui o MQTT: o buffer acima
   // continua alimentando cards e estatísticas em tempo real.
   const { data: history, loading: historyLoading, error: historyError } =
-    useInfluxHistory(activeParam, period, focusedDeviceId);
+    useInfluxHistory(activeParam, period, focusedHistoryIds);
 
   const sensorMsg = focusedDeviceId ? messages[`${focusedDeviceId}/sensores`] : null;
 
@@ -126,7 +128,7 @@ const AdminDashboard = () => {
     setExporting(true);
     setExportError(null);
     try {
-      const { csv, rows } = await fetchHistoryCsv(period, focusedDeviceId, focusedId);
+      const { csv, rows } = await fetchHistoryCsv(period, focusedHistoryIds, focusedId);
       if (rows === 0) {
         setExportError(`Sem leituras em ${PERIODS[period].label} para exportar.`);
         return;

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { parsePivotCsv } from './useInfluxHistory';
+import { describe, it, expect, vi } from 'vitest';
+import { parsePivotCsv, buildHistoryFlux, fetchUltimasLeituras } from './useInfluxHistory';
 
 describe('parsePivotCsv', () => {
   it('lê as colunas do pivot, mais recente primeiro', () => {
@@ -30,5 +30,22 @@ describe('parsePivotCsv', () => {
 
   it('vazio = nenhuma linha', () => {
     expect(parsePivotCsv('')).toEqual([]);
+  });
+});
+
+describe('useInfluxHistory union filter', () => {
+  it('buildHistoryFlux junta os tópicos com or', () => {
+    const q = buildHistoryFlux('ph', { start: '-1h', every: '1m' }, ['snt-0001', 'esp_sururu']);
+    expect(q).toContain('r.topic == "snt-0001/sensores" or r.topic == "esp_sururu/sensores"');
+  });
+  it('string única e vazio', () => {
+    expect(buildHistoryFlux('ph', { start: '-1h', every: '1m' }, 'a')).toContain('r.topic == "a/sensores")');
+    expect(buildHistoryFlux('ph', { start: '-1h', every: '1m' }, null)).not.toContain('r.topic');
+  });
+  it('fetchUltimasLeituras une os tópicos', async () => {
+    let body;
+    globalThis.fetch = vi.fn(async (_u, o) => { body = o.body; return { ok: true, text: async () => '' }; });
+    await fetchUltimasLeituras(['snt-0001', 'esp_sururu']);
+    expect(body).toContain('r.topic == "snt-0001/sensores" or r.topic == "esp_sururu/sensores"');
   });
 });

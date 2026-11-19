@@ -4,7 +4,9 @@
 export const FLEET = [
   {
     id: 'SM-01',
-    deviceId: 'esp_sururu',
+    deviceId: 'snt-0001',
+    // ids antigos da placa: leituras gravadas neles continuam no histórico
+    deviceIdsAnteriores: ['esp_sururu'],
     name: 'Bóia Mundaú Centro',
     location: 'Lagoa Mundaú',
     coordinates: "9°39'21.1\"S 35°46'12.4\"W",
