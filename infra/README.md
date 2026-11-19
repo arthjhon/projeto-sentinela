@@ -1016,7 +1016,7 @@ fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já e
     frontend (o `dev` inteiro) e aprovar o deploy do site (o painel passa a ler anônimo e a mandar
     OTA pela Edge Function). No painel novo, editar o SM-01 e trocar o `deviceId` para `snt-0001`
     (o id anterior `esp_sururu` é mantido automaticamente para o histórico). Teste: OTA com versão
-    descartável numa placa de bancada.
+    descartável na própria placa (`snt-0001`, a única).
 
     **Depois da edição do registro**, fechar os `sensor_health_events` abertos do `esp_sururu`
     (só agora: antes disso o worker ainda lista `esp_sururu` pelo registro e reabriria os eventos).
@@ -1092,9 +1092,9 @@ py -3 infra\bin\provision-board.py provision --port COM5      # [--hardware ...]
 py -3 infra\bin\provision-board.py unprov --port COM5         # limpa a identidade da placa
 ```
 
-Fluxo do `provision`: `IDENT?` → se a placa já está provisionada, só mostra o serial e sai →
+Fluxo do `provision`: `IDENT?` → se a placa já está provisionada, concilia registro e broker (ver "Falha depois do `OK`") e sai →
 reserva o serial pelo MAC (`dispositivo_reservar`) → cria a credencial (`mqtt-user.sh add`) →
-`PROV` → a placa reinicia → o script reconecta na mesma porta (até 20 s) e confere que ela voltou
+`PROV` → a placa reinicia → o script reconecta na mesma porta (até 60 s) e confere que ela voltou
 com o serial → `dispositivo_marcar('provisionado')` → imprime o serial para a **etiqueta**: escrever
 no case da placa. Fechar monitores seriais (Arduino IDE etc.) antes: a porta é exclusiva.
 

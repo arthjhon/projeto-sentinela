@@ -17,7 +17,8 @@ MAC = "aa:bb:cc:dd:ee:01"
 
 class FakeBoard:
     def __init__(self, calls, state="unprovisioned", serial="none", reboot_serial=None, prov_error=None,
-                 reboot_fails=False, reboot_state="provisioned"):
+                 reboot_fails=False, reboot_state="provisioned", unprov_error=None, reboot_mac=MAC):
+        self.unprov_error, self.reboot_mac = unprov_error, reboot_mac
         self.calls, self.state, self.serial = calls, state, serial
         self.reboot_serial, self.prov_error = reboot_serial, prov_error
         self.reboot_fails, self.reboot_state = reboot_fails, reboot_state
@@ -25,6 +26,8 @@ class FakeBoard:
 
     def unprov(self):
         self.calls.append("unprov")
+        if self.unprov_error:
+            raise pb.BoardError(self.unprov_error)
 
     def ident(self):
         self.calls.append("ident")
@@ -33,6 +36,10 @@ class FakeBoard:
     def prov(self, serial, password):
         self.calls.append(f"prov:{serial}")
         self.received = password
+        if self.prov_error == "OSERROR":
+            raise OSError("port vanished")
+        if self.prov_error == "INTERRUPT":
+            raise KeyboardInterrupt
         if self.prov_error == "UNSURE":
             raise pb.BoardUnsure("no verdict")
         if self.prov_error:
@@ -42,7 +49,7 @@ class FakeBoard:
         self.calls.append("reboot_ident")
         if self.reboot_fails:
             raise pb.BoardError("board did not come back")
-        return {"serial": self.reboot_serial or "none", "mac": MAC, "fw": "5.1.0",
+        return {"serial": self.reboot_serial or "none", "mac": self.reboot_mac, "fw": "5.1.0",
                 "state": self.reboot_state}
 
 
@@ -479,3 +486,86 @@ def test_serial_board_unprov_ok_and_err():
     b = pb.SerialBoard("COM5", opener=lambda p: FakePort(lambda l: ["ERR clear_failed"]))
     with pytest.raises(pb.BoardError):
         b.unprov()
+
+
+class SilentPort(FakePort):
+    """Answers the first N writes via script, then goes silent (readline -> b'')."""
+    def __init__(self, script, answers):
+        super().__init__(script)
+        self.answers = answers
+
+    def write(self, data):
+        self.written.append(data)
+        if self.answers > 0:
+            self.answers -= 1
+            self.rx.extend(self.script(data.decode().strip()))
+
+
+def test_prov_silent_after_prov_is_plain_error():
+    b = pb.SerialBoard("COM5", opener=lambda p: SilentPort(lambda l: [], 0))
+    with pytest.raises(pb.BoardError) as e:
+        b.prov("snt-0001", PASSWORD)
+    assert not isinstance(e.value, pb.BoardUnsure)
+
+
+def test_prov_silent_after_password_is_unsure():
+    b = pb.SerialBoard("COM5", opener=lambda p: SilentPort(lambda l: ["PASS?"], 1))
+    with pytest.raises(pb.BoardUnsure):
+        b.prov("snt-0001", PASSWORD)
+
+
+def test_unprov_silent_raises():
+    b = pb.SerialBoard("COM5", opener=lambda p: SilentPort(lambda l: [], 0))
+    with pytest.raises(pb.BoardError):
+        b.unprov()
+
+
+@pytest.mark.parametrize("exc", [OSError("gone"), KeyboardInterrupt()])
+def test_exception_after_password_send_is_unsure(exc):
+    class P(FakePort):
+        def write(self, data):
+            if data.decode().strip() == PASSWORD:
+                raise exc
+            super().write(data)
+    b = pb.SerialBoard("COM5", opener=lambda p: P(lambda l: ["PASS?"]))
+    with pytest.raises(pb.BoardUnsure):
+        b.prov("snt-0001", PASSWORD)
+
+
+@pytest.mark.parametrize("err", ["OSERROR", "INTERRUPT"])
+def test_exception_in_prov_never_releases_when_board_unreachable(err):
+    calls = []
+    board = FakeBoard(calls, prov_error=err, reboot_fails=True)
+    assert run(board, FakeRemote(calls)) == 1
+    assert "liberar" not in calls and "mqtt_del:snt-0001" not in calls
+
+
+def test_exception_in_prov_undoes_only_if_board_unprovisioned():
+    calls = []
+    board = FakeBoard(calls, prov_error="OSERROR", reboot_state="unprovisioned")
+    assert run(board, FakeRemote(calls)) == 1
+    assert "liberar" in calls and "mqtt_del:snt-0001" in calls
+
+
+def test_mac_change_after_ok_keeps_everything(capsys):
+    calls = []
+    board = FakeBoard(calls, reboot_serial="snt-0001", reboot_mac="aa:bb:cc:dd:ee:99")
+    assert run(board, FakeRemote(calls)) == 1
+    assert "liberar" not in calls and "mqtt_del:snt-0001" not in calls
+    assert "placa trocada" in capsys.readouterr().err
+
+
+def test_mac_change_after_unsure_keeps_everything():
+    calls = []
+    board = FakeBoard(calls, prov_error="UNSURE", reboot_state="unprovisioned",
+                      reboot_mac="aa:bb:cc:dd:ee:99")
+    assert run(board, FakeRemote(calls)) == 1
+    assert "liberar" not in calls and "mqtt_del:snt-0001" not in calls
+
+
+def test_unprov_clear_failed_reports_actual_state(capsys):
+    calls = []
+    board = FakeBoard(calls, unprov_error="ERR clear_failed", reboot_state="unprovisioned")
+    assert run(board, FakeRemote(calls), ("unprov", "--port", "COM5")) == 1
+    assert calls == ["unprov", "reboot_ident"]
+    assert "state=unprovisioned" in capsys.readouterr().out

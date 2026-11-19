@@ -47,6 +47,7 @@ LINE_TIMEOUT_S = 5
 # the first IDENT and the post-restart wait allow well over that.
 IDENT_TIMEOUT_S = 35.0
 REBOOT_TIMEOUT_S = 60.0
+EXPECT_TIMEOUT_S = 20.0
 
 
 class BoardError(Exception):
@@ -72,9 +73,6 @@ class Remote(Protocol):
     def sql(self, script: str) -> str: ...
     def mqtt_list(self) -> set: ...
     def mqtt_add(self, user: str) -> str: ...
-    def mqtt_list(self) -> set:
-        return {ln.strip() for ln in self._ssh(f"sudo -n {MQTT_USER_SH} list").splitlines() if ln.strip()}
-
     def mqtt_del(self, user: str) -> None: ...
 
 
@@ -196,8 +194,13 @@ class SerialBoard:
                 pass
             self._port = None
 
-    def _readline(self) -> str:
-        return self._open().readline().decode("ascii", "replace").strip()
+    def _readline(self) -> str | None:
+        """None = read timeout (pyserial returns b""); "" = blank line (b"\\n"): the firmware
+        frames every reply as "\\n<line>\\n"."""
+        raw = self._open().readline()
+        if not raw:
+            return None
+        return raw.decode("ascii", "replace").strip()
 
     def _send(self, text: str) -> None:
         self._open().write((text + "\n").encode("ascii"))
@@ -217,9 +220,10 @@ class SerialBoard:
                     return info
         raise BoardError("no IDENT reply from the board")
 
-    def _expect(self, prefix: str) -> str:
+    def _expect(self, prefix: str, timeout_s: float = EXPECT_TIMEOUT_S) -> str:
+        deadline = time.monotonic() + timeout_s
         noise = 0
-        while noise < 50:  # skip blank lines and firmware logs ("ERRO: ...", boot output)
+        while noise < 50 and time.monotonic() < deadline:  # skip blank lines and firmware logs
             line = self._readline()
             if line is None:
                 raise BoardError("timeout waiting for the board")
@@ -230,20 +234,23 @@ class SerialBoard:
             if line.startswith(prefix):
                 return line
             noise += 1
-        raise BoardError("unexpected board output")
+        raise BoardError("timeout waiting for the board")
 
     def prov(self, serial: str, password: str) -> None:
         _check(serial, SERIAL_RE, "serial")
         self._send(f"PROV {serial}")
         self._expect("PASS?")
-        self._send(password)  # only place the password leaves this process
         try:
+            self._send(password)  # only place the password leaves this process
             self._expect(f"OK {serial}")
         except BoardError as e:
             if str(e).startswith("ERR ") and str(e) != "ERR save_failed":
                 raise  # explicit refusal: nothing was saved
             # timeout, or save_failed (the board restarts; NVS state unknown): ask it afterwards
             raise BoardUnsure("no verdict from the board after the password was sent") from None
+        except (OSError, KeyboardInterrupt):
+            # I/O error or Ctrl-C after the password may have reached the board: same doubt.
+            raise BoardUnsure("interrupted after the password was sent") from None
 
     def unprov(self) -> None:
         self._send("UNPROV")
@@ -275,6 +282,11 @@ def _validate_ident(info: dict) -> dict:
     if info.get("state") not in ("provisioned", "unprovisioned"):
         raise BoardError("board reported an invalid state")
     return info
+
+
+def _same_board(got: dict, first: dict) -> None:
+    if got["mac"] != first["mac"]:
+        raise BoardError("MAC changed across the restart (placa trocada?); nothing was undone")
 
 
 def print_banner(serial: str, mac: str) -> None:
@@ -346,20 +358,27 @@ def do_provision(board: Board, remote: Remote, hardware: str) -> int:
     try:
         add_attempted = True
         password = remote.mqtt_add(serial)
+        unsure = False
         try:
             board.prov(serial, password)
             accepted = True
         except BoardUnsure:
-            # Password was sent but no verdict: ask the board what it actually stored.
-            password = None
+            unsure = True
+        except BoardError:
+            raise  # explicit refusal / nothing sent: safe to undo
+        except (OSError, KeyboardInterrupt):
+            unsure = True  # anything unexpected around the password line: assume the worst
+        password = None
+        if unsure:
             accepted = True  # conservative until the board proves it stored nothing
             got = _validate_ident(board.wait_reboot_ident(REBOOT_TIMEOUT_S))
+            _same_board(got, info)
             if got["state"] == "unprovisioned":
                 accepted = False
-                raise BoardError("board did not accept the credential") from None
-            raise BoardError("board saved an identity but never confirmed; rerun to reconcile") from None
-        password = None
+                raise BoardError("board did not accept the credential")
+            raise BoardError("board saved an identity but never confirmed; rerun to reconcile")
         got = _validate_ident(board.wait_reboot_ident(REBOOT_TIMEOUT_S))
+        _same_board(got, info)
         if got["serial"] != serial or got["state"] != "provisioned":
             raise BoardError(f"board came back as {got['serial']!r}/{got['state']}, expected {serial}")
         remote.sql(build_marcar_sql(serial, "provisionado"))
@@ -388,7 +407,8 @@ def _undo(remote: Remote, serial: str, created_here: bool, add_attempted: bool) 
         try:
             remote.mqtt_del(serial)
         except Exception as e:  # noqa: BLE001
-            print(f"warning: undo mqtt_del failed ({type(e).__name__}); run mqtt-user.sh del {serial}",
+            print(f"warning: could not remove broker user {serial} ({type(e).__name__}; it may not exist); "
+                  f"check with mqtt-user.sh list",
                   file=sys.stderr)
     if created_here:
         try:
@@ -413,11 +433,19 @@ def do_retire(remote: Remote, serial: str) -> int:
 
 
 def do_unprov(board: Board) -> int:
-    board.unprov()
+    failed = False
+    try:
+        board.unprov()
+    except BoardError as e:
+        # ERR clear_failed also restarts the board: report what it actually holds afterwards.
+        print(f"error: {e}", file=sys.stderr)
+        failed = True
     info = _validate_ident(board.wait_reboot_ident(REBOOT_TIMEOUT_S))
     print(" ".join(f"{k}={info[k]}" for k in ("serial", "mac", "fw", "state")))
     if info["state"] != "unprovisioned":
         print("error: board still reports an identity", file=sys.stderr)
+        return 1
+    if failed:
         return 1
     print("board cleared. Registry and broker user were not touched: `provision` reuses the serial "
           "(new password); `retire` removes it for good.")
