@@ -57,3 +57,15 @@ export function buildOtaCommand(
     }),
   };
 }
+
+/**
+ * Device id of buoy `codigo` in the `map_buoys` registry value. Tolerates any
+ * garbage in the JSON (non-array, null entries, non-string ids) and returns null.
+ */
+export function findDeviceId(registry: unknown, codigo: string): string | null {
+  if (!Array.isArray(registry)) return null;
+  const entry = registry.find(
+    (b) => b && typeof b === 'object' && (b as { codigo?: unknown }).codigo === codigo,
+  ) as { deviceId?: unknown } | undefined;
+  return typeof entry?.deviceId === 'string' ? entry.deviceId : null;
+}

@@ -1047,18 +1047,25 @@ SHA-256 válido e a bóia com `deviceId` no registro (`app_settings.map_buoys`).
 
    `OTA_PUBLIC_BASE_URL` precisa gerar URLs que começam com o `OTA_URL_PREFIX` do firmware
    (`https://supabase.arthlabs.dev/storage/v1/object/public/firmware/`).
-4. Reiniciar só o runtime de functions: `docker compose restart supabase-edge-functions`
-   (confirmar o nome do serviço com `docker compose ps`; não mexer em `supabase-db`/`kong`).
+4. Recriar só o runtime de functions: `docker compose up -d --no-deps functions` (no diretório do compose
+   do Supabase). `functions` é o nome do **serviço** (`supabase-edge-functions` é só o `container_name`;
+   confirmar com `docker compose config --services`). `restart` não serve: não recria o container e as
+   variáveis novas do `.env` não chegam ao runtime (a função responderia 500 `not_configured`).
 5. Smoke test (nada é publicado em nenhum dos casos):
    - sem `Authorization` -> 401; JWT de operador/visualizador -> 403 (`forbidden`);
    - admin com `deploy_id` inexistente -> 404; deploy já `sucesso`/`falha` -> 422 `not_pending`;
    - admin com deploy `pendente` de bóia de teste -> 200 `{"ok":true}` e a mensagem aparece em
      `mosquitto_sub` autenticado (bancada, sem placa gravada pelo agente).
-6. Rollback: remover `/srv/sentinela/supabase/volumes/functions/ota-command/` e reiniciar o runtime;
+6. Rollback: remover `/srv/sentinela/supabase/volumes/functions/ota-command/` e recriar o runtime (`docker compose up -d --no-deps functions`);
    a coluna `arquivo_path` pode ficar (nullable, inofensiva).
 
-Falha do broker retorna 502 e marca o deploy como `falha`. Sucesso não altera a linha: a OtaPage e
+Falha do broker retorna 502 e marca o deploy como `falha`. Atenção: um timeout depois do PUBLISH e
+antes do PUBACK também vira `falha`, embora o dispositivo ainda possa executar o OTA (a OtaPage
+reescreve depois o status final). Sucesso não altera a linha: a OtaPage e
 o `ota/status` do dispositivo fecham o ciclo.
+
+Dependência: `MQTT_OTA_URL` é o WSS público, então o envio de OTA depende do túnel cloudflared e do DNS
+(além da VM e do broker); com o túnel fora, a função responde 502.
 
 ### Modo limitado
 

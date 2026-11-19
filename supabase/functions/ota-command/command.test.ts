@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildOtaCommand, OtaCommandError } from './command';
+import { buildOtaCommand, findDeviceId, OtaCommandError } from './command';
 
 const BASE = 'https://supabase.arthlabs.dev';
 const SHA = 'a'.repeat(64);
@@ -68,5 +68,21 @@ describe('buildOtaCommand', () => {
 
   it('checks status before everything else', () => {
     expect(codeOf({ ...ok, status: 'sucesso', device_id: null })).toBe('not_pending');
+  });
+});
+
+describe('findDeviceId', () => {
+  it('finds the device id by codigo', () => {
+    const reg = [{ codigo: 'SM-01', deviceId: 'esp_sururu' }, { codigo: 'SM-02', deviceId: null }];
+    expect(findDeviceId(reg, 'SM-01')).toBe('esp_sururu');
+    expect(findDeviceId(reg, 'SM-02')).toBeNull();
+    expect(findDeviceId(reg, 'XX')).toBeNull();
+  });
+
+  it('tolerates a malformed registry', () => {
+    expect(findDeviceId(null, 'SM-01')).toBeNull();
+    expect(findDeviceId({}, 'SM-01')).toBeNull();
+    expect(findDeviceId([null, 3, 'x', { codigo: 'SM-01', deviceId: 7 }], 'SM-01')).toBeNull();
+    expect(findDeviceId([null, { codigo: 'SM-01', deviceId: 'esp_a' }], 'SM-01')).toBe('esp_a');
   });
 });

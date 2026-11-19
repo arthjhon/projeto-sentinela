@@ -16,7 +16,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import mqtt from 'npm:mqtt@5.10.3';
-import { buildOtaCommand, OtaCommandError } from './command.ts';
+import { buildOtaCommand, findDeviceId, OtaCommandError } from './command.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -37,14 +37,20 @@ function json(body: unknown, status = 200) {
 }
 
 async function publishOnce(topic: string, payload: string): Promise<void> {
-  let client: Awaited<ReturnType<typeof mqtt.connectAsync>> | undefined;
+  // Create the client synchronously so the reference exists even if connect
+  // never settles; it is always ended in `finally`.
+  const client = mqtt.connect(MQTT_OTA_URL!, {
+    username: MQTT_OTA_USER,
+    password: MQTT_OTA_PASS,
+    connectTimeout: PUBLISH_TIMEOUT_MS,
+    reconnectPeriod: 0, // fail fast, never retry in the background
+  });
   let timer: number | undefined;
   const work = (async () => {
-    client = await mqtt.connectAsync(MQTT_OTA_URL!, {
-      username: MQTT_OTA_USER,
-      password: MQTT_OTA_PASS,
-      connectTimeout: PUBLISH_TIMEOUT_MS,
-      reconnectPeriod: 0, // fail fast, never retry in the background
+    await new Promise<void>((resolve, reject) => {
+      client.once('connect', () => resolve());
+      client.once('error', (err: Error) => reject(err));
+      client.once('close', () => reject(new Error('mqtt connection closed')));
     });
     await client.publishAsync(topic, payload, { qos: 1 });
   })();
@@ -57,9 +63,17 @@ async function publishOnce(topic: string, payload: string): Promise<void> {
     clearTimeout(timer);
     // `work` may still be pending after a timeout; swallow its late rejection.
     work.catch(() => {});
+    // Forced end, itself bounded: never leaves the instance alive.
+    let endTimer: number | undefined;
     try {
-      await client?.endAsync(true);
+      await Promise.race([
+        client.endAsync(true),
+        new Promise<void>((resolve) => {
+          endTimer = setTimeout(resolve, 2000);
+        }),
+      ]);
     } catch { /* ignore */ }
+    clearTimeout(endTimer);
   }
 }
 
@@ -123,9 +137,7 @@ Deno.serve(async (req: Request) => {
     console.error('ota-command: registry lookup failed', settingError.message);
     return json({ error: 'lookup_failed' }, 500);
   }
-  const registry: Array<{ codigo?: string; deviceId?: string | null }> =
-    Array.isArray(setting?.value) ? setting.value : [];
-  const deviceId = registry.find((b) => b.codigo === deploy.boia_id)?.deviceId ?? null;
+  const deviceId = findDeviceId(setting?.value, deploy.boia_id);
 
   let command: { topic: string; payload: string };
   try {
@@ -135,7 +147,7 @@ Deno.serve(async (req: Request) => {
         versao: deploy.versao,
         sha256: deploy.sha256 ?? '',
         arquivo_path: deploy.arquivo_path,
-        device_id: typeof deviceId === 'string' ? deviceId : null,
+        device_id: deviceId,
       },
       OTA_PUBLIC_BASE_URL,
     );
@@ -149,11 +161,12 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     // Never log credentials; the message is the library error only.
     console.error('ota-command: broker failure', e instanceof Error ? e.message : 'unknown');
-    await admin
+    const { error: markError } = await admin
       .from('firmware_deploys')
       .update({ status: 'falha', confirmado_em: new Date().toISOString() })
       .eq('id', deployId)
       .eq('status', 'pendente');
+    if (markError) console.error('ota-command: could not mark deploy as falha', markError.message);
     return json({ error: 'broker_unavailable' }, 502);
   }
 
