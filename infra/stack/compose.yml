@@ -64,6 +64,8 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2.0.22
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "127.0.0.1:9001:9001"
     volumes:
@@ -76,8 +78,8 @@ services:
       - /mosquitto/log
     # O mosquitto nao sobe sem o password_file. Na primeira partida cria um arquivo vazio
     # (dono mosquitto, modo 600); se ja existir nao e tocado (as credenciais vivem no
-    # volume). O entrypoint da imagem ja fez chown do /mosquitto antes deste comando, e o
-    # mosquitto (root no start) abre o arquivo e depois larga para o usuario mosquitto.
+    # volume). O dono mosquitto mantem o arquivo legivel depois que o broker larga os
+    # privilegios (root -> usuario mosquitto); o HUP de recarga o le ja como mosquitto.
     command:
       - sh
       - -c

@@ -170,6 +170,15 @@ def under_root($p):
                  "mosquitto extra mount: \($m.source // $m.target)"))
        else empty end),
 
+      # R27b: symmetry. Only the mosquitto service may mount its volume or anything under
+      # $root/mosquitto/ (the credential store and the broker config/ACL).
+      (if $n != "mosquitto" then
+         (($v.volumes // [])[] as $m
+          | deny(($m.type == "volume" and $m.source == "mosquitto-data")
+                 or ($m.type == "bind" and (($m.source // "") | startswith($root + "/mosquitto"))); 
+                 "\($n) must not mount mosquitto state: \($m.source // $m.target)"))
+       else empty end),
+
       # R28: mosquitto publishes only the WebSocket listener (9001, behind the tunnel on
       # the loopback; R7 already forces 127.0.0.1). The TCP listener 1883 is reachable
       # only inside the compose network, so it must never get a host port.

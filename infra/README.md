@@ -950,7 +950,8 @@ o job de teste: `"required_status_checks": {"strict": true, "contexts": ["test"]
 
 ```bash
 bash infra/tests/validate-compose.test.sh   # política do validador
-bash infra/tests/stack-deploy.test.sh       # deploy ponta a ponta (projeto sentinela-stack-test)
+bash infra/tests/stack-deploy.test.sh       # deploy ponta a ponta (projeto sentinela-stack-test); publica 127.0.0.1:9001
+                                            # no host: falha se outro broker já ocupa essa porta
 bash infra/tests/influx-ops.test.sh         # bootstrap + backup em InfluxDB descartável
 bash infra/tests/mosquitto.test.sh          # ACL do broker (container descartável, ~60 s)
 ```
@@ -966,8 +967,9 @@ substitui o HiveMQ Cloud. Configuração e ACL em `infra/stack/mosquitto/` (vers
 pelo CI como parte dos quatro arquivos do deploy).
 
 ```text
-boias, Telegraf, edge function OTA --TCP 1883, com senha--> mosquitto (rede interna do compose; sem porta no host)
-navegador --WSS--> Cloudflare --túnel cloudflared--> 127.0.0.1:9001 (WebSocket do mosquitto; só no loopback)
+Telegraf --TCP 1883, com senha--> mosquitto (rede interna do compose; sem porta no host)
+boias, navegador, edge function OTA (MQTT_OTA_URL) --WSS--> Cloudflare --túnel cloudflared--> 127.0.0.1:9001
+                                                    (wss://mqtt.arthlabs.dev/mqtt; WebSocket do mosquitto, só no loopback)
 ```
 
 - Listener `1883`: só dentro da rede do compose, autenticação obrigatória. Não é publicado no host.
@@ -976,6 +978,27 @@ navegador --WSS--> Cloudflare --túnel cloudflared--> 127.0.0.1:9001 (WebSocket 
 - O serviço não entra na rede externa `sentinela-pg`.
 - Healthcheck sem credencial: conexão TCP nos dois listeners. Não prova auth/ACL; isso é o
   `infra/tests/mosquitto.test.sh`.
+
+### Primeiro deploy com o broker (ordem obrigatória)
+
+O primeiro deploy do mosquitto **não tem rollback automático**: o `rollback()` reprepara o último
+release bom, e um release anterior ao broker não tem `mosquitto/mosquitto.conf` nem `mosquitto/acl`,
+então a validação falha ("last-known-good no longer passes validation; NOT starting it") e nada é
+reiniciado. Além disso o `passwd` nasce vazio, então um telegraf apontado para o broker novo é
+recusado e o `wait_healthy` falha. Por isso, nesta ordem:
+
+1. Deploy com o `.env` **ainda no HiveMQ** (`MQTT_BROKER` antigo): sobe o mosquitto sem que o telegraf dependa dele para autenticar.
+2. Provisionar `svc/telegraf` (e `svc/ota`) no `passwd` (próxima seção) e conferir `docker logs` do broker.
+3. Trocar o `.env` para `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`, `MQTT_TELEGRAF_PASS` e rodar `sudo /usr/local/sbin/stack-deploy.sh none` (recria só o telegraf; daqui em diante o rollback automático funciona).
+
+Recuperação manual se o passo 1 falhar: o `current` já aponta para o release novo (o deploy troca o
+link antes do `up`) e o release anterior ao broker não passa mais pela validação (o `deploy` exige
+os quatro arquivos), então o caminho é **corrigir para frente**, não voltar: `sudo docker compose -p
+sentinela-stack stop mosquitto` se ele estiver em loop, conferir o motivo em `sudo cat
+/var/log/sentinela-stack-deploy.log` e `docker logs`, manter o `.env` no HiveMQ, corrigir a causa no
+repositório e reenviar os quatro arquivos (CI ou deploy manual). Os containers `influxdb` e `telegraf`
+do release anterior seguem rodando enquanto o `up` não os recria; o `.previous` guarda o release
+antigo para consulta.
 
 ### Credenciais (volume `sentinela-mosquitto-data`)
 
@@ -988,7 +1011,7 @@ Adicionar usuário sem senha em argv nem em log (a senha entra por stdin; o hash
 arquivo temporário só com o usuário novo e depois anexado ao `passwd`):
 
 ```bash
-read -rs NEWPASS; export NEWPASS   # fora do histórico e do argv
+read -rs NEWPASS   # fora do histórico e do argv; sem export (não vaza para processos filhos)
 CT=$(sudo docker ps -q --filter label=com.docker.compose.project=sentinela-stack --filter label=com.docker.compose.service=mosquitto)
 printf '%s:%s\n' 'svc/telegraf' "$NEWPASS" | sudo docker exec -i "$CT" sh -c '
   umask 077

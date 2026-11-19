@@ -1,0 +1,7 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+  influxdb:
+    image: influxdb:2.7.11
+    volumes:
+      - "./mosquitto/acl:/x:ro"

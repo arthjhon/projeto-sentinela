@@ -1,6 +1,6 @@
 # SOMENTE DESENVOLVIMENTO LOCAL. Nunca usar na VM de producao.
 # Uso: docker compose -f compose.yml -f compose.dev.yml --env-file .env.local-test up -d
-# Adiciona broker Mosquitto sem TLS e sem autenticacao, e expoe portas no host.
+# Substitui o mosquitto de producao por um broker sem TLS e sem autenticacao, e expoe portas no host.
 services:
   mosquitto:
     image: eclipse-mosquitto:2.0.22
