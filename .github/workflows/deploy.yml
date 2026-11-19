@@ -33,8 +33,6 @@ jobs:
       - name: Build
         env:
           VITE_MQTT_BROKER_URL: ${{ secrets.VITE_MQTT_BROKER_URL }}
-          VITE_MQTT_USER: ${{ secrets.VITE_MQTT_USER }}
-          VITE_MQTT_PASS: ${{ secrets.VITE_MQTT_PASS }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_INFLUX_ORG: ${{ secrets.VITE_INFLUX_ORG }}

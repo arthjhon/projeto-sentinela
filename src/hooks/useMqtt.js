@@ -3,25 +3,31 @@ import mqtt from 'mqtt';
 import { parseMqttPayload } from '../utils/mqttPayload';
 import { newTopicsOnly } from '../utils/mqttTopics';
 
-// Configurações do broker HiveMQ Cloud.
-// Todas as três variáveis são obrigatórias em .env.local:
-//   VITE_MQTT_BROKER_URL=wss://<seu-cluster>.hivemq.cloud:8884/mqtt
-//   VITE_MQTT_USER=<usuario>
-//   VITE_MQTT_PASS=<senha>
+// Broker MQTT próprio (Mosquitto, via Cloudflare Tunnel). O navegador conecta
+// de forma anônima e só LÊ (+/sensores, +/status, +/availability, +/ota/status);
+// publicar é recusado pelo broker. Comandos OTA saem da Edge Function ota-command.
+//   VITE_MQTT_BROKER_URL=wss://mqtt.arthlabs.dev/mqtt
 const BROKER_URL = import.meta.env.VITE_MQTT_BROKER_URL;
-const MQTT_USER  = import.meta.env.VITE_MQTT_USER;
-const MQTT_PASS  = import.meta.env.VITE_MQTT_PASS;
 
-if (!BROKER_URL || !MQTT_USER || !MQTT_PASS) {
-  console.error('useMqtt: VITE_MQTT_BROKER_URL, VITE_MQTT_USER e VITE_MQTT_PASS são obrigatórios em .env.local');
+if (!BROKER_URL) {
+  console.error('useMqtt: VITE_MQTT_BROKER_URL é obrigatório em .env.local');
+}
+
+/** Opções de conexão: anônimo (sem username/password), keepalive 60 s. */
+export function buildMqttConnectOptions(clientId) {
+  return {
+    clientId,
+    reconnectPeriod: 5000,  // tenta reconectar a cada 5 s
+    keepalive:       60,
+  };
 }
 
 /**
- * Hook que mantém uma conexão MQTT persistente com o broker HiveMQ
+ * Hook que mantém uma conexão MQTT persistente com o broker MQTT próprio
  * e devolve o último payload recebido por tópico.
  *
  * @param {string[]} topics - Lista de tópicos para subscrever na montagem.
- * @returns {{ messages: Object, receivedAt: Object, connected: boolean, publish: Function, addTopics: Function }}
+ * @returns {{ messages: Object, receivedAt: Object, connected: boolean, addTopics: Function }}
  *   messages: objeto { [topico]: ultimoPayloadParsed }
  *   receivedAt: objeto { [topico]: { at, prevAt, retained } } — hora (ms) em que
  *     este navegador recebeu a última mensagem e a anterior; `retained` marca a
@@ -37,18 +43,12 @@ export function useMqtt(topics = []) {
   const extraTopicsRef = useRef(new Set());
 
   useEffect(() => {
-    if (!BROKER_URL || !MQTT_USER || !MQTT_PASS) return;
+    if (!BROKER_URL) return;
 
     // Gera um clientId único para evitar colisões de sessão
     const clientId = `sentinela_web_${Math.random().toString(16).slice(2, 8)}`;
 
-    const client = mqtt.connect(BROKER_URL, {
-      username:        MQTT_USER,
-      password:        MQTT_PASS,
-      clientId,
-      reconnectPeriod: 5000,  // tenta reconectar a cada 5 s
-      keepalive:       60,
-    });
+    const client = mqtt.connect(BROKER_URL, buildMqttConnectOptions(clientId));
 
     client.on('connect', () => {
       setConnected(true);
@@ -111,20 +111,5 @@ export function useMqtt(topics = []) {
     }
   };
 
-  /**
-   * Publica uma mensagem em um tópico MQTT.
-   * @param {string} topic
-   * @param {object|string} payload — objeto será serializado em JSON
-   * @returns {boolean} true se a mensagem foi enfileirada com sucesso
-   */
-  const publish = (topic, payload) => {
-    if (!clientRef.current?.connected) {
-      console.warn(`MQTT: tentativa de publicar em "${topic}" sem conexão ativa.`);
-      return false;
-    }
-    const msg = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    return clientRef.current.publish(topic, msg);
-  };
-
-  return { messages, receivedAt, connected, publish, addTopics };
+  return { messages, receivedAt, connected, addTopics };
 }

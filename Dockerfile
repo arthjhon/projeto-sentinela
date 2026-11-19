@@ -12,8 +12,6 @@ COPY . .
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
 ARG VITE_MQTT_BROKER_URL
-ARG VITE_MQTT_USER
-ARG VITE_MQTT_PASS
 # Identificadores públicos (não segredos): o cliente precisa deles para montar
 # a query Flux. O token do Influx NÃO entra aqui de propósito — ele é injetado
 # em runtime pelo nginx (ver nginx.conf), fora do bundle.
