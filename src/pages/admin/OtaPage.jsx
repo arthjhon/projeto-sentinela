@@ -3,13 +3,14 @@ import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabase';
 import { useMqtt } from '../../hooks/useMqtt';
 import { useReadOnly } from '../../hooks/useReadOnly';
+import { useAuth } from '../../contexts/AuthContext';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { FLEET, getMqttTopics } from '../../config/fleet';
 import { topicsForRegistry } from '../../services/buoyRegistry';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { buildDeployRow, requestOtaCommand } from '../../services/otaCommand';
 import { sha256Hex } from '../../utils/sha256';
-import { isFreshDeployEvent, phaseFromOtaStatus } from '../../utils/otaStatus';
+import { isFreshDeployEvent, phaseFromOtaStatus, phaseAfterCommandSent } from '../../utils/otaStatus';
 import {
   UploadCloud, Cpu, Wifi, WifiOff, CheckCircle2,
   AlertTriangle, RotateCw, Radio, FileCode2, Trash2,
@@ -20,12 +21,19 @@ import './OtaPage.css';
 // mesmo conjunto vale na montagem (FLEET) e na sincronia com o registro.
 const TOPIC_SUFFIXES = ['status', 'ota/status', 'availability'];
 const ALL_TOPICS = getMqttTopics(TOPIC_SUFFIXES);
+// Mesmo limite da Edge Function (supabase/functions/ota-command/command.ts,
+// MAX_VERSION_CHARS): acima disso ela recusa com too_large depois do upload.
+const MAX_VERSION_CHARS = 32;
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 const OtaPage = () => {
   const { messages, connected, addTopics } = useMqtt(ALL_TOPICS);
   const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
   const readOnly = useReadOnly();
+  // Só admin publica OTA (a Edge Function devolve 403 a operador/visualizador,
+  // mas só depois do upload e do insert). Desabilita, não esconde.
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
 
   // ── Form state ──
   const [firmwareFile, setFirmwareFile]       = useState(null);
@@ -38,6 +46,9 @@ const OtaPage = () => {
 
   // ── Deploy state ──
   const [phase, setPhase]               = useState('idle'); // idle | uploading | sending | waiting | success | error
+  // Cópia síncrona da fase: o handler do deploy precisa saber, logo após o
+  // await da Edge Function, se o effect de ota/status já mudou a fase.
+  const phaseRef = useRef('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [deployLog, setDeployLog]       = useState([]);
   const [confirmOpen, setConfirmOpen]   = useState(false);
@@ -100,7 +111,7 @@ const OtaPage = () => {
       appendLog(`[${buoy.id}] OTA: ${status} — ${otaData.progress ?? 0}%${otaData.error ? ` (${otaData.error})` : ''}`);
 
       const next = phaseFromOtaStatus(status);
-      if (next) setPhase(next);
+      if (next) changePhase(next);
 
       // 4.2 — fecha o registro do deploy conforme a bóia reporta o desfecho.
       // Sem isso a linha ficaria 'pendente' para sempre e o histórico mentiria.
@@ -121,6 +132,11 @@ const OtaPage = () => {
   }, [messages, deployId, deployDeviceId, otaTargets, phase]);
 
   // ─── Helpers ──
+  const changePhase = (next) => {
+    phaseRef.current = next;
+    setPhase(next);
+  };
+
   const appendLog = (msg) => {
     const ts = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setDeployLog(prev => [...prev, `[${ts}] ${msg}`]);
@@ -153,7 +169,7 @@ const OtaPage = () => {
 
   const handleDeploy = async () => {
     setConfirmOpen(false);
-    if (!firmwareFile || !firmwareVersion.trim()) return;
+    if (!isAdmin || !firmwareFile || !firmwareVersion.trim()) return;
 
     const target = targetBuoy;
     if (!target?.deviceId) {
@@ -164,7 +180,7 @@ const OtaPage = () => {
 
     try {
       // ─── 1. Upload para Supabase Storage ──────────────────────────────────
-      setPhase('uploading');
+      changePhase('uploading');
       setUploadProgress(0);
       const fileName = `${firmwareVersion.replace(/[^a-zA-Z0-9._-]/g, '_')}_${Date.now()}.bin`;
       appendLog(`Enviando ${fileName} para Supabase Storage...`);
@@ -207,31 +223,39 @@ const OtaPage = () => {
       // ─── 3. Pede à Edge Function que publique o comando OTA ───────────────
       // O navegador não tem credencial MQTT; o sha256 e a URL são montados no
       // servidor a partir da linha do deploy.
-      setPhase('sending');
+      changePhase('sending');
       const cmdTopic = `${target.deviceId}/ota/command`;
       const result = await requestOtaCommand(supabase, deployRow.id);
       if (!result.ok) {
         setDeployId(null);
         throw new Error(`${result.message} [${result.code}]`);
       }
-      appendLog(`Comando OTA enviado → ${cmdTopic}`);
-      appendLog(`Versão alvo: ${firmwareVersion}`);
-      appendLog(`Aguardando resposta do dispositivo...`);
+      // A recusa rápida da bóia (same_version, busy, ...) pode chegar pelo WSS
+      // antes desta resposta: o effect de ota/status já registrou o erro e
+      // mudou a fase. Só sai de 'sending'; senão o formulário ficaria preso em
+      // 'waiting' (sem botão de reset) com um log que mente.
+      if (phaseRef.current === 'sending') {
+        appendLog(`Comando OTA enviado → ${cmdTopic}`);
+        appendLog(`Versão alvo: ${firmwareVersion}`);
+        appendLog(`Aguardando resposta do dispositivo...`);
+      }
 
+      // O comando foi publicado (PUBACK) mesmo que a bóia o tenha recusado.
       logAcao(AUDIT.FIRMWARE_DEPLOY, target.id, {
         versao: firmwareVersion, sha256, arquivo: firmwareFile.name,
       });
 
-      setPhase('waiting');
+      phaseRef.current = phaseAfterCommandSent(phaseRef.current);
+      setPhase(p => phaseAfterCommandSent(p));
 
     } catch (err) {
       appendLog(`ERRO: ${err.message}`);
-      setPhase('error');
+      changePhase('error');
     }
   };
 
   const handleReset = () => {
-    setPhase('idle');
+    changePhase('idle');
     setDeployDeviceId(null);
     setDeployLog([]);
     setFirmwareFile(null);
@@ -261,7 +285,10 @@ const OtaPage = () => {
   });
 
   const targetOnline = fleetStatus.find(b => b.id === targetBuoy?.id)?.online ?? false;
-  const canDeploy = firmwareFile && firmwareVersion.trim() && targetBuoy?.deviceId && phase === 'idle';
+  const canDeploy = isAdmin && firmwareFile && firmwareVersion.trim() && targetBuoy?.deviceId && phase === 'idle';
+  const deployBlockedReason = readOnly
+    ? 'Indisponível no modo demonstração'
+    : !isAdmin ? 'Apenas administradores podem implantar firmware' : undefined;
 
   return (
     <div className="dashboard-content-area">
@@ -353,6 +380,7 @@ const OtaPage = () => {
                 placeholder="ex: v2.1.0"
                 value={firmwareVersion}
                 onChange={e => setFirmwareVersion(e.target.value)}
+                maxLength={MAX_VERSION_CHARS}
                 disabled={phase !== 'idle'}
               />
             </div>
@@ -417,7 +445,7 @@ const OtaPage = () => {
                     className="btn-primary"
                     onClick={() => setConfirmOpen(true)}
                     disabled={!canDeploy || readOnly}
-                    title={readOnly ? 'Indisponível no modo demonstração' : undefined}
+                    title={deployBlockedReason}
                   >
                     <Cpu size={15} /> Implantar Firmware
                   </button>

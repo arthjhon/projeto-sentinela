@@ -9,6 +9,7 @@ const MESSAGES = {
   bad_path: 'O caminho do arquivo de firmware é inválido.',
   bad_sha: 'O SHA-256 do firmware está ausente ou inválido.',
   no_version: 'A versão do firmware não foi informada.',
+  too_large: 'Versão ou nome do arquivo longos demais para o comando OTA (máx. 512 bytes).',
   broker_unavailable: 'O broker MQTT está indisponível — comando não enviado.',
   deploy_not_found: 'Deploy não encontrado no histórico.',
   forbidden: 'Apenas administradores podem enviar comandos OTA.',
@@ -36,6 +37,14 @@ export function buildDeployRow({ boiaId, version, sha256, notes, path }) {
  * Asks the Edge Function to publish the OTA command for a pending deploy.
  * On failure the deploy is marked `falha` here, except on 502, where the
  * function already did. Never throws.
+ *
+ * Trade-off: a network error (no HTTP status: request lost, timeout, tab
+ * offline) is also marked `falha`, although the function may have run and
+ * published the command, and the device may still update. Accepted: the
+ * history row is never rewritten afterwards (the page stops tracking the
+ * deploy on error), but the device's retained ota/status and the firmware
+ * version in the fleet cards show what really happened. Marking it `pendente`
+ * instead would leave rows open forever when the command really was lost.
  * @returns {Promise<{ok: true} | {ok: false, code: string, status: number|null, message: string}>}
  */
 export async function requestOtaCommand(supabaseClient, deployId) {
