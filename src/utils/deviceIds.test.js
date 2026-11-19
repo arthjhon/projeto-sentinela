@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deviceIdsOf, applyDeviceIdChange, normalizeDeviceIds, topicFilterFlux } from './deviceIds';
+import { deviceIdsOf, applyDeviceIdChange, mergeRegistryEdit, normalizeDeviceIds, topicFilterFlux } from './deviceIds';
 
 describe('deviceIdsOf', () => {
   it('atual primeiro, depois anteriores, sem duplicar', () => {
@@ -64,5 +64,28 @@ describe('topicFilterFlux', () => {
   it('normalizeDeviceIds aceita string ou array', () => {
     expect(normalizeDeviceIds('x')).toEqual(['x']);
     expect(normalizeDeviceIds(['x', 'x', 'y z'])).toEqual(['x']);
+  });
+});
+
+describe('mergeRegistryEdit', () => {
+  const previous = { codigo: 'SM-01', nome: 'old', lat: 1, deviceId: 'snt-0001', deviceIdsAnteriores: ['esp_sururu'] };
+  it('editar nome sem mudar o serial mantém a edição e os anteriores', () => {
+    const r = mergeRegistryEdit(previous, { codigo: 'SM-01', nome: 'NEW', lat: 2, deviceId: 'snt-0001' });
+    expect(r).toMatchObject({ nome: 'NEW', lat: 2, deviceId: 'snt-0001', deviceIdsAnteriores: ['esp_sururu'] });
+  });
+  it('trocar o serial acrescenta o antigo', () => {
+    const r = mergeRegistryEdit(previous, { nome: 'old', deviceId: 'snt-0002' });
+    expect(r.deviceId).toBe('snt-0002');
+    expect(r.deviceIdsAnteriores).toEqual(['esp_sururu', 'snt-0001']);
+  });
+  it('cadastro novo não tem anteriores', () => {
+    const r = mergeRegistryEdit(undefined, { codigo: 'X', nome: 'n', deviceId: 'snt-0003' });
+    expect(r.deviceIdsAnteriores).toBeUndefined();
+    expect(r.nome).toBe('n');
+  });
+  it('limpar o serial (null) guarda o antigo em anteriores', () => {
+    const r = mergeRegistryEdit(previous, { nome: 'old', deviceId: null });
+    expect(r.deviceId).toBeNull();
+    expect(r.deviceIdsAnteriores).toEqual(['esp_sururu', 'snt-0001']);
   });
 });

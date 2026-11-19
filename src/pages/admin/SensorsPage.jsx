@@ -13,11 +13,11 @@ import {
 } from '../../services/maintenance';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
-import { DEVICE_ID_RE } from '../../utils/deviceIds';
+import { DEVICE_ID_RE, deviceIdsOf, mergeRegistryEdit } from '../../utils/deviceIds';
 import { fetchUltimasLeituras } from '../../hooks/useInfluxHistory';
 import {
   getBuoyRegistry, saveBuoyRegistry, topicsForRegistry,
-  codigoEmUso, upsertRegistryEntry, deviceIdsOf, applyDeviceIdChange, LAGOA_LABEL, withModo, normalizeModo,
+  codigoEmUso, upsertRegistryEntry, LAGOA_LABEL, withModo, normalizeModo,
 } from '../../services/buoyRegistry';
 import {
   buoyStatus, STATUS_LABEL, formatCoords, formatAge, formatInterval,
@@ -248,9 +248,7 @@ const SensorsPage = () => {
     const previous = codigoOriginal ? fresh.find(r => r.codigo === codigoOriginal) : null;
     // Troca de serial: o id antigo vai para deviceIdsAnteriores (histórico do
     // Influx). Parte do registro fresco, que é quem guarda a lista.
-    const comSerial = previous
-      ? { ...entry, ...applyDeviceIdChange(previous, entry.deviceId) }
-      : entry;
+    const comSerial = mergeRegistryEdit(previous, entry);
     const comModo = withModo(previous, comSerial, new Date().toISOString());
     await saveBuoyRegistry(upsertRegistryEntry(fresh, codigoOriginal, comModo));
   };
