@@ -92,7 +92,7 @@ const LoginPage = () => {
           <>
             <div className="login-header">
               <div className="login-logo">
-                <img src="/Sentinela%20LOGO.svg" alt="Projeto Sentinela" className="login-logo-img" />
+                <img src="/sentinela-escudo.svg" alt="Projeto Sentinela" className="login-logo-img" />
               </div>
               <h2>Acesso Restrito</h2>
               <p>Painel de Controle - Projeto Sentinela</p>

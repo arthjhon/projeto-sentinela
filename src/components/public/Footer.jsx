@@ -11,7 +11,7 @@ const Footer = () => {
       <div className="footer-top">
         {/* Brand */}
         <div className="footer-brand">
-          <img src="/Sentinela%20LOGO.svg" alt="Projeto Sentinela" className="footer-logo" />
+          <img src="/sentinela-escudo.svg" alt="Projeto Sentinela" className="footer-logo" />
           <p className="footer-tagline">
             Monitoramento inteligente da qualidade da água para proteger os ecossistemas da lagoa Mundaú e Manguaba.
           </p>

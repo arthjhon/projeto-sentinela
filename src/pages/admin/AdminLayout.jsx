@@ -25,7 +25,7 @@ const AdminLayout = () => {
         <aside className="admin-sidebar glass">
           <div className="sidebar-header">
             <div className="admin-logo">
-              <img src="/Sentinela%20LOGO.svg" alt="Sentinela" className="sidebar-logo-img" />
+              <img src="/sentinela-escudo.svg" alt="Sentinela" className="sidebar-logo-img" />
               <span>Sentinela</span>
             </div>
           </div>
