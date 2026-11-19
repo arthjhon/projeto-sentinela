@@ -939,8 +939,21 @@ fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já e
 3. **Túnel:** regra de ingress de `mqtt.arthlabs.dev` **acima** do catch-all no `config.yml` do
    cloudflared (backup do `config.yml` antes; seção "Exposição" abaixo), restart e `journalctl`.
    O CNAME `mqtt` já foi criado pelo Arthur em 2026-11-18 (proxied, sem Access).
-4. **Primeiro deploy do broker com o Telegraf ainda no HiveMQ** (`.env` sem mudança de
-   `MQTT_BROKER`): seção "Primeiro deploy com o broker", passos 1–2.
+4. **Merge na `main` sem o frontend → primeiro deploy do broker.** O `deploy.yml` e o `pages.yml`
+   publicam o site a cada push na `main`; se o frontend novo for junto, o painel passa a ler o
+   broker novo anônimo antes de o secret mudar (sem dados ao vivo) e a mandar OTA para uma função
+   que ainda não existe. Por isso os dois commits de frontend ficam **no topo** do `dev` e vão só
+   no passo 11:
+   - `feat(frontend): anonymous read-only MQTT and OTA via edge function`
+   - `fix(frontend): keep a fast device rejection and gate OTA deploy to admins`
+
+   Conferir antes do merge: `git log --oneline -2 dev` mostra exatamente esses dois, e
+   `git diff --stat dev~2 dev` só lista `src/`, `Dockerfile`, `README.md`, `.env.example` e os
+   workflows `deploy.yml`/`pages.yml`. Se aparecer commit novo depois deles, reordenar antes. O
+   merge na `main` é de `dev~2`. O push dispara o `stack.yml`: aprovar o "Deploy data stack" — é o
+   primeiro deploy do broker, com o Telegraf **ainda no HiveMQ** (`.env` sem mudança de
+   `MQTT_BROKER`; seção "Primeiro deploy com o broker", passos 1–2). O deploy do site que o mesmo
+   push dispara publica o painel atual (inalterado).
 5. **Provisionar** `svc/telegraf`, `svc/ota` e cada boia (`esp_sururu`) com `mqtt-user.sh add`
    (seção "Credenciais"). A senha de `svc/telegraf` vai para o cofre; o `.env` **ainda não** muda.
 6. **Prova pública** com `infra/tests/mqtt_probe.py` a partir da workstation, pelo hostname
@@ -967,24 +980,35 @@ fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já e
    antes; aplicar `supabase/migrations/20261119_firmware_deploys_path.sql`; publicar a função
    `ota-command` com as quatro variáveis (seção "Edge Function"). Assim os testes de bancada de
    OTA e rollback do firmware 5.1.0 (`BENCH.md` do firmware) já rodam contra o broker novo.
-8. **Bancada do 5.1.0** concluída (`BENCH.md`), com uma placa de teste no broker novo.
+8. **Bancada do 5.1.0** concluída (`BENCH.md`), com uma placa de teste no broker novo. Os itens
+   que usam o painel exigem o **frontend novo rodando local** (`npm run dev` na workstation, com
+   `VITE_MQTT_BROKER_URL=wss://mqtt.arthlabs.dev/mqtt` no `.env.local`, contra o Supabase de
+   produção): o painel em produção ainda é o atual. Usar na placa de teste um `DEVICE_ID` próprio
+   de bancada (não o da boia), para o `<id>/ota/status` retido dos testes de rollback não aparecer
+   no card da boia depois do passo 11; ao terminar, limpar os retidos dela com a credencial dela
+   (`mosquitto_pub -r -n` em `<id>/ota/status` e `<id>/availability`) e `mqtt-user.sh del`.
 9. **OTA 5.1.0 para a boia via HiveMQ, com o painel ATUAL** (o 5.0.x só fala com o HiveMQ e o
-   painel novo não publica lá). Conferir que a boia aparece no broker novo
-   (`<id>/availability` = `online`, `<id>/status` com `firmware 5.1.0`). Plano B: USB.
+   painel novo não publica lá). Conferir que a boia aparece no broker novo com uma assinatura
+   anônima no WSS (`mqtt_probe.py --url wss://mqtt.arthlabs.dev/mqtt --sub <id>/status --receive
+   --expect allowed`, ou o painel local do passo 8): `<id>/availability` = `online`,
+   `<id>/status` com `firmware 5.1.0`. Plano B: USB. Entre os passos 9 e 11 o painel de produção
+   mostra a boia offline e o InfluxDB fica sem pontos até o passo 10: fazer 9 → 10 → 11 em
+   sequência.
 10. **Trocar o Telegraf** só depois que a boia estiver no broker novo: `.env` com
     `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`, `MQTT_TELEGRAF_PASS`
     e `sudo /usr/local/sbin/stack-deploy.sh none` (passo 3 de "Primeiro deploy com o broker").
     Conferir pontos novos no InfluxDB.
 11. **Frontend:** trocar o secret `VITE_MQTT_BROKER_URL` do GitHub para
-    `wss://mqtt.arthlabs.dev/mqtt` e **só então** fazer merge/deploy do commit do frontend (o
-    painel passa a ler anônimo e a mandar OTA pela Edge Function). Teste: OTA com versão
+    `wss://mqtt.arthlabs.dev/mqtt` e **só então** fazer merge na `main` dos dois commits de
+    frontend (`dev` inteiro) e aprovar o deploy do site (o painel passa a ler anônimo e a mandar
+    OTA pela Edge Function). Teste: OTA com versão
     descartável numa placa de bancada.
 12. **Apagar** os secrets `VITE_MQTT_USER` e `VITE_MQTT_PASS` do GitHub (a credencial HiveMQ
     estava no bundle público).
 13. **Uma semana estável** → apagar o cluster HiveMQ (antes de 2026-12-31) e a credencial dele.
 
-**Rollback (até o passo 12):** voltar `VITE_MQTT_BROKER_URL` para o HiveMQ e reverter o commit
-do frontend; voltar `MQTT_BROKER`/credencial do Telegraf no `.env` e `stack-deploy.sh none`;
+**Rollback (até o passo 12):** voltar `VITE_MQTT_BROKER_URL` para o HiveMQ e reverter os dois
+commits de frontend na `main` (`git revert` dos dois, nova ordem: o `fix` primeiro); voltar `MQTT_BROKER`/credencial do Telegraf no `.env` e `stack-deploy.sh none`;
 boia: gravar por USB o backup 5.0.4 (fala com o HiveMQ). O broker pode ficar parado no compose
 sem afetar o resto; a coluna `arquivo_path` e a função podem ficar (função sem chamador). Depois
 do passo 13 não há volta ao HiveMQ.
