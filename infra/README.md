@@ -1017,6 +1017,49 @@ Cloudflare: a VM não tem `cert.pem`, então `cloudflared tunnel route dns` não
   controle é a ACL do próprio broker (anônimo só lê a telemetria que o painel já mostra).
 - O túnel só leva o WebSocket; o TCP 1883 nunca é exposto à internet.
 
+### Edge Function `ota-command` (deploy)
+
+O navegador é cliente MQTT anônimo e só lê; quem publica `<id>/ota/command` é a função
+`supabase/functions/ota-command`, com a credencial `svc/ota` (ACL: escrita só em `+/ota/command`).
+Só admin chama; o deploy precisa estar `pendente`, com `arquivo_path` (nome simples `.bin`),
+SHA-256 válido e a bóia com `deviceId` no registro (`app_settings.map_buoys`).
+
+1. Migration `supabase/migrations/20261119_firmware_deploys_path.sql` (coluna `arquivo_path`, idempotente;
+   RLS inalterada) no banco do Supabase, antes de publicar a função.
+2. Copiar a função para a VM (sem `.test.ts`):
+
+   ```bash
+   scp supabase/functions/ota-command/{index.ts,command.ts} <usuario>@<vm>:/tmp/
+   ssh <usuario>@<vm> 'sudo install -d /srv/sentinela/supabase/volumes/functions/ota-command &&
+     sudo install -m 0644 /tmp/index.ts /tmp/command.ts /srv/sentinela/supabase/volumes/functions/ota-command/'
+   ```
+
+3. No `.env` do compose do Supabase (`/srv/sentinela/supabase/.env`) adicionar as quatro variáveis e
+   repassá-las ao serviço `functions` (`environment:` do compose do Supabase). A senha vem do cofre
+   (a mesma gravada no `passwd` do broker para `svc/ota`); nunca em argv, log ou repositório:
+
+   ```text
+   MQTT_OTA_URL=wss://mqtt.arthlabs.dev/mqtt
+   MQTT_OTA_USER=svc/ota
+   MQTT_OTA_PASS=<senha de svc/ota>
+   OTA_PUBLIC_BASE_URL=https://supabase.arthlabs.dev
+   ```
+
+   `OTA_PUBLIC_BASE_URL` precisa gerar URLs que começam com o `OTA_URL_PREFIX` do firmware
+   (`https://supabase.arthlabs.dev/storage/v1/object/public/firmware/`).
+4. Reiniciar só o runtime de functions: `docker compose restart supabase-edge-functions`
+   (confirmar o nome do serviço com `docker compose ps`; não mexer em `supabase-db`/`kong`).
+5. Smoke test (nada é publicado em nenhum dos casos):
+   - sem `Authorization` -> 401; JWT de operador/visualizador -> 403 (`forbidden`);
+   - admin com `deploy_id` inexistente -> 404; deploy já `sucesso`/`falha` -> 422 `not_pending`;
+   - admin com deploy `pendente` de bóia de teste -> 200 `{"ok":true}` e a mensagem aparece em
+     `mosquitto_sub` autenticado (bancada, sem placa gravada pelo agente).
+6. Rollback: remover `/srv/sentinela/supabase/volumes/functions/ota-command/` e reiniciar o runtime;
+   a coluna `arquivo_path` pode ficar (nullable, inofensiva).
+
+Falha do broker retorna 502 e marca o deploy como `falha`. Sucesso não altera a linha: a OtaPage e
+o `ota/status` do dispositivo fecham o ciclo.
+
 ### Modo limitado
 
 O broker agora roda na mesma VM da stack. Com a VM fora do ar (ou o broker parado), o painel perde
