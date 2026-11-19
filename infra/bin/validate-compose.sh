@@ -64,11 +64,17 @@ def deny($c; $m): if $c then $m else empty end;
 # (C0/C1, incl. \n \r) is written as its JSON escape, so one violation is
 # always exactly one output line and no value can forge a "DENY:" line.
 def esc: gsub("(?<c>[\\p{Cc}])"; .c | tojson | .[1:-1]);
-# Inside $root, with no ".." segment (blocks traversal). The trailing slash
-# keeps /srv/sentinela/stack-incoming from matching /srv/sentinela/stack.
+# Canonical path: no empty segment ("//" or trailing "/"), no "." and no ".." segment.
+# Compose does not clean absolute sources, but Linux resolves them, so $root//x and
+# $root/./x would reach the same file while evading string-prefix rules.
+def canonical($p):
+  ($p | type == "string") and ($p | startswith("/"))
+  and (($p | split("/"))[1:] | any(. == "" or . == "." or . == "..") | not);
+
+# Inside $root and canonical. The trailing slash keeps /srv/sentinela/stack-incoming
+# from matching /srv/sentinela/stack.
 def under_root($p):
-  ($p | type == "string") and ($p | startswith($root + "/"))
-  and (($p | split("/") | any(. == "..")) | not);
+  ($p | type == "string") and ($p | startswith($root + "/")) and canonical($p);
 
 ($allowed | split("\n")
   | map(gsub("\r"; "") | gsub("^\\s+|\\s+$"; ""))
@@ -143,7 +149,9 @@ def under_root($p):
         | deny(["bind", "volume", "tmpfs"] | index($m.type) == null;
                "mount type not allowed: \($m.type)"),
           deny(($m.source // "") | test("docker\\.sock"); "docker.sock mount: \($m.source)"),
-          deny($m.type == "bind" and (under_root($m.source // "") | not);
+          deny($m.type == "bind" and (canonical($m.source // "") | not);
+               "bind source must be a canonical path (no //, ., .. or trailing /): \($m.source // "")"),
+          deny($m.type == "bind" and canonical($m.source // "") and (under_root($m.source // "") | not);
                "bind outside \($root): \($m.source // "")"),
           # Mount propagation (rshared etc.) can leak mounts across the host namespace.
           deny(($m.bind.propagation // "") | present; "bind propagation not allowed: \($m.bind.propagation)")),
@@ -175,7 +183,7 @@ def under_root($p):
       (if $n != "mosquitto" then
          (($v.volumes // [])[] as $m
           | deny(($m.type == "volume" and $m.source == "mosquitto-data")
-                 or ($m.type == "bind" and (($m.source // "") | startswith($root + "/mosquitto"))); 
+                 or ($m.type == "bind" and (($m.source // "") | startswith($root + "/mosquitto")));
                  "\($n) must not mount mosquitto state: \($m.source // $m.target)"))
        else empty end),
 
