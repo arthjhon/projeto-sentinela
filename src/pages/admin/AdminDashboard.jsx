@@ -71,7 +71,10 @@ const AdminDashboard = () => {
     : liveBuoys.find(b => b.codigo === selectedBuoy);
   const focusedDeviceId = focusedBuoy?.deviceId ?? null;
   // Histórico (Influx) usa o atual + anteriores; MQTT/saúde ficam só no atual.
-  const focusedHistoryIds = useMemo(() => deviceIdsOf(focusedBuoy), [focusedBuoy]);
+  const focusedHistoryIds = useMemo(
+    () => (focusedBuoy ? deviceIdsOf(focusedBuoy) : null), // sem bóia = null (frota); bóia sem id válido = [] (nada)
+    [focusedBuoy],
+  );
   const focusedId = focusedBuoy?.codigo ?? null;
 
   // ── Buffer circular de leituras ───────────────────────────────────────────────

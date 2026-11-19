@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-
 import { topicFilterFlux } from '../utils/deviceIds';
 // Histórico persistido no InfluxDB. Complementa (não substitui) o useMqtt:
 // o MQTT segue entregando o tempo real; este hook traz o que já foi gravado.
@@ -43,16 +42,7 @@ function parseCsv(csv) {
   return out;
 }
 
-/**
- * Filtra por `topic`, e não pela tag `boia_id`, de propósito: boia_id só passou
- * a ser gravada quando foi adicionada ao telegraf.conf, então o histórico
- * anterior não a tem e sumiria do gráfico. `topic` existe em todo o histórico
- * (o mqtt_consumer sempre a grava) e é 1:1 com a bóia.
- *
- * @param {string} field     temperatura | ph | turbidez
- * @param {string} period    chave de PERIODS
- * @param {string|string[]} deviceIds  deviceId atual (+ anteriores, ver deviceIdsOf)
- */
+/** Flux do gráfico; `deviceIds` null = frota inteira (ver topicFilterFlux). */
 export function buildHistoryFlux(field, cfg, deviceIds) {
   return `
 from(bucket: "${BUCKET}")
@@ -65,6 +55,16 @@ from(bucket: "${BUCKET}")
   |> sort(columns: ["_time"])`;
 }
 
+/**
+ * Filtra por `topic`, e não pela tag `boia_id`, de propósito: boia_id só passou
+ * a ser gravada quando foi adicionada ao telegraf.conf, então o histórico
+ * anterior não a tem e sumiria do gráfico. `topic` existe em todo o histórico
+ * (o mqtt_consumer sempre a grava) e é 1:1 com a bóia.
+ *
+ * @param {string} field     temperatura | ph | turbidez
+ * @param {string} period    chave de PERIODS
+ * @param {string|string[]|null} deviceIds  deviceId atual (+ anteriores, ver deviceIdsOf); null = sem bóia selecionada
+ */
 export function useInfluxHistory(field, period, deviceIds) {
   // chave estável: o array novo a cada render não pode refazer a busca
   const idsKey = JSON.stringify(deviceIds ?? null);

@@ -60,7 +60,16 @@ describe('fetchHistoryCsv union', () => {
   it('string única continua funcionando', async () => {
     expect(await run('esp_sururu')).toContain('r.topic == "esp_sururu/sensores")');
   });
-  it('vazio mantém sem filtro de tópico', async () => {
-    expect(await run(undefined)).not.toContain('r.topic');
+  it('null (sem bóia) mantém sem filtro de tópico', async () => {
+    const q = await run(null);
+    expect(q).not.toContain('r.topic');
+    expect(q).not.toContain('fn: (r) => false');
+  });
+  it('bóia selecionada sem id válido falha fechado', async () => {
+    for (const ids of [[], ['a"b']]) {
+      const q = await run(ids);
+      expect(q).toContain('|> filter(fn: (r) => false)');
+      expect(q).not.toContain('r.topic');
+    }
   });
 });

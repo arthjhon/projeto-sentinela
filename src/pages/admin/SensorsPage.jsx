@@ -13,6 +13,7 @@ import {
 } from '../../services/maintenance';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
+import { DEVICE_ID_RE } from '../../utils/deviceIds';
 import { fetchUltimasLeituras } from '../../hooks/useInfluxHistory';
 import {
   getBuoyRegistry, saveBuoyRegistry, topicsForRegistry,
@@ -248,10 +249,7 @@ const SensorsPage = () => {
     // Troca de serial: o id antigo vai para deviceIdsAnteriores (histórico do
     // Influx). Parte do registro fresco, que é quem guarda a lista.
     const comSerial = previous
-      ? applyDeviceIdChange(
-          { ...entry, deviceId: previous.deviceId ?? null, deviceIdsAnteriores: previous.deviceIdsAnteriores ?? [] },
-          entry.deviceId,
-        )
+      ? { ...entry, ...applyDeviceIdChange(previous, entry.deviceId) }
       : entry;
     const comModo = withModo(previous, comSerial, new Date().toISOString());
     await saveBuoyRegistry(upsertRegistryEntry(fresh, codigoOriginal, comModo));
@@ -288,6 +286,11 @@ const SensorsPage = () => {
 
     const newDeviceId = formData.deviceId.trim();
     const nome = formData.name.trim();
+    if (newDeviceId && !DEVICE_ID_RE.test(newDeviceId)) {
+      setFormErrors({ deviceId: true });
+      addToast('Número de série inválido: use 1 a 40 caracteres entre letras, números, "_" e "-".', 'error');
+      return;
+    }
 
     // Se falhar (código tomado por outra sessão, bóia removida, rede/RLS), nada
     // muda e o modal continua aberto. Os tópicos MQTT da bóia nova/editada são
@@ -534,7 +537,7 @@ const SensorsPage = () => {
                 </div>
                 <div className="form-group">
                   <label>Número de Série do Dispositivo</label>
-                  <input type="text" className="w-100" value={formData.deviceId} onChange={e => setFormData({...formData, deviceId: e.target.value})} placeholder="Ex: snt-0001" style={{ fontFamily: 'monospace' }} />
+                  <input type="text" className={`w-100 ${formErrors.deviceId ? 'input-error' : ''}`} value={formData.deviceId} onChange={e => setFormData({...formData, deviceId: e.target.value})} placeholder="Ex: snt-0001" style={{ fontFamily: 'monospace' }} />
                   {editingBuoy && formData.deviceIdsAnteriores?.length > 0 && (
                     <small className="text-muted" style={{ fontFamily: 'monospace' }}>
                       Seriais anteriores (histórico preservado): {formData.deviceIdsAnteriores.join(', ')}

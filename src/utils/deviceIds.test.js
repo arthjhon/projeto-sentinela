@@ -50,13 +50,16 @@ describe('topicFilterFlux', () => {
     expect(topicFilterFlux(['a', 'b'])).toBe(
       '|> filter(fn: (r) => r.topic == "a/sensores" or r.topic == "b/sensores")');
   });
-  it('vazio = sem filtro', () => {
+  it('null/undefined = sem bóia selecionada, sem filtro', () => {
     expect(topicFilterFlux(undefined)).toBe('');
-    expect(topicFilterFlux([])).toBe('');
-    expect(topicFilterFlux('')).toBe('');
+    expect(topicFilterFlux(null)).toBe('');
   });
-  it('só inválidos = filtro que não casa nada (nunca todas as bóias)', () => {
-    expect(topicFilterFlux(['a"b'])).toBe('|> filter(fn: (r) => false)');
+  it('bóia selecionada sem id válido falha fechado (nunca todas as bóias)', () => {
+    const closed = '|> filter(fn: (r) => false)';
+    expect(topicFilterFlux([])).toBe(closed);
+    expect(topicFilterFlux('')).toBe(closed);
+    expect(topicFilterFlux(['a"b'])).toBe(closed);
+    expect(topicFilterFlux('a b')).toBe(closed);
   });
   it('normalizeDeviceIds aceita string ou array', () => {
     expect(normalizeDeviceIds('x')).toEqual(['x']);
