@@ -1058,8 +1058,8 @@ fsfreeze sem thaw) aplicada e a stack da Fase 2 (InfluxDB/Telegraf/worker) já e
    e vão só no passo 11. Merge de `dev~N`, com
    `N = $(git log --format=%s main..dev | grep -c '(frontend)')`. Conferir antes do merge que os
    `N` commits do topo (`git log --oneline -N dev`) são exatamente os de escopo `(frontend)` e que
-   `git diff --stat dev~N dev` só lista `src/`, `Dockerfile`, `README.md`, `.env.example` e os
-   workflows `deploy.yml`/`pages.yml`. Se aparecer commit novo depois deles, reordenar antes. O push
+   `git diff --stat dev~N dev` só lista `src/`, `Dockerfile`, `nginx.conf` (o da imagem do site),
+   `vite.config.js`, `README.md`, `.env.example` e os workflows `deploy.yml`/`pages.yml`. Se aparecer commit novo depois deles, reordenar antes. O push
    dispara o `stack.yml`: aprovar o "Deploy data stack" — é o primeiro deploy do broker, com o
    Telegraf **ainda no HiveMQ** (`.env` sem mudança de `MQTT_BROKER`; seção "Primeiro deploy com o
    broker", passos 1–2). O deploy do site que o mesmo push dispara publica o painel atual
