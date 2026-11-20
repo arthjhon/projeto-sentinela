@@ -772,7 +772,7 @@ teste em `infra/tests/influx-proxy.test.sh`):
 - A URL do upstream é montada pelo nginx; a query string do cliente nunca é repassada (`u`/`p`
   legados valem **antes** do `Authorization` no InfluxDB 2.x: repassá-los deixaria qualquer token
   vazado ser usado pela internet). `q`, `db`, `rp`, `epoch`, `chunked` e o resto são ignorados.
-- O `Authorization` do cliente é sobrescrito pelo token `nginx-publico` (só leitura de `iot`).
+- O `Authorization` do cliente é sobrescrito pelo token `nginx-publico` (só leitura de `iot` e `externos`).
 - Corpo da requisição nunca é repassado; corpo acima de 1 KiB dá 413.
 - Escrita/DDL (`INTO`, `DROP`, `CREATE`, `DELETE`) não são expressáveis; o token só-leitura é a
   segunda camada.
@@ -781,6 +781,10 @@ teste em `infra/tests/influx-proxy.test.sh`):
 `GOMEMLIMIT=500MiB` (`infra/stack/compose.yml`); no nginx `limit_req` 5 r/s por IP (burst 10) e
 `limit_conn` (4 consultas simultâneas no total, 3 por IP, 1 `export` por vez; excesso → 429).
 Leitura crua só existe em `ultimas` (LIMIT 50) e `export` (um device, no máximo 30 dias, as 600000 mais recentes).
+As janelas por data de `ana` e `turbidez-janela` (7/30/90/180 dias) só agregam, com balde que cresce
+junto com a janela (15m/1h/3h/6h: no máximo 720 baldes, abaixo de `MAX_SELECT_BUCKETS`); a maior,
+180 dias de `turbidez-janela` sobre o topic inflado de 4,2 M linhas, respondeu sem erro em ~0,14 s (valores constantes, bem comprimidos: caso favorável)
+com o InfluxDB de pé (`infra/tests/influx-proxy.test.sh`, "janela máxima").
 Todas as respostas dos endpoints nomeados levam `Cache-Control: no-store`.
 Medido: 30 dias de uma bóia a 5 s com 3 campos (518 mil linhas, 14 MB) pesam ~315 MB acima da base
 de ~110 MB.
@@ -824,10 +828,26 @@ só-leitura real; imagens fixadas, tudo descartável): `bash infra/tests/influx-
 
 **Token `nginx-publico` com `externos`.** O bootstrap só cria um token que não existe. Quem já
 tinha `nginx-publico` só com `iot` (criado antes de `/influx/q/ana`) precisa apagá-lo e recriá-lo
-para ganhar leitura em `externos`: `influx auth delete --id <id>` (id via `influx auth list`),
-rodar `influx-bootstrap.sh` (imprime o novo token uma vez), atualizar
-`/etc/nginx/sentinela-influx-token.conf` e `nginx -t && systemctl reload nginx`. Sem isso
-`/influx/q/ana` responde erro de autorização do InfluxDB e os demais endpoints seguem normais.
+para ganhar leitura em `externos` (receita do §18; `influx auth list` sem `--json` imprime a coluna
+Token de todos os tokens, por isso o id sai filtrado pelo `jq`):
+
+```bash
+sudo -i
+C=$(docker ps -q --filter label=com.docker.compose.project=sentinela-stack --filter label=com.docker.compose.service=influxdb)
+read -rs INFLUX_TOKEN; export INFLUX_TOKEN          # admin
+ID=$(docker exec -e INFLUX_TOKEN "$C" influx auth list --json | jq -r '.[] | select(.description=="nginx-publico") | .id')
+docker exec -e INFLUX_TOKEN "$C" influx auth delete --id "$ID" >/dev/null
+/usr/local/sbin/influx-bootstrap.sh                 # recria só o que falta e imprime o novo token uma vez
+sudoedit /etc/nginx/sentinela-influx-token.conf     # set $influx_token "<novo token>";
+nginx -t && systemctl reload nginx
+unset INFLUX_TOKEN; exit
+```
+
+`delete` → bootstrap → arquivo do token → `nginx -t && reload` em sequência, sem pausa: entre o
+`delete` e o `reload` **todos** os `/influx/q/*` respondem 401. Com o proxy ainda desativado (estado
+atual da produção) a ordem não tem pressa: basta fazer antes de instalar o include abaixo. Sem a
+troca, `/influx/q/ana` responde erro de autorização do InfluxDB (HTTP 200 com `error` no corpo, o
+status não acusa) e os demais endpoints seguem normais; o smoke abaixo confere o corpo.
 
 Pré-requisito: `influx-bootstrap.sh` já rodado (cria o token `nginx-publico` e o DBRP) e os limites
 InfluxQL do `compose.yml` implantados pelo pipeline: deploy do CI ou
@@ -886,6 +906,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/health"                    
 curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/q/history?campo=ph&periodo=1h"                   # 200
 curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/q/history?campo=ph&periodo=2h"                   # 400
 curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/q/primeira"                                      # 200
+curl -s -H "$H" "$U/q/ana?estacao=39770000&inicio=$(TZ=America/Maceio date -d '6 days ago' +%F)&duracao=7d" \
+  | jq '.results[0].error // "ok"'                                                                    # "ok" (token lê externos)
 curl -s -o /dev/null -w '%{http_code}\n' -H "$H" -G "$U/query" --data-urlencode 'q=SHOW DATABASES'    # 404
 curl -s -o /dev/null -w '%{http_code}\n' -H "$H" -X POST "$U/api/v2/query?org=sentinela"              # 404
 curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/api/v2/buckets"                                  # 404
@@ -893,7 +915,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/api/v2/buckets"            
 
 Desativar: `sudo rm /etc/nginx/sentinela.d/influx-proxy.conf && sudo nginx -t && sudo systemctl reload nginx`.
 
-- Só os 5 endpoints `/influx/q/*` e `GET /influx/health` chegam ao InfluxDB; o resto de `/influx/` é
+- Só os 7 endpoints `/influx/q/*` e `GET /influx/health` chegam ao InfluxDB; o resto de `/influx/` é
   404 (ou 403/400/413/429, conforme acima).
 - Validado localmente com `nginx:1.22.1` (versão do Debian 12) e `influxdb:2.7.12`
   (`infra/tests/influx-proxy.test.sh`): cada endpoint devolve os valores esperados sobre 30 dias de

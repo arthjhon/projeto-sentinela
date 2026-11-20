@@ -210,6 +210,40 @@ backend próprio no caminho.
 > frontend não faz proxy do InfluxDB.
 > **Renomear essa variável para `VITE_INFLUX_READ_TOKEN` vaza o token.**
 
+### Dev local: dados da ANA (`/admin/contexto`)
+
+A página de contexto ambiental lê chuva/vazão/nível do bucket `externos` (consulta `ana`, `db=externos`).
+No InfluxDB local, com o token de admin em `INFLUX_TOKEN` (lido com `read -rs`, nunca na linha de comando):
+
+```bash
+C=<container-influx>; O="$INFLUXDB_ORG"
+docker exec -e INFLUX_TOKEN "$C" influx bucket create --org "$O" --name externos --retention 0
+EXT=$(docker exec -e INFLUX_TOKEN "$C" influx bucket list --org "$O" --name externos --json | jq -r '.[0].id')
+IOT=$(docker exec -e INFLUX_TOKEN "$C" influx bucket list --org "$O" --name iot --json | jq -r '.[0].id')
+docker exec -e INFLUX_TOKEN "$C" influx v1 dbrp create --org "$O" --db externos --rp autogen --bucket-id "$EXT"
+# token temporário de escrita só para o backfill (não é impresso)
+W=$(docker exec -e INFLUX_TOKEN "$C" influx auth create --org "$O" --write-bucket "$EXT" \
+      --description ana-backfill-local --json | jq -r '.token')
+```
+
+O backfill roda na imagem do worker. `ANA_HIDRO_USER`/`ANA_HIDRO_PASS` vêm do **ambiente** (exportados
+a partir de um arquivo 600 seu), nunca da linha de comando; o env-file é temporário (`mktemp` cria 600):
+
+```bash
+docker build -q -t sentinela-worker:dev worker
+E=$(mktemp)
+printf '%s\n' INFLUX_URL=http://127.0.0.1:8086 "INFLUX_ORG=$O" "INFLUX_WORKER_TOKEN=$W" ANA_SOURCE=hidrowebservice \
+  "ANA_HIDRO_USER=$ANA_HIDRO_USER" "ANA_HIDRO_PASS=$ANA_HIDRO_PASS" PG_WORKER_DSN=nao-usado > "$E"
+docker run --rm --network host --env-file "$E" sentinela-worker:dev python -m sentinela_worker backfill-ana --start 2026-05-01
+shred -u "$E"; unset W
+# depois: apagar o token temporário (influx auth list --json | jq ... "ana-backfill-local", auth delete --id)
+```
+
+Por fim, o `INFLUXDB_READ_TOKEN` do `.env.local` precisa ler **`iot` e `externos`** (o token do passo 2
+só lê `iot`; sem `externos` a consulta `ana` devolve erro de autorização): crie outro com
+`influx auth create --org "$O" --read-bucket "$IOT" --read-bucket "$EXT" --description sentinela-frontend-read`
+e troque o valor no `.env.local` (faça cópia do arquivo antes).
+
 <br/>
 
 ## Configurando o Mapa (CARTO Basemaps)
