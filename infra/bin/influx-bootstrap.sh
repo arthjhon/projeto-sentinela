@@ -4,11 +4,11 @@
 #
 #   buckets  externos, qualidade        (infinite retention; iot comes from setup)
 #   dbrp     iot -> iot/autogen         (InfluxQL v1 mapping used by the /influx/
-#                                        proxy; 2.7 also maps it virtually, the
-#                                        explicit mapping is kept for other versions)
+#            externos -> externos/autogen  proxy; 2.7 also maps them virtually, the
+#                                        explicit mappings are kept for other versions)
 #   tokens   telegraf       write iot
 #            worker         read iot; write externos, qualidade
-#            nginx-publico  read iot
+#            nginx-publico  read iot, externos (/influx/q/ana reads ANA data)
 #            backup         operator (influx backup needs it; used only by the
 #                           influx-backup timer, never by the worker)
 #
@@ -102,6 +102,15 @@ else
   die "cannot create DBRP for iot: $out"
 fi
 
+# externos: needed by /influx/q/ana (db=externos).
+if out=$(influx v1 dbrp create --db externos --rp autogen --bucket-id "$externos" 2>&1); then
+  echo "dbrp externos/autogen: created"
+elif [[ $out == *"another DBRP mapping"* ]]; then
+  echo "dbrp externos/autogen: exists"
+else
+  die "cannot create DBRP for externos: $out"
+fi
+
 # Descriptions only; the list (which contains tokens) never leaves this process.
 auths=$(influx auth list | jq -c '[.[] | {description, status}]') || die "cannot list tokens"
 
@@ -110,7 +119,7 @@ ensure_token() {
   local desc=$1 dest=$2 out tok
   shift 2
   if jq -e --arg d "$desc" 'any(.[]; .description == $d)' <<<"$auths" >/dev/null; then
-    echo "token $desc: exists (not shown; to rotate, see infra/README.md)"
+    echo "token $desc: exists (not shown; to rotate, see infra/README.md; a nginx-publico that predates externos must be deleted and recreated, see 14b)"
     return 0
   fi
   out=$(influx auth create --description "$desc" "$@") || die "cannot create token $desc"
@@ -129,7 +138,7 @@ ensure_token worker "INFLUX_WORKER_TOKEN in /srv/sentinela/stack/.env" \
   --read-bucket "$iot" --write-bucket "$externos" --write-bucket "$qualidade"
 # shellcheck disable=SC2016  # literal nginx variable in the hint
 ensure_token nginx-publico '/etc/nginx/sentinela-influx-token.conf as: set $influx_token "<token>";' \
-  --read-bucket "$iot"
+  --read-bucket "$iot" --read-bucket "$externos"
 ensure_token backup "/usr/local/etc/sentinela/influx-backup.token (root 600)" \
   --operator
 

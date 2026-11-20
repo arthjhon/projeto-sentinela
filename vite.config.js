@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
-import { buildNamedQuery, QUERY_NAMES } from './src/services/influxQueries.js'
+import { buildNamedQuery, QUERY_NAMES, QUERY_DB } from './src/services/influxQueries.js'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -37,7 +37,7 @@ export default defineConfig(({ mode }) => {
         }
         try {
           const target = new URL('/query', influxUrl)
-          target.search = new URLSearchParams({ db: 'iot', epoch: 'ms', q }).toString()
+          target.search = new URLSearchParams({ db: QUERY_DB[name], epoch: 'ms', q }).toString()
           const headers = {}
           if (env.INFLUXDB_READ_TOKEN) headers.Authorization = `Token ${env.INFLUXDB_READ_TOKEN}`
           const upstream = await fetch(target, { headers })

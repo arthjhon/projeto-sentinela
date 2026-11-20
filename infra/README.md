@@ -597,7 +597,7 @@ nunca erro de conexão/autenticação no Postgres).
 sudo /usr/local/sbin/influx-bootstrap.sh
 ```
 
-Idempotente: cria `externos` e `qualidade` (retenção infinita) e os tokens que faltam; um token
+Idempotente: cria `externos` e `qualidade` (retenção infinita), os DBRP `iot` e `externos` e os tokens que faltam; um token
 novo é impresso **uma vez**, entre `===== NEW TOKEN '<nome>' ... =====`, com o destino; token
 existente nunca é impresso. O token admin vem do `.env` (ou `INFLUX_ADMIN_TOKEN`, ou prompt sem
 eco) e entra no container por `docker exec -e INFLUX_TOKEN`, nunca na linha de comando.
@@ -606,7 +606,7 @@ eco) e entra no container por `docker exec -e INFLUX_TOKEN`, nunca na linha de c
 | --- | --- | --- |
 | `telegraf` | write `iot` | `INFLUX_TELEGRAF_TOKEN` no `.env` |
 | `worker` | read `iot`; write `externos`, `qualidade` | `INFLUX_WORKER_TOKEN` no `.env` |
-| `nginx-publico` | read `iot` | `/etc/nginx/sentinela-influx-token.conf` (só se o proxy for ativado, passo 14b; read `iot` basta para InfluxQL) |
+| `nginx-publico` | read `iot`, `externos` | `/etc/nginx/sentinela-influx-token.conf` (só se o proxy for ativado, passo 14b; `externos` é lido por `/influx/q/ana`) |
 | `backup` | operator (exigido por `influx backup`) | `/usr/local/etc/sentinela/influx-backup.token` |
 
 ```bash
@@ -739,6 +739,13 @@ inválido responde 400. Todos são `GET`; resposta = JSON do `/query` do InfluxD
 | `/influx/q/leituras-24h` | nenhum | `count(ph)` nas últimas 24 h |
 | `/influx/q/primeira` | nenhum | `first(ph)` de todo o histórico |
 | `/influx/q/export` | `device`; `periodo` = 1h\|24h\|7d\|30d | leituras brutas (`temperatura, ph, turbidez`) de um device, as 600000 mais recentes (`ORDER BY time DESC LIMIT 600000`, o cliente reordena); 1 por vez |
+| `/influx/q/ana` | `estacao` = 39770000\|39760000\|39740000\|39700000\|39800100; `inicio` = `AAAA-MM-DD`; `duracao` = 7d\|30d\|90d\|180d | **db `externos`**: `sum(chuva)`, `mean(vazao)`, `mean(nivel)` de `ana_telemetria` na janela `[inicio, inicio+duracao)`; `GROUP BY time(15m\|1h\|3h\|6h,3h)` (7d/30d/90d/180d), `fill(none)` |
+| `/influx/q/turbidez-janela` | `device`; `inicio`; `duracao` (como acima) | **db `iot`**: `mean(turbidez)` do device na mesma janela e com o mesmo `GROUP BY` |
+
+`inicio` é a data local de Maceió (UTC-3, sem horário de verão); o nginx a converte em
+`'AAAA-MM-DDT03:00:00Z'` (regex `20AA-MM-DD` com mês 01-12 e dia 01-31, só a data capturada chega
+à consulta). `chuva` é por intervalo (0 nos secos), por isso `sum`. Lacunas continuam lacunas
+(`fill(none)`); os campos `*_status` da ANA não são filtrados.
 
 `device` = `[A-Za-z0-9_-]{1,40}` (vira o `topic` `<device>/sensores`; sem aspas nem contrabarra,
 então o modelo não precisa de escape). Todo o resto de `/influx/` (incluindo `/influx/query` e
@@ -814,6 +821,13 @@ Teste ao vivo (InfluxDB com `mem_limit` 768m e os limites do `compose.yml`, ngin
 só-leitura real; imagens fixadas, tudo descartável): `bash infra/tests/influx-proxy.test.sh`.
 
 ### 14b. Ativar o proxy
+
+**Token `nginx-publico` com `externos`.** O bootstrap só cria um token que não existe. Quem já
+tinha `nginx-publico` só com `iot` (criado antes de `/influx/q/ana`) precisa apagá-lo e recriá-lo
+para ganhar leitura em `externos`: `influx auth delete --id <id>` (id via `influx auth list`),
+rodar `influx-bootstrap.sh` (imprime o novo token uma vez), atualizar
+`/etc/nginx/sentinela-influx-token.conf` e `nginx -t && systemctl reload nginx`. Sem isso
+`/influx/q/ana` responde erro de autorização do InfluxDB e os demais endpoints seguem normais.
 
 Pré-requisito: `influx-bootstrap.sh` já rodado (cria o token `nginx-publico` e o DBRP) e os limites
 InfluxQL do `compose.yml` implantados pelo pipeline: deploy do CI ou
