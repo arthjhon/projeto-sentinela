@@ -29,6 +29,7 @@ MAX_STATIONS = 10
 MAX_AUTH_BODY_BYTES = 64 * 1024
 DEFAULT_TOKEN_LIFE_S = 50 * 60
 TOKEN_MARGIN_S = 5 * 60
+REJECTED_BACKOFF_S = 6 * 3600  # no auth attempts for this long after "credentials rejected"
 DAY_RANGES = ((2, "DIAS_2"), (7, "DIAS_7"), (14, "DIAS_14"), (21, "DIAS_21"), (30, "DIAS_30"))
 MAX_RANGE_DAYS = DAY_RANGES[-1][0]
 _VALIDADE = re.compile(r"^\w{3} (\w{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) GMT([+-])(\d{2}):(\d{2}) (\d{4})$")
@@ -37,12 +38,16 @@ _MONTHS = {m: i for i, m in enumerate(
 
 
 class AnaCredentialsMissing(RuntimeError):
+    permanent = True  # retrying cannot help; backfill stops at once
+
     def __init__(self):
         super().__init__("credencial ANA ausente (ANA_HIDRO_USER/ANA_HIDRO_PASS)")
 
 
 class AnaAuthError(RuntimeError):
-    pass
+    def __init__(self, message: str, permanent: bool = False):
+        super().__init__(message)
+        self.permanent = permanent
 
 
 class AnaApiError(RuntimeError):
@@ -161,10 +166,15 @@ class HidroWebSource:
         self._clock = clock
         self._token: str | None = None
         self._renew_at = 0.0  # clock() value from which the token must be renewed
+        self._auth_blocked_until: float | None = None  # clock() value; set by a credentials rejection
 
     # -- auth -----------------------------------------------------------------
     def _authenticate(self) -> None:
         self._token = None
+        if self._auth_blocked_until is not None and self._clock() < self._auth_blocked_until:
+            raise AnaAuthError(
+                "ANA auth suspended after rejected credentials (retry in up to 6 h or after a restart)",
+                permanent=True)
         buf = bytearray()
         with self._client.stream(
             "GET", AUTH_URL,
@@ -184,7 +194,8 @@ class HidroWebSource:
         except (ValueError, AttributeError):
             raise AnaAuthError("ANA auth failed: unexpected response") from None
         if not ok:
-            raise AnaAuthError("ANA auth failed: credentials rejected")
+            self._auth_blocked_until = self._clock() + REJECTED_BACKOFF_S
+            raise AnaAuthError("ANA auth failed: credentials rejected", permanent=True)
         validade = _parse_validade(items.get("validade"))
         life = (validade - _utcnow()).total_seconds() if validade else DEFAULT_TOKEN_LIFE_S
         self._token = token

@@ -23,6 +23,7 @@ import httpx
 from influxdb_client import Point
 
 from ..log import log
+from ..redact import redact_error
 
 BASE_URL = "https://telemetriaws1.ana.gov.br/ServiceANA.asmx/DadosHidrometeorologicos"
 ESTACOES = ("39770000", "39760000", "39740000", "39700000", "39800100")
@@ -57,6 +58,24 @@ class AnaReading:
     chuva_status: int | None = None
 
 
+class AnaSourceInvalid(RuntimeError):
+    """Invalid ANA_SOURCE: fails only the `ana` job (and backfill-ana), never the worker."""
+    permanent = True
+
+
+class _InvalidSource:
+    max_window_days = 29
+
+    def __init__(self, value: str):
+        self._msg = f"ANA_SOURCE inválido: {value[:40]!r}; use hidrowebservice ou legado"
+
+    def fetch_many(self, estacoes, inicio, fim):
+        raise AnaSourceInvalid(self._msg)
+
+    def fetch(self, estacao, inicio, fim):
+        raise AnaSourceInvalid(self._msg)
+
+
 class AnaSource(Protocol):
     def fetch(self, estacao: str, inicio: datetime, fim: datetime) -> list[AnaReading]: ...
 
@@ -66,7 +85,8 @@ def make_client() -> httpx.Client:
 
 
 def make_ana_source(env: Mapping[str, str], client: httpx.Client) -> AnaSource:
-    """`ANA_SOURCE`: `hidrowebservice` (default) or `legado`; anything else is a startup error.
+    """`ANA_SOURCE`: `hidrowebservice` (default) or `legado`. Anything else returns a source
+    that fails only the ana job with a clear message (a bad .env must not crash the worker).
     Missing credentials are not checked here: the HidroWeb source fails the job at run time."""
     name = (env.get("ANA_SOURCE") or "hidrowebservice").strip().lower()
     if name == "legado":
@@ -74,7 +94,7 @@ def make_ana_source(env: Mapping[str, str], client: httpx.Client) -> AnaSource:
     if name == "hidrowebservice":
         from .hidroweb import HidroWebSource  # lazy: hidroweb imports this module
         return HidroWebSource(client, env.get("ANA_HIDRO_USER") or None, env.get("ANA_HIDRO_PASS") or None)
-    raise ValueError("ANA_SOURCE must be 'hidrowebservice' or 'legado'")
+    return _InvalidSource(name)
 
 
 def _number(text: str | None) -> tuple[float | None, bool]:
@@ -242,9 +262,11 @@ def backfill_ana(source: AnaSource, sink, start: date, end: date, sleep=time.sle
                 data = source.fetch_many(ESTACOES, inicio, fim)
                 _write_batch(sink, data, "backfill-ana")
             except Exception as exc:
-                failed_chunks += 1
                 log("ERROR", "backfill-ana", "chunk failed", start=c_start.isoformat(),
-                    end=c_end.isoformat(), error=type(exc).__name__)
+                    end=c_end.isoformat(), error=redact_error(exc))
+                if getattr(exc, "permanent", False):
+                    raise  # credentials/config problem: every later chunk would fail the same way
+                failed_chunks += 1
         if failed_chunks:
             raise RuntimeError(f"backfill-ana failed for {failed_chunks} chunk(s)")
         return

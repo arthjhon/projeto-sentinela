@@ -321,9 +321,66 @@ def test_make_ana_source_legado():
     assert isinstance(ana.make_ana_source({"ANA_SOURCE": "legado"}, httpx.Client()), ana.AnaLegacySource)
 
 
-def test_make_ana_source_unknown_raises():
-    with pytest.raises(ValueError, match="ANA_SOURCE"):
-        ana.make_ana_source({"ANA_SOURCE": "xpto"}, httpx.Client())
+def test_make_ana_source_unknown_fails_only_the_job():
+    src = ana.make_ana_source({"ANA_SOURCE": "xpto" * 30}, httpx.Client())  # no raise at startup
+    with pytest.raises(ana.AnaSourceInvalid, match="ANA_SOURCE inválido: 'xptoxptoxptoxptoxptoxptoxptoxptoxptoxpto'; use hidrowebservice ou legado"):
+        ana.collect_ana(src, FakeSink(), utc(2026, 11, 17, 12), sleep=lambda s: None)
+
+
+def test_invalid_source_job_fails_but_others_run(monkeypatch):
+    from sentinela_worker import scheduler
+    monkeypatch.setenv("ANA_SOURCE", "xpto")
+    jobs, closers = cli.build_jobs(object(), object(), "config/detector.yaml")
+    rows = []
+
+    class Status:
+        def record(self, name, ok, started, duration, error):
+            rows.append((name, ok, error))
+
+    try:
+        scheduler._run_job(next(j for j in jobs if j.name == "ana"), Status(), scheduler.utcnow)
+        scheduler._run_job(scheduler.Job("other", 60, lambda now: None), Status(), scheduler.utcnow)
+    finally:
+        for c in closers:
+            c.close()
+    assert rows[0][1] is False and "ANA_SOURCE inválido" in rows[0][2]
+    assert rows[1][1] is True
+
+
+def test_backfill_ana_invalid_source_exits_2_without_traceback(monkeypatch, capsys):
+    monkeypatch.setenv("INFLUX_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("INFLUX_ORG", "o")
+    monkeypatch.setenv("INFLUX_WORKER_TOKEN", "t")
+    monkeypatch.setenv("PG_WORKER_DSN", "postgresql://x")
+    monkeypatch.setenv("ANA_SOURCE", "xpto")
+    assert cli.main(["backfill-ana", "--start", "2026-01-01", "--end", "2026-01-02"]) == 2
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_backfill_stops_at_first_permanent_error():
+    from sentinela_worker.collectors.hidroweb import AnaCredentialsMissing
+    src = BatchSource(exc=AnaCredentialsMissing())
+    with pytest.raises(AnaCredentialsMissing):
+        ana.backfill_ana(src, FakeSink(), date(2026, 1, 1), date(2026, 6, 1), sleep=lambda s: None)
+    assert len(src.calls) == 1
+
+
+def test_backfill_logs_redacted_error_with_status(capsys):
+    from sentinela_worker.collectors.hidroweb import AnaApiError
+    with pytest.raises(RuntimeError):
+        ana.backfill_ana(BatchSource(exc=AnaApiError("ANA series failed: HTTP 503")), FakeSink(),
+                         date(2026, 1, 1), date(2026, 1, 2), sleep=lambda s: None)
+    assert "HTTP 503" in capsys.readouterr().out
+
+
+def test_backfill_year_chunks_are_valid_api_windows():
+    from sentinela_worker.collectors.hidroweb import busca_params
+    src = BatchSource()
+    ana.backfill_ana(src, FakeSink(), date(2025, 1, 1), date(2025, 12, 31), sleep=lambda s: None)
+    assert len(src.calls) > 10
+    now = utc(2026, 11, 20, 15)
+    for _, inicio, fim in src.calls:
+        busca_params(inicio, fim, now.astimezone(ana.LOCAL_TZ).date(), now)  # must not raise
 
 
 def test_missing_credentials_job_fails_with_message(monkeypatch):

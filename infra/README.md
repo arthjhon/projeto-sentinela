@@ -479,9 +479,24 @@ estações a cada 15 min. O serviço legado (`telemetriaws1.ana.gov.br`) fica co
 
 - **Credencial**: `ANA_HIDRO_USER` e `ANA_HIDRO_PASS` no `.env` da VM (`/srv/sentinela/stack/.env`,
   root 600; passo 10). É a conta pessoal (CPF) do Arthur, uso autorizado em 2026-11-20. Nunca em
-  repositório, log ou argv. Sem a credencial, o job `ana` falha com
-  `credencial ANA ausente (ANA_HIDRO_USER/ANA_HIDRO_PASS)` e os outros jobs seguem. Valor de
-  `ANA_SOURCE` inválido derruba o worker na partida (o deploy faz rollback automático).
+  repositório, log ou argv. Se a senha tiver `$`, `#` ou espaço, entre aspas simples no `.env`
+  (`ANA_HIDRO_PASS='a$b c'`). Sem a credencial, o job `ana` falha com
+  `credencial ANA ausente (ANA_HIDRO_USER/ANA_HIDRO_PASS)` e os outros jobs seguem.
+- **`ANA_SOURCE` inválido** não derruba o worker: só o job `ana` falha, com
+  `ANA_SOURCE inválido: <valor>; use hidrowebservice ou legado` (detector, status e Open-Meteo
+  seguem), e `backfill-ana` sai com 2. O rollback automático do deploy **não** desfaz um `.env`
+  ruim (ele re-renderiza a última release boa com o `.env` atual). Corrigir o `.env`
+  (`sudoedit`) e rodar `sudo /usr/local/sbin/stack-deploy.sh none`.
+- **Credencial rejeitada**: depois de um "credentials rejected" o worker não tenta autenticar de
+  novo por 6 h (ou até reiniciar), para não martelar a conta pessoal; o job `ana` falha com
+  `ANA auth suspended...` nesse intervalo. Corrigido o `.env`, `stack-deploy.sh none` reinicia o
+  worker e libera a nova tentativa.
+- **Rotação**: trocar a senha no portal da ANA, `sudoedit /srv/sentinela/stack/.env`, depois
+  `sudo /usr/local/sbin/stack-deploy.sh none`. O valor antigo continua em
+  `/srv/sentinela/stack/releases/*/rendered.json` (root 600) até as releases serem podadas.
+- **Offboarding**: se a conta do Arthur deixar de funcionar, a coleta ANA para (job `ana` com
+  falha de autenticação). Conta institucional é pendência em aberto; migrar = trocar os dois
+  valores do `.env` e fazer o deploy.
 - **Rollback para o legado**: `ANA_SOURCE=legado` no `.env` e
   `sudo /usr/local/sbin/stack-deploy.sh none` (recria o worker com a mesma imagem). O legado vinha
   dando timeout em 2026-11-20; confirmar que responde antes de depender dele.
@@ -613,7 +628,8 @@ Uma vez, depois do passo 12 (precisa do token real do worker). Roda num containe
 memória dele dentro do mesmo limite de 384 MiB: risco de OOM no detector).
 
 O ambiente vem do JSON validado da release atual, sem imprimir segredo: só `INFLUX_URL`,
-`INFLUX_ORG` e `INFLUX_WORKER_TOKEN` vão para um env-file root 600 em tmpfs; o backfill não usa o
+`INFLUX_ORG`, `INFLUX_WORKER_TOKEN` e as variáveis da fonte ANA (`ANA_SOURCE`, `ANA_HIDRO_USER`,
+`ANA_HIDRO_PASS`) vão para um env-file root 600 em tmpfs; o backfill não usa o
 Postgres, então `PG_WORKER_DSN` recebe um valor inerte (o real não entra no container avulso). O
 JSON escapa `$` como `$$`; o `gsub` desfaz isso.
 
@@ -623,7 +639,7 @@ R=/srv/sentinela/stack/.current/rendered.json
 IMG=$(jq -r '.services.worker.image' "$R"); echo "$IMG"       # ghcr.io/arthjhon/sentinela-worker:<sha>
 NET=$(jq -r '.networks.default.name' "$R"); echo "$NET"       # sentinela-stack_default
 E=$(mktemp /run/sentinela-backfill.XXXXXX)                     # 600, tmpfs
-jq -r '.services.worker.environment | {INFLUX_URL, INFLUX_ORG, INFLUX_WORKER_TOKEN}
+jq -r '.services.worker.environment | {INFLUX_URL, INFLUX_ORG, INFLUX_WORKER_TOKEN, ANA_SOURCE, ANA_HIDRO_USER, ANA_HIDRO_PASS}
        | to_entries[] | "\(.key)=\(.value | gsub("\\$\\$"; "$"))"' "$R" > "$E"
 echo 'PG_WORKER_DSN=nao-usado-no-backfill' >> "$E"
 cut -d= -f1 "$E"                                               # só os nomes
@@ -632,7 +648,7 @@ bf() { docker run --rm --name sentinela-backfill --network "$NET" \
          --cap-drop ALL --security-opt no-new-privileges:true \
          --env-file "$E" "$IMG" python -m sentinela_worker "$@"; }
 bf backfill-openmeteo --start 2024-01-01      # 1 chamada por mês, pausa de 2 s
-bf backfill-ana --start 2024-01-01            # 5 estações x meses, pausa de 2 s
+bf backfill-ana --start 2024-01-01            # blocos de até 29 dias, 5 estações por bloco, pausa de 2 s
 shred -u "$E"; unset E
 ```
 
@@ -641,12 +657,16 @@ shred -u "$E"; unset E
 - **Retomar**: o log de cada bloco mensal traz `"chunk done"` com `start`/`end`.
   - `backfill-openmeteo` para no primeiro erro: repetir com `--start` = `start` do bloco que
     falhou (o dia seguinte ao último `end` com `chunk done`).
-  - `backfill-ana` percorre estação por estação, todos os meses de cada uma, e no fim falha
-    listando as estações com bloco com erro (`"chunk failed"` traz `estacao`, `start`, `end`).
-    Repetir só o mês que falhou: `bf backfill-ana --start <start> --end <end>` (pede de novo as 5
-    estações daquele mês; inofensivo). Se o processo morreu no meio (ex. OOM, VM reiniciou), as
-    estações seguintes ainda não começaram: repetir o intervalo inteiro (`--start 2024-01-01`).
-- Exit 0 = tudo gravado; 1 = algum bloco falhou (ver o log); 2 = argumento inválido.
+  - `backfill-ana` (HidroWebService) usa blocos de até 29 dias, com as 5 estações em cada
+    requisição. Um bloco com erro é registrado (`"chunk failed"` traz `start`, `end` e o erro
+    sem segredo) e os seguintes continuam; no fim o comando falha com a contagem de blocos.
+    Credencial ausente/rejeitada ou `ANA_SOURCE` inválido param no primeiro bloco (corrigir o
+    `.env`, refazer o env-file). Repetir só o bloco que falhou:
+    `bf backfill-ana --start <start> --end <end>` (inofensivo se já gravado). Se o processo
+    morreu no meio (OOM, VM reiniciou), repetir a partir do `end` do último `"chunk done"`
+    mais um dia. Com `ANA_SOURCE=legado` o modo antigo continua: estação por estação, meses.
+- Exit 0 = tudo gravado; 2 = falha (bloco com erro, credencial/`ANA_SOURCE` inválidos ou argumento
+  inválido; ver o log).
 
 Conferir a contagem por mês (token de operador, lido sem eco; um mês com 0 ou faltando = lacuna):
 

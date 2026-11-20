@@ -337,6 +337,26 @@ def test_auth_rejected_raises():
     assert not api.series_reqs
 
 
+def test_rejected_credentials_back_off_6h_then_retry():
+    bad = {"status": "OK", "code": 200, "items": {"sucesso": False, "tokenautenticacao": None}}
+    clock = Clock()
+    api = Api(auth=[httpx.Response(200, json=bad), httpx.Response(200, json=bad)])
+    src = make(api, clock=clock)
+    with pytest.raises(hidroweb.AnaAuthError, match="rejected"):
+        src.fetch("39770000", *WIN)
+    assert len(api.auths) == 1
+    for _ in range(3):  # later ticks: no new auth request
+        clock.t += 900
+        with pytest.raises(hidroweb.AnaAuthError, match="suspended") as ei:
+            src.fetch("39770000", *WIN)
+        assert ei.value.permanent
+    assert len(api.auths) == 1
+    clock.t += 6 * 3600
+    with pytest.raises(hidroweb.AnaAuthError):
+        src.fetch("39770000", *WIN)
+    assert len(api.auths) == 2  # window over: tried again
+
+
 def test_missing_credentials_raises():
     for user, pw in ((None, PASSWORD), (USER, None), ("", ""), (None, None)):
         api = Api()
