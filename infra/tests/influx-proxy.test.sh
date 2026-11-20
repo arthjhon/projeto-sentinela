@@ -293,6 +293,19 @@ n=$(bd <<<"$out" | jq '.results[0].series[0].values | length')
   && pass "export of a 4.2M-row topic capped at $n rows (<= 600000)" || fail "flood export: status $(st <<<"$out"), rows $n"
 alive && pass "InfluxDB alive, not OOM-killed, after the flooded-topic export" || fail "InfluxDB died on the flooded-topic export"
 
+# ---- janela máxima: turbidez-janela 180d (6 h buckets) over the same 4.2M-row topic -------
+# The longest window the page can ask for; must answer without an InfluxDB error and keep it up.
+ini=$(TZ=America/Maceio date -d '179 days ago' +%F)
+sleep 0.25
+out=$(docker exec "$nginx_ctr" curl -s -w '\n%{http_code} %{time_total}' -H "$H" -G "$U/q/turbidez-janela" \
+  --data-urlencode device=flood --data-urlencode "inicio=$ini" --data-urlencode duracao=180d)
+read -r c secs <<<"$(tail -n1 <<<"$out")"
+echo "turbidez-janela 180d (inicio=$ini) over the 4.2M-row topic: HTTP $c in ${secs}s"
+[ "$c" = 200 ] && jq -e '(.results[0].error == null) and (.results[0].series[0].values | length >= 100)' <<<"$(bd <<<"$out")" >/dev/null 2>&1 \
+  && pass "turbidez-janela 180d over a 4.2M-row topic: 200, no InfluxDB error (${secs}s)" \
+  || fail "turbidez-janela 180d flood: $(head -c 300 <<<"$out")"
+alive && pass "InfluxDB alive, not OOM-killed, after the 180d window" || fail "InfluxDB died on the 180d window"
+
 # ---- limit_req: 30 rapid GETs exceed 5 r/s + burst 10 -> some 429 (limit_req_status) ------
 # Last on purpose: the burst empties the zone's bucket; nothing else runs after it.
 sleep 3
