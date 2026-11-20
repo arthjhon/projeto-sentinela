@@ -1,21 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { deviceIdsOf } from '../../services/buoyRegistry';
 import { useContextoAmbiental } from '../../hooks/useContextoAmbiental';
+import { DURACOES } from '../../services/influxQueries';
 import {
   ESTACOES_LABEL, ESTACOES_COM_DADOS, ESTACAO_PADRAO, janelaAtalho, dominio, PASSO_MS,
+  hojeMaceio, inicioValido, rotuloPasso,
 } from '../../services/contextoAmbiental';
 import ContextoChart from './ContextoChart';
 import './ContextoPage.css';
 
 const ATALHOS = [7, 30, 90];
-const DURACOES = ['7d', '30d', '90d', '180d'];
+// a data digitada só vale depois de uma pausa (ou ao sair do campo / Enter)
+const ESPERA_DATA_MS = 600;
 
 export default function ContextoPage() {
   const { buoys } = useBuoyRegistry();
   const [buoyCode, setBuoyCode] = useState(null);
   const [estacao, setEstacao] = useState(ESTACAO_PADRAO);
-  const [janela, setJanela] = useState(() => janelaAtalho(30, new Date()));
+  // `agora` faz parte da janela: toda escolha (atalho, data, duração) corta o eixo no instante dela
+  const [janela, setJanela] = useState(() => {
+    const agora = new Date();
+    return { ...janelaAtalho(30, agora), agora };
+  });
   const [mostrarNivel, setMostrarNivel] = useState(false);
   const [zoom, setZoom] = useState(null);
   const [drag, setDrag] = useState(null);
@@ -23,16 +30,44 @@ export default function ContextoPage() {
   const buoy = buoys.find(b => b.codigo === buoyCode) ?? buoys[0] ?? null;
   const deviceIds = useMemo(() => deviceIdsOf(buoy), [buoy]);
   const { turbidez, ana } = useContextoAmbiental({
-    deviceIds, estacao, inicio: janela.inicio, duracao: janela.duracao,
+    deviceIds, estacao, inicio: janela.inicio, duracao: janela.duracao, atualizadoEm: janela.agora.getTime(),
   });
-  const [agora] = useState(() => new Date());
-  const domain = zoom ?? dominio(janela.inicio, janela.duracao, agora);
+  const domain = zoom ?? dominio(janela.inicio, janela.duracao, janela.agora);
 
   // qualquer filtro limpa o zoom
   const alterar = setter => valor => { setter(valor); setZoom(null); setDrag(null); };
   const setBuoy = alterar(setBuoyCode);
   const setEstacaoF = alterar(setEstacao);
-  const setJanelaF = alterar(setJanela);
+  const mudarJanela = patch => {
+    const agora = new Date();
+    setJanela(j => ({ ...j, ...patch, agora }));
+    setZoom(null);
+    setDrag(null);
+  };
+
+  // "A partir de": rascunho local; só uma data real (inicioValido) é aplicada, após
+  // ESPERA_DATA_MS sem digitar ou ao sair do campo / Enter. Atalhos repõem o rascunho.
+  const [rascunho, setRascunho] = useState(janela.inicio);
+  const [inicioVisto, setInicioVisto] = useState(janela.inicio);
+  if (janela.inicio !== inicioVisto) {
+    setInicioVisto(janela.inicio);
+    setRascunho(janela.inicio);
+  }
+  const esperaData = useRef(null);
+  const aplicarInicio = (valor, saindo = false) => {
+    clearTimeout(esperaData.current);
+    if (valor !== janela.inicio && inicioValido(valor)) mudarJanela({ inicio: valor });
+    else if (saindo) setRascunho(janela.inicio); // data incompleta/inválida: volta à aplicada
+  };
+  const digitarInicio = valor => {
+    setRascunho(valor);
+    clearTimeout(esperaData.current);
+    esperaData.current = setTimeout(() => aplicarInicio(valor), ESPERA_DATA_MS);
+  };
+  useEffect(() => {
+    const espera = esperaData;
+    return () => clearTimeout(espera.current);
+  }, []);
 
   const onDragStart = (id, x) => setDrag({ id, a: x, b: null });
   const onDragMove = (id, x) => setDrag(d => (d && d.id === id ? { ...d, b: x } : d));
@@ -80,19 +115,21 @@ export default function ContextoPage() {
           {ATALHOS.map(d => (
             <button
               key={d} type="button" className="btn-table"
-              onClick={() => setJanelaF(janelaAtalho(d, new Date()))}
+              onClick={() => mudarJanela(janelaAtalho(d, new Date()))}
             >{d} dias</button>
           ))}
         </div>
         <label>A partir de
           <input
-            type="date" value={janela.inicio}
-            onChange={e => e.target.value && setJanelaF({ ...janela, inicio: e.target.value })}
+            type="date" value={rascunho} max={hojeMaceio(janela.agora)}
+            onChange={e => digitarInicio(e.target.value)}
+            onBlur={e => aplicarInicio(e.target.value, true)}
+            onKeyDown={e => e.key === 'Enter' && aplicarInicio(e.currentTarget.value)}
           />
         </label>
         <label>Duração
-          <select value={janela.duracao} onChange={e => setJanelaF({ ...janela, duracao: e.target.value })}>
-            {DURACOES.map(d => <option key={d} value={d}>{parseInt(d, 10)} dias</option>)}
+          <select value={janela.duracao} onChange={e => mudarJanela({ duracao: e.target.value })}>
+            {Object.keys(DURACOES).map(d => <option key={d} value={d}>{parseInt(d, 10)} dias</option>)}
           </select>
         </label>
         <label className="ctx-check">
@@ -107,7 +144,7 @@ export default function ContextoPage() {
         state={turbidez} {...dragProps}
       />
       <ContextoChart
-        id="chuva" title={`Chuva em ${nomeEstacao} (mm, rio acima)`} unit="mm" color="#60a5fa" kind="bar"
+        id="chuva" title={`Chuva em ${nomeEstacao} (mm por ${rotuloPasso(PASSO_MS[janela.duracao])}, rio acima)`} unit="mm" color="#60a5fa" kind="bar"
         state={{ ...ana, data: ana.data.chuva }} {...dragProps}
       />
       <ContextoChart

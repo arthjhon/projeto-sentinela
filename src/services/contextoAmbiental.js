@@ -1,6 +1,6 @@
 // Camada de dados da página /admin/contexto: turbidez de uma bóia empilhada
 // sobre chuva/vazão/nível das estações da ANA, no mesmo eixo de tempo.
-import { DURACOES } from './influxQueries';
+import { DURACOES, INICIO_RE, T0_UTC } from './influxQueries';
 import { fetchNamed, fetchNamedPerDevice, rowsOf } from './influxql';
 import { mapHistorySeries, mergeHistorySeries } from '../hooks/useInfluxHistory';
 
@@ -16,14 +16,28 @@ export const ESTACOES_COM_DADOS = ['39770000', '39760000', '39740000', '39700000
 export const ESTACAO_PADRAO = '39770000';
 
 const DIA_MS = 24 * 60 * 60 * 1000;
-const T0_UTC = 'T03:00:00Z'; // meia-noite de Maceió (UTC-3, sem horário de verão)
 const dataMaceio = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/Maceio', year: 'numeric', month: '2-digit', day: '2-digit',
 });
 
+/** Data local de Maceió (YYYY-MM-DD) do instante `agora`. */
+export function hojeMaceio(agora) {
+  return dataMaceio.format(agora);
+}
+
+/**
+ * `inicio` digitado vale só se casa com INICIO_RE (o mesmo do nginx) e é uma data
+ * real do calendário: 2026-02-31 não volta igual de um Date e é recusado.
+ */
+export function inicioValido(valor) {
+  if (typeof valor !== 'string' || !INICIO_RE.test(valor)) return false;
+  const d = new Date(`${valor}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === valor;
+}
+
 /** Atalho de N dias terminando hoje (data local de Maceió, inclusive). */
 export function janelaAtalho(dias, agora) {
-  const hoje = Date.parse(`${dataMaceio.format(agora)}T00:00:00Z`);
+  const hoje = Date.parse(`${hojeMaceio(agora)}T00:00:00Z`);
   const inicio = new Date(hoje - (dias - 1) * DIA_MS).toISOString().slice(0, 10);
   return { inicio, duracao: `${dias}d` };
 }
@@ -35,10 +49,15 @@ export function janelaIntervalo(inicio, duracao) {
   return { t0, t1 };
 }
 
-/** Domínio do eixo X em ms, cortado em `agora` (sem espaço vazio no futuro). */
+/**
+ * Domínio do eixo X em ms, cortado em `agora` (sem espaço vazio no futuro).
+ * Janela que começa depois de `agora` não tem corte possível: fica [t0, t1]
+ * (nunca um domínio invertido) e a página mostra "Sem dados neste período".
+ */
 export function dominio(inicio, duracao, agora) {
   const { t0, t1 } = janelaIntervalo(inicio, duracao);
-  return [t0.getTime(), Math.min(t1.getTime(), agora.getTime())];
+  const fim = Math.min(t1.getTime(), agora.getTime());
+  return fim > t0.getTime() ? [t0.getTime(), fim] : [t0.getTime(), t1.getTime()];
 }
 
 /** Tamanho do balde do GROUP BY em ms por duração ('180d' -> 6 h): primeiro token de DURACOES. */
@@ -46,6 +65,49 @@ export const PASSO_MS = Object.fromEntries(Object.entries(DURACOES).map(([duraca
   const [, n, unidade] = /^(\d+)([mh])/.exec(every);
   return [duracao, Number(n) * (unidade === 'h' ? 3600000 : 60000)];
 }));
+
+/** Rótulo do balde para o título da chuva: 900000 -> '15 min', 3600000 -> '1 h'. */
+export function rotuloPasso(passoMs) {
+  return passoMs < 3600000 ? `${passoMs / 60000} min` : `${passoMs / 3600000} h`;
+}
+
+/**
+ * Cursor compartilhado: índice da linha de `rows` ([{t, v}], ordenadas) mais
+ * próxima de `alvo` (ms), a no máximo `passoMs`. Linhas com `v` nulo (lacunas
+ * sintéticas de comLacunas, chuva sem leitura) nunca são escolhidas.
+ * Sem linha a até um balde: -1 (o gráfico fica sem cursor).
+ */
+export function indiceMaisProximo(rows, alvo, passoMs) {
+  if (!Number.isFinite(alvo)) return -1;
+  let melhor = -1;
+  let dist = Infinity;
+  rows.forEach((r, i) => {
+    if (r.v == null) return;
+    const d = Math.abs(r.t - alvo);
+    if (d <= passoMs && d < dist) { melhor = i; dist = d; }
+  });
+  return melhor;
+}
+
+/**
+ * Faixas sem leitura de chuva dentro de `[d0, d1]` (ms): cada leitura cobre
+ * [t, t + passoMs); o que nenhuma leitura cobre (buraco maior que um balde
+ * entre linhas, linha com chuva nula, início ou fim da janela sem linha) vira
+ * uma faixa [início, fim]. Separa "sem leitura" de "seco" (chuva 0).
+ */
+export function intervalosSemLeitura(points, passoMs, [d0, d1]) {
+  if (!(Number.isFinite(d0) && Number.isFinite(d1) && d1 > d0)) return [];
+  const tempos = points.filter(p => p.value != null).map(p => p.time.getTime()).sort((a, b) => a - b);
+  const out = [];
+  let coberto = d0;
+  for (const t of tempos) {
+    if (t >= d1) break;
+    if (t > coberto) out.push([coberto, t]);
+    coberto = Math.max(coberto, t + passoMs);
+  }
+  if (coberto < d1) out.push([coberto, d1]);
+  return out;
+}
 
 /**
  * Ordena e insere um ponto `value: null` logo após cada ponto seguido de um

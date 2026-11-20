@@ -9,10 +9,11 @@ const INICIAL = {
 /**
  * Turbidez da bóia + chuva/vazão/nível da estação ANA para a janela
  * (inicio = YYYY-MM-DD de Maceió, duracao = 7d|30d|90d|180d). Qualquer mudança
- * de entrada aborta a busca anterior e recomeça.
+ * de entrada aborta a busca anterior e recomeça. `atualizadoEm` (ms) muda a
+ * cada escolha de janela: repetir o mesmo atalho mais tarde busca de novo, até o novo "agora".
  * @returns {{turbidez: {data, loading, error}, ana: {data, loading, error}}}
  */
-export function useContextoAmbiental({ deviceIds, estacao, inicio, duracao }) {
+export function useContextoAmbiental({ deviceIds, estacao, inicio, duracao, atualizadoEm }) {
   // chave estável: o array novo a cada render não pode refazer a busca
   const idsKey = JSON.stringify(deviceIds ?? []);
   const [state, setState] = useState(INICIAL);
@@ -28,7 +29,7 @@ export function useContextoAmbiental({ deviceIds, estacao, inicio, duracao }) {
       { deviceIds: JSON.parse(idsKey), estacao, inicio, duracao }, controller.signal, emit,
     );
     return () => controller.abort();
-  }, [idsKey, estacao, inicio, duracao]);
+  }, [idsKey, estacao, inicio, duracao, atualizadoEm]);
 
   return state;
 }

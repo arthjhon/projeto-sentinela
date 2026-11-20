@@ -2,7 +2,9 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   ESTACOES_LABEL, ESTACOES_COM_DADOS, ESTACAO_PADRAO,
   janelaAtalho, janelaIntervalo, dominio, mapAnaSeries, comLacunas, PASSO_MS, fetchAna, fetchTurbidezJanela,
+  hojeMaceio, inicioValido, rotuloPasso, indiceMaisProximo, intervalosSemLeitura,
 } from './contextoAmbiental';
+import { ESTACOES_ANA, T0_UTC } from './influxQueries';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -15,6 +17,28 @@ describe('constantes', () => {
     expect(ESTACOES_COM_DADOS).toEqual(['39770000', '39760000', '39740000', '39700000']);
     expect(ESTACOES_COM_DADOS).not.toContain('39800100');
     expect(ESTACAO_PADRAO).toBe('39770000');
+  });
+  it('ESTACOES_LABEL nomeia exatamente as estações aceitas pelo proxy', () => {
+    expect(new Set(Object.keys(ESTACOES_LABEL))).toEqual(new Set(ESTACOES_ANA));
+  });
+  it('T0_UTC é a meia-noite de Maceió (UTC-3) usada no literal da janela', () => {
+    expect(T0_UTC).toBe('T03:00:00Z');
+  });
+});
+
+describe('hojeMaceio / inicioValido', () => {
+  it('hoje em Maceió: 01:00Z ainda é o dia anterior', () => {
+    expect(hojeMaceio(new Date('2026-11-20T01:00:00Z'))).toBe('2026-11-19');
+    expect(hojeMaceio(new Date('2026-11-20T03:00:00Z'))).toBe('2026-11-20');
+  });
+  it('aceita data real no formato do proxy', () => {
+    expect(inicioValido('2026-05-01')).toBe(true);
+    expect(inicioValido('2028-02-29')).toBe(true);
+  });
+  it('recusa data impossível (2026-02-31, 2026-02-29) e os passos de digitação do ano', () => {
+    for (const v of ['2026-02-31', '2026-02-29', '2026-04-31', '0002-05-01', '0020-05-01', '0202-05-01', '', null, '2026-5-1']) {
+      expect(inicioValido(v)).toBe(false);
+    }
   });
 });
 
@@ -38,6 +62,16 @@ describe('janelaIntervalo / dominio', () => {
     expect(dominio('2026-11-13', '7d', agora)).toEqual([Date.parse('2026-11-13T03:00:00Z'), agora.getTime()]);
     const depois = new Date('2026-12-30T00:00:00Z');
     expect(dominio('2026-11-13', '7d', depois)[1]).toBe(Date.parse('2026-11-20T03:00:00Z'));
+  });
+  it('dominio of a window starting after now is [t0, t1], never reversed', () => {
+    const agora = new Date('2026-11-20T12:00:00Z');
+    expect(dominio('2026-12-01', '7d', agora)).toEqual([Date.parse('2026-12-01T03:00:00Z'), Date.parse('2026-12-08T03:00:00Z')]);
+  });
+  it('dominio follows the agora it is given (a later shortcut reaches the later now)', () => {
+    const cedo = new Date('2026-11-20T12:00:00Z');
+    const tarde = new Date('2026-11-20T18:00:00Z');
+    expect(dominio('2026-11-14', '7d', cedo)[1]).toBe(cedo.getTime());
+    expect(dominio('2026-11-14', '7d', tarde)[1]).toBe(tarde.getTime());
   });
 });
 
@@ -129,5 +163,61 @@ describe('comLacunas', () => {
 
   it('bucket ms per duracao', () => {
     expect(PASSO_MS).toEqual({ '7d': 900000, '30d': 3600000, '90d': 10800000, '180d': 21600000 });
+  });
+});
+
+describe('rotuloPasso', () => {
+  it('derives the rain bucket label from PASSO_MS', () => {
+    expect(Object.fromEntries(Object.entries(PASSO_MS).map(([d, ms]) => [d, rotuloPasso(ms)])))
+      .toEqual({ '7d': '15 min', '30d': '1 h', '90d': '3 h', '180d': '6 h' });
+  });
+});
+
+describe('indiceMaisProximo (cursor compartilhado)', () => {
+  const H = 3600000;
+  const rows = [{ t: 0, v: 1 }, { t: H, v: 2 }, { t: 2 * H, v: null }, { t: 5 * H, v: 3 }];
+
+  it('picks the row at the same time', () => {
+    expect(indiceMaisProximo(rows, H, H)).toBe(1);
+  });
+  it('picks the nearest row within one bucket', () => {
+    expect(indiceMaisProximo(rows, 0.4 * H, H)).toBe(0);
+    expect(indiceMaisProximo(rows, 0.6 * H, H)).toBe(1);
+    expect(indiceMaisProximo(rows, 4.2 * H, H)).toBe(3);
+  });
+  it('never picks a null (synthetic gap) row', () => {
+    expect(indiceMaisProximo(rows, 2 * H, H)).toBe(1);
+  });
+  it('-1 when nothing is within one bucket, or the label is missing', () => {
+    expect(indiceMaisProximo(rows, 3.5 * H, H)).toBe(-1);
+    expect(indiceMaisProximo(rows, undefined, H)).toBe(-1);
+    expect(indiceMaisProximo([], H, H)).toBe(-1);
+  });
+});
+
+describe('intervalosSemLeitura (faixas cinza da chuva)', () => {
+  const H = 3600000;
+  const pt = (ms, value = 0) => ({ time: new Date(ms), value });
+
+  it('contiguous buckets (dry included) leave no band', () => {
+    expect(intervalosSemLeitura([pt(0), pt(H, 1.2), pt(2 * H)], H, [0, 3 * H])).toEqual([]);
+  });
+  it('rows more than one bucket apart -> band between them', () => {
+    expect(intervalosSemLeitura([pt(0), pt(4 * H)], H, [0, 5 * H])).toEqual([[H, 4 * H]]);
+  });
+  it('a row with null chuva is a band, merged with neighbouring gaps', () => {
+    expect(intervalosSemLeitura([pt(0), pt(H, null), pt(3 * H), pt(4 * H)], H, [0, 5 * H])).toEqual([[H, 3 * H]]);
+  });
+  it('start and end of the window without rows are bands', () => {
+    expect(intervalosSemLeitura([pt(2 * H)], H, [0, 6 * H])).toEqual([[0, 2 * H], [3 * H, 6 * H]]);
+  });
+  it('clips to the visible domain (zoom)', () => {
+    expect(intervalosSemLeitura([pt(0), pt(10 * H)], H, [3 * H, 5 * H])).toEqual([[3 * H, 5 * H]]);
+    expect(intervalosSemLeitura([pt(0), pt(H), pt(2 * H)], H, [0.5 * H, 1.5 * H])).toEqual([]);
+  });
+  it('no rows -> whole domain; invalid domain -> none', () => {
+    expect(intervalosSemLeitura([], H, [0, H])).toEqual([[0, H]]);
+    expect(intervalosSemLeitura([pt(0)], H, [H, H])).toEqual([]);
+    expect(intervalosSemLeitura([pt(0)], H, [NaN, H])).toEqual([]);
   });
 });
