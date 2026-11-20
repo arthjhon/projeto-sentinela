@@ -26,7 +26,7 @@ const isolatedDot = (rows, color) => ({ cx, cy, index, value }) => {
  * Todos os gráficos compartilham `syncId`, o domínio X e o arrasto de zoom (`drag`).
  */
 export default function ContextoChart({
-  id, title, state, passoMs, kind = 'line', color, unit, domain, zoom, drag, onDragStart, onDragMove, onDragEnd,
+  id, title, state, passoMs, kind = 'line', color, unit, domain, zoom, drag, onDragStart, onDragMove, onDragEnd, onDragCancel,
 }) {
   const rows = useMemo(() => {
     const all = (kind === 'bar' ? state.data : comLacunas(state.data, passoMs)).map(p => ({ t: p.time.getTime(), v: p.value }));
@@ -47,6 +47,7 @@ export default function ContextoChart({
     onMouseDown: e => e && e.activeLabel != null && onDragStart(id, e.activeLabel),
     onMouseMove: e => e && e.activeLabel != null && onDragMove(id, e.activeLabel),
     onMouseUp: onDragEnd,
+    onMouseLeave: onDragCancel,
   };
   const axes = [
     <CartesianGrid key="g" strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />,
