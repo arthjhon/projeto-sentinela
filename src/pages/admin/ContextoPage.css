@@ -1,0 +1,17 @@
+.ctx-controls {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;
+  padding: 1rem 1.25rem; margin-bottom: 1.25rem;
+}
+.ctx-controls label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8rem; color: var(--text-muted); }
+.ctx-controls select, .ctx-controls input[type='date'] {
+  background: rgba(2, 8, 21, 0.6); color: var(--text); border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 6px; padding: 0.4rem 0.6rem; font: inherit; color-scheme: dark;
+}
+.ctx-shortcuts { display: flex; gap: 0.4rem; }
+.ctx-controls .ctx-check { flex-direction: row; align-items: center; gap: 0.4rem; color: var(--text); }
+.ctx-chart { padding: 1rem 1.25rem 0.5rem; margin-bottom: 1rem; }
+.ctx-chart h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.5rem; }
+.ctx-chart .recharts-wrapper { user-select: none; cursor: crosshair; }
+.ctx-state { height: 200px; display: flex; align-items: center; justify-content: center; text-align: center; }
+.ctx-error { color: var(--danger); overflow-wrap: anywhere; }
+.ctx-hint { font-size: 0.8rem; }
