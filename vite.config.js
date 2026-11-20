@@ -12,6 +12,23 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '')
   const influxUrl = env.INFLUXDB_URL || 'http://172.16.200.22:8086'
 
+  // Dev local: o navegador fala só com a porta do Vite (a que o VS Code
+  // encaminha) e o Vite repassa Supabase e MQTT. Liga só com as vars no
+  // .env.local (DEV_SUPABASE_PROXY, DEV_MQTT_PROXY); não afeta o build.
+  // Caminhos fixos — nunca /influx (ver o comentário em `server` abaixo).
+  const devProxy = {}
+  if (env.DEV_SUPABASE_PROXY) {
+    const supa = { target: env.DEV_SUPABASE_PROXY, changeOrigin: true }
+    for (const path of ['/auth/v1', '/rest/v1', '/storage/v1', '/functions/v1']) {
+      devProxy[path] = supa
+    }
+    devProxy['/realtime/v1'] = { ...supa, ws: true }
+  }
+  if (env.DEV_MQTT_PROXY) {
+    devProxy['/mqtt'] = { target: env.DEV_MQTT_PROXY, ws: true, changeOrigin: true }
+  }
+  const usaDevProxy = Object.keys(devProxy).length > 0
+
   // Paridade com o proxy de produção: /influx/q/<nome> monta a consulta
   // InfluxQL fixa (src/services/influxQueries.js, espelho do nginx) e chama
   // /query do InfluxDB com o token só-leitura. Nada do que o cliente manda
@@ -55,6 +72,9 @@ export default defineConfig(({ mode }) => {
   // Sem server.proxy['/influx']: um proxy genérico encaminharia qualquer
   // caminho (Flux /api/v2/query, /query com q livre) ao Influx com o token —
   // o SSRF que o proxy nomeado fecha. Só /influx/q/<nome> existe (plugin acima).
+  // Com o proxy de dev ligado, a porta fica fixa: VITE_SUPABASE_URL aponta para
+  // ela, e cair na 5174 em silêncio quebraria o login.
+  server: usaDevProxy ? { port: 5173, strictPort: true, proxy: devProxy } : undefined,
   build: {
     rollupOptions: {
       output: {

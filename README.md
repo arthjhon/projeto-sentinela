@@ -148,6 +148,10 @@ npm run dev
 
 O app estará disponível em `http://localhost:5173`.
 
+Com Supabase e broker locais, defina `DEV_SUPABASE_PROXY` e `DEV_MQTT_PROXY` no `.env.local` (exemplo no
+`.env.example`): o `npm run dev` passa a repassar o Supabase e o MQTT pela própria porta 5173 e falha em
+vez de trocar de porta se ela estiver ocupada.
+
 > **Acesso ao painel administrativo**
 > A rota `/admin` está totalmente protegida via Supabase Auth.
 > Crie seu usuário mestre pelo passo 6 da configuração abaixo.
