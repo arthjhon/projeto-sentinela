@@ -58,7 +58,7 @@ perms() {
 }
 [ "$(perms telegraf)" = '["write:iot"]' ] && pass "telegraf perms" || fail "telegraf perms $(perms telegraf)"
 [ "$(perms worker)" = '["read:iot","write:externos","write:qualidade"]' ] && pass "worker perms" || fail "worker perms $(perms worker)"
-[ "$(perms nginx-publico)" = '["read:iot"]' ] && pass "nginx-publico perms" || fail "nginx perms $(perms nginx-publico)"
+[ "$(perms nginx-publico)" = '["read:externos","read:iot"]' ] && pass "nginx-publico perms" || fail "nginx perms $(perms nginx-publico)"
 
 dbrp=$(ix v1 dbrp list --db iot --json | sed -n '/^\]/q;p')
 [ "$(jq -r '[.[] | select(.database == "iot" and .retention_policy == "autogen" and .virtual == false and .default == true)] | length' <<<"$dbrp]" 2>/dev/null)" = 1 ] \
@@ -67,6 +67,8 @@ dbrp=$(ix v1 dbrp list --db iot --json | sed -n '/^\]/q;p')
 
 q() { INFLUX_TOKEN=$1 docker exec -e INFLUX_TOKEN -e INFLUX_ORG=sentinela "$ctr" influx query "from(bucket:\"$2\") |> range(start:-1m)" >/dev/null 2>&1; }
 q "$t_ngx" iot && pass "nginx token reads iot" || fail "nginx token cannot read iot"
+q "$t_ngx" externos && pass "nginx token reads externos (/influx/q/ana)" || fail "nginx token cannot read externos"
+[ "$(ix v1 dbrp list --db externos --rp autogen --json 2>/dev/null | jq '[.[] | select(.virtual != true)] | length')" = 1 ] && pass "explicit dbrp externos/autogen" || fail "dbrp externos missing"
 q "$t_ngx" qualidade && fail "nginx token reads qualidade" || pass "nginx token denied on qualidade"
 
 # ---- bootstrap, second run (idempotent, prints no token) ------------------------
@@ -75,7 +77,7 @@ out2=$(SENTINELA_ENV_FILE="$tmp/env" bash "$bin/influx-bootstrap.sh" </dev/null 
 grep -q 'NEW TOKEN' <<<"$out2" && fail "run 2 created tokens" || pass "run 2 created nothing"
 leak=0; for t in "$admin" "$t_tel" "$t_wrk" "$t_ngx" "$t_bak"; do [[ $out2 == *"$t"* ]] && leak=1; done
 [ "$leak" -eq 0 ] && pass "run 2 prints no existing token" || fail "run 2 leaked a token"
-[ "$(grep -c ': exists' <<<"$out2")" -eq 7 ] && pass "run 2 reports 7 existing objects" || fail "run 2: $out2"
+[ "$(grep -c ': exists' <<<"$out2")" -eq 8 ] && pass "run 2 reports 8 existing objects" || fail "run 2: $out2"
 [ "$(ix auth list --json | jq length)" -eq 5 ] && pass "no duplicate tokens" || fail "duplicate tokens"
 
 # ---- backup ---------------------------------------------------------------------

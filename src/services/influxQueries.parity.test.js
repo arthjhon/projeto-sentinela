@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildNamedQuery, QUERY_NAMES } from './influxQueries';
+import { buildNamedQuery, QUERY_NAMES, QUERY_DB, DURACOES, ESTACOES_ANA } from './influxQueries';
 
 // Paridade nginx <-> JS: lê os modelos reais do nginx (proxy_pass de cada
 // `location = /influx/q/<nome>`) e os `map` de validação, preenche com cada
@@ -47,6 +47,8 @@ const templates = {};
 for (const m of conf.matchAll(/location = \/influx\/q\/([\w-]+) \{[\s\S]*?proxy_pass (\S+);/g)) {
   templates[m[1]] = m[2];
 }
+const dbs = {};
+for (const [name, url] of Object.entries(templates)) dbs[name] = new URL(url.replace(/\$\w+/g, 'x')).searchParams.get('db');
 
 function nginxQuery(name, args) {
   const url = templates[name].replace(/\$(influx_\w+)/g, (_, v) => mapValue(v, args));
@@ -63,10 +65,20 @@ for (const campo of ['ph', 'turbidez', 'temperatura']) {
 for (const periodo of ['24h', '30d']) cases.push(['ultimas', { device: 'esp_sururu', periodo }]);
 for (const periodo of ['1h', '24h', '7d', '30d']) cases.push(['export', { device: 'A-z_9', periodo }]);
 cases.push(['leituras-24h', {}], ['primeira', {}]);
+for (const estacao of ESTACOES_ANA) {
+  for (const duracao of Object.keys(DURACOES)) cases.push(['ana', { estacao, inicio: '2026-05-01', duracao }]);
+}
+for (const duracao of Object.keys(DURACOES)) {
+  cases.push(['turbidez-janela', { device: 'esp_sururu', inicio: '2026-05-01', duracao }]);
+}
 
 describe('paridade nginx <-> buildNamedQuery', () => {
   it('cobre exatamente os endpoints nomeados do nginx', () => {
     expect(Object.keys(templates).sort()).toEqual([...QUERY_NAMES].sort());
+  });
+
+  it('o db= de cada proxy_pass é o de QUERY_DB', () => {
+    for (const name of QUERY_NAMES) expect(dbs[name], name).toBe(QUERY_DB[name]);
   });
 
   it.each(cases)('%s %j', (name, args) => {

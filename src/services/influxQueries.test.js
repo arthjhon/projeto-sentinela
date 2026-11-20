@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildNamedQuery, QUERY_NAMES } from './influxQueries';
+import { buildNamedQuery, QUERY_NAMES, QUERY_DB } from './influxQueries';
 
 describe('buildNamedQuery', () => {
   it('history: agregação por período, com e sem device', () => {
@@ -53,7 +53,45 @@ describe('buildNamedQuery', () => {
     expect(() => buildNamedQuery('export', { device: ['a'], periodo: '1h' })).toThrow();
   });
 
-  it('QUERY_NAMES lista os 5 endpoints', () => {
-    expect(QUERY_NAMES).toEqual(['history', 'ultimas', 'leituras-24h', 'primeira', 'export']);
+  it('QUERY_NAMES lista os 7 endpoints e QUERY_DB cobre todos', () => {
+    expect(QUERY_NAMES).toEqual(['history', 'ultimas', 'leituras-24h', 'primeira', 'export', 'ana', 'turbidez-janela']);
+    expect(Object.keys(QUERY_DB).sort()).toEqual([...QUERY_NAMES].sort());
+    expect(QUERY_DB.ana).toBe('externos');
+    expect(QUERY_DB['turbidez-janela']).toBe('iot');
+  });
+
+  it('ana monta o modelo fixo com janela em UTC-3', () => {
+    expect(buildNamedQuery('ana', { estacao: '39770000', inicio: '2026-05-01', duracao: '30d' })).toBe(
+      'SELECT sum("chuva") AS "chuva", mean("vazao") AS "vazao", mean("nivel") AS "nivel" FROM "ana_telemetria" ' +
+      'WHERE "estacao" = \'39770000\' AND time >= \'2026-05-01T03:00:00Z\' AND time < \'2026-05-01T03:00:00Z\' + 30d ' +
+      'GROUP BY time(1h) fill(none)');
+  });
+
+  it('ana rejects station outside list', () => {
+    for (const estacao of ['39770001', '', "39770000' OR '1'='1", undefined]) {
+      expect(() => buildNamedQuery('ana', { estacao, inicio: '2026-05-01', duracao: '7d' })).toThrow();
+    }
+  });
+
+  it("ana rejects inicio '2026-5-1' and '2026-13-01'", () => {
+    for (const inicio of ['2026-5-1', '2026-13-01', '2026-05-32', '1999-05-01', '2026-05-01T00:00', undefined]) {
+      expect(() => buildNamedQuery('ana', { estacao: '39770000', inicio, duracao: '7d' })).toThrow();
+    }
+  });
+
+  it("ana rejects duracao '365d'", () => {
+    expect(() => buildNamedQuery('ana', { estacao: '39770000', inicio: '2026-05-01', duracao: '365d' })).toThrow();
+  });
+
+  it('turbidez-janela requires device', () => {
+    expect(() => buildNamedQuery('turbidez-janela', { inicio: '2026-05-01', duracao: '7d' })).toThrow();
+    expect(() => buildNamedQuery('turbidez-janela', { device: "a'b", inicio: '2026-05-01', duracao: '7d' })).toThrow();
+    expect(buildNamedQuery('turbidez-janela', { device: 'esp_x', inicio: '2026-05-01', duracao: '7d' })).toBe(
+      'SELECT mean("turbidez") FROM "sensores" WHERE "topic" = \'esp_x/sensores\' AND time >= \'2026-05-01T03:00:00Z\' ' +
+      'AND time < \'2026-05-01T03:00:00Z\' + 7d GROUP BY time(15m) fill(none)');
+  });
+
+  it('180d groups by time(6h,3h)', () => {
+    expect(buildNamedQuery('ana', { estacao: '39770000', inicio: '2026-05-01', duracao: '180d' })).toContain('GROUP BY time(6h,3h) fill(none)');
   });
 });
