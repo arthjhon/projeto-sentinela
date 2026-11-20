@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from sentinela_worker.redact import MAX_ERROR_LEN, redact_error
+from sentinela_worker.redact import MAX_ERROR_LEN, redact_error, redact_text
 from sentinela_worker.scheduler import Job, run_forever
 
 
@@ -55,3 +55,15 @@ def test_scheduler_log_and_status_are_redacted(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert records and all("SECRET" not in r and "pw" not in r for r in records)
     assert "SECRET" not in out and "pw@" not in out and "***" in out
+
+
+def test_masks_ana_hidroweb_credentials_and_token():
+    text = (
+        "headers {'Identificador': '12345678901', 'Senha': 'pw-xyz'} "
+        "Senha: pw-abc Identificador=98765432100 "
+        '{"tokenautenticacao": "TOKEN-AAA", "token": "tok-bbb", "sucesso": true}'
+    )
+    out = redact_text(text)
+    for secret in ("12345678901", "pw-xyz", "pw-abc", "98765432100", "TOKEN-AAA", "tok-bbb"):
+        assert secret not in out
+    assert "sucesso" in out

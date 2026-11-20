@@ -1,0 +1,16 @@
+{
+ "status": "OK",
+ "code": 200,
+ "message": "Sucesso",
+ "items": {
+  "sucesso": true,
+  "token": "00000000000000000000000000000000",
+  "validade": "Fri Nov 20 00:33:15 GMT-03:00 2026",
+  "retorno": null,
+  "httpStatus": "OK",
+  "link": null,
+  "tokenValido": "00000000000000000000000000000000",
+  "tokenautenticacao": "DUMMY-TOKEN-NOT-REAL",
+  "respostaautenticacao": "Sucesso"
+ }
+}

@@ -48,6 +48,9 @@ class AnaReading:
     vazao: float | None
     nivel: float | None
     chuva: float | None
+    vazao_status: int | None = None   # HidroWebService only; legacy source leaves these None
+    nivel_status: int | None = None
+    chuva_status: int | None = None
 
 
 class AnaSource(Protocol):
