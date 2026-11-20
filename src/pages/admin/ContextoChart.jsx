@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { comLacunas } from '../../services/contextoAmbiental';
+import { comLacunas, indiceMaisProximo, intervalosSemLeitura } from '../../services/contextoAmbiental';
 import {
   ResponsiveContainer, LineChart, BarChart, Line, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceArea,
@@ -21,9 +21,26 @@ const isolatedDot = (rows, color) => ({ cx, cy, index, value }) => {
   return alone ? <circle key={index} cx={cx} cy={cy} r={3} fill={color} /> : <g key={index} />;
 };
 
+// cursor do tooltip; sem linha casada (índice -1 vindo de indiceMaisProximo) não desenha
+// nada, em vez do cursor padrão do Recharts na origem do gráfico
+function CursorSincronizado({ payloadIndex, points, x, y, width, height, className }) {
+  if (payloadIndex == null || payloadIndex < 0) return null;
+  if (points) {
+    return (
+      <line
+        className={className} x1={points[0].x} y1={points[0].y} x2={points[1].x} y2={points[1].y}
+        stroke="#94a3b8" strokeOpacity={0.6} pointerEvents="none"
+      />
+    );
+  }
+  return <rect className={className} x={x} y={y} width={width} height={height} fill="rgba(148,163,184,0.15)" pointerEvents="none" />;
+}
+
 /**
  * Um gráfico do contexto ambiental. `state` = { data: [{time: Date, value}], loading, error }.
  * Todos os gráficos compartilham `syncId`, o domínio X e o arrasto de zoom (`drag`).
+ * O cursor sincroniza por tempo (syncMethod), não por índice: cada gráfico tem
+ * suas próprias linhas, então o índice do vizinho é outra data.
  */
 export default function ContextoChart({
   id, title, state, passoMs, kind = 'line', color, unit, domain, zoom, drag, onDragStart, onDragMove, onDragEnd, onDragCancel,
@@ -34,6 +51,8 @@ export default function ContextoChart({
   }, [state.data, zoom, kind, passoMs]);
   const hasValue = rows.some(r => r.v != null);
   const validDomain = domain.every(Number.isFinite);
+  // chuva: faixa cinza onde não há leitura (sem barra = seco ou sem leitura, sem a faixa não dá para saber)
+  const semLeitura = kind === 'bar' && validDomain ? intervalosSemLeitura(state.data, passoMs, domain) : [];
   const xDomain = validDomain ? domain : ['dataMin', 'dataMax'];
   // ticks fixos e iguais em todos os gráficos (com poucos pontos o Recharts usa os próprios dados)
   const ticks = validDomain
@@ -43,6 +62,7 @@ export default function ContextoChart({
   const common = {
     data: rows,
     syncId: 'contexto',
+    syncMethod: (_ticks, e) => indiceMaisProximo(rows, e.activeLabel, passoMs),
     margin: { top: 8, right: 12, left: 0, bottom: 0 },
     onMouseDown: e => e && e.activeLabel != null && onDragStart(id, e.activeLabel),
     onMouseMove: e => e && e.activeLabel != null && onDragMove(id, e.activeLabel),
@@ -57,10 +77,13 @@ export default function ContextoChart({
     />,
     <YAxis key="y" tick={AXIS_TICK} tickLine={false} axisLine={false} width={48} domain={[0, 'auto']} />,
     <Tooltip
-      key="t" contentStyle={TOOLTIP_STYLE} labelStyle={{ color: '#8aa0b6' }}
+      key="t" contentStyle={TOOLTIP_STYLE} labelStyle={{ color: '#8aa0b6' }} cursor={<CursorSincronizado />}
       labelFormatter={t => fmtFull.format(t)}
       formatter={v => [v == null ? '—' : `${Math.round(v * 100) / 100} ${unit}`, title]}
     />,
+    ...semLeitura.map(([x1, x2]) => (
+      <ReferenceArea key={`s${x1}`} x1={x1} x2={x2} fill="#94a3b8" fillOpacity={0.2} ifOverflow="hidden" />
+    )),
     drag && drag.id === id && drag.a != null && drag.b != null
       ? <ReferenceArea key="r" x1={drag.a} x2={drag.b} fill={color} fillOpacity={0.15} />
       : null,
@@ -95,6 +118,9 @@ export default function ContextoChart({
     <section className="ctx-chart glass">
       <h2>{title}</h2>
       {body}
+      {kind === 'bar' && hasValue && !state.loading && !state.error && (
+        <p className="text-muted ctx-legenda">faixa cinza = sem leitura</p>
+      )}
     </section>
   );
 }

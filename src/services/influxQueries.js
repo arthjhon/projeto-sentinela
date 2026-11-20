@@ -20,6 +20,9 @@ export const DEVICE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 export const DURACOES = { '7d': '15m', '30d': '1h', '90d': '3h', '180d': '6h,3h' };
 export const ESTACOES_ANA = ['39770000', '39760000', '39740000', '39700000', '39800100'];
 export const INICIO_RE = /^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
+// sufixo que faz da data local o instante da meia-noite de Maceió; o map do nginx
+// (sentinela-http.conf) repete o literal e o teste de paridade confere os dois
+export const T0_UTC = 'T03:00:00Z';
 // banco InfluxQL (db=) de cada consulta; o nginx fixa o mesmo db em cada proxy_pass
 export const QUERY_DB = {
   history: 'iot', ultimas: 'iot', 'leituras-24h': 'iot', primeira: 'iot', export: 'iot',
@@ -42,7 +45,7 @@ function janela(params) {
   const { inicio } = params;
   if (typeof inicio !== 'string' || !INICIO_RE.test(inicio)) throw new Error('parâmetro inválido: inicio');
   const duracao = pick(params.duracao, Object.keys(DURACOES), 'duracao');
-  const t0 = `'${inicio}T03:00:00Z'`;
+  const t0 = `'${inicio}${T0_UTC}'`;
   return { cond: `time >= ${t0} AND time < ${t0} + ${duracao}`, every: DURACOES[duracao] };
 }
 
