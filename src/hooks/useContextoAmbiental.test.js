@@ -56,7 +56,30 @@ describe('carregarContexto', () => {
     await p;
     expect(sinal.aborted).toBe(true);
     expect(estado.turbidez.error).toBeNull();
-    expect(estado.ana.loading).toBe(false);
+    expect(estado.ana.error).toBeNull();
     expect(fetch).toHaveBeenCalledTimes(1); // ANA nem começa
+  });
+
+  it('starts both series loading with empty data; failure after a previous load leaves empty data + error', async () => {
+    const sucesso = vi.fn(async (url) => url.includes('/q/ana')
+      ? ok([{ columns: ['time', 'chuva', 'vazao', 'nivel'], values: [[1000, 1, 2, 3]] }])
+      : ok([{ columns: ['time', 'mean'], values: [[1000, 5]] }]));
+    vi.stubGlobal('fetch', sucesso);
+    const { estado, emit } = coletor();
+    await carregarContexto(entrada, new AbortController().signal, emit);
+    expect(estado.turbidez.data).toHaveLength(1);
+    expect(estado.ana.data.chuva).toHaveLength(1);
+
+    // nova janela: tudo falha; ao iniciar, as duas já estão limpas e em loading
+    let primeira = true;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (primeira) expect(estado.turbidez).toEqual({ data: [], loading: true, error: null });
+      if (primeira) expect(estado.ana).toEqual({ data: { chuva: [], vazao: [], nivel: [] }, loading: true, error: null });
+      primeira = false;
+      return { ok: false, status: 502, json: async () => ({}) };
+    }));
+    await carregarContexto({ ...entrada, inicio: '2026-10-01' }, new AbortController().signal, emit);
+    expect(estado.turbidez).toEqual({ data: [], loading: false, error: 'Influx 502' });
+    expect(estado.ana).toEqual({ data: { chuva: [], vazao: [], nivel: [] }, loading: false, error: 'Influx 502' });
   });
 });

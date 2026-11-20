@@ -12,7 +12,7 @@ const ok = (series) => ({ ok: true, status: 200, json: async () => ({
 
 describe('constantes', () => {
   it('estações com dados são as quatro primeiras; padrão é Fazenda Boa Fortuna', () => {
-    expect(ESTACOES_COM_DADOS).toEqual(Object.keys(ESTACOES_LABEL).slice(0, 4));
+    expect(ESTACOES_COM_DADOS).toEqual(['39770000', '39760000', '39740000', '39700000']);
     expect(ESTACOES_COM_DADOS).not.toContain('39800100');
     expect(ESTACAO_PADRAO).toBe('39770000');
   });
