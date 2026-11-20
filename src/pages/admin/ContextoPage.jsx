@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { deviceIdsOf } from '../../services/buoyRegistry';
 import { useContextoAmbiental } from '../../hooks/useContextoAmbiental';
@@ -42,7 +42,18 @@ export default function ContextoPage() {
     }
     setDrag(null);
   };
-  const dragProps = { passoMs: PASSO_MS[janela.duracao], zoom, drag, onDragStart, onDragMove, onDragEnd, domain };
+  const onDragCancel = () => setDrag(null);
+  const dragProps = { passoMs: PASSO_MS[janela.duracao], zoom, drag, onDragStart, onDragMove, onDragEnd, onDragCancel, domain };
+
+  // sair do gráfico (onDragCancel) ou soltar o botão fora dele cancela, sem aplicar zoom;
+  // soltar dentro é tratado por onDragEnd, que roda antes deste listener
+  const arrastando = drag != null;
+  useEffect(() => {
+    if (!arrastando) return;
+    const cancelar = () => setDrag(null);
+    window.addEventListener('mouseup', cancelar);
+    return () => window.removeEventListener('mouseup', cancelar);
+  }, [arrastando]);
 
   const nomeEstacao = ESTACOES_LABEL[estacao];
   const nomeBoia = buoy ? `${buoy.codigo} ${buoy.nome}` : '—';
