@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -230,3 +230,133 @@ def test_backfill_ana_cli_wiring(monkeypatch):
     assert cli.main(["backfill-ana", "--start", "2024-06-01"]) == 0
     from datetime import timedelta
     assert calls["args"][1] == datetime.now(timezone.utc).date() - timedelta(days=1)
+
+
+# --- HidroWebService integration (batch source, selection) ---------------------------------
+
+class BatchSource:
+    max_window_days = 29
+
+    def __init__(self, data=None, exc=None):
+        self.data = data
+        self.exc = exc
+        self.calls = []
+
+    def fetch_many(self, estacoes, inicio, fim):
+        self.calls.append((tuple(estacoes), inicio, fim))
+        if self.exc:
+            raise self.exc
+        if self.data is not None:
+            return {e: list(self.data.get(e, [])) for e in estacoes}
+        return {e: [ana.AnaReading(e, utc(2026, 11, 17, 5, 15), 1.0, 2.0, 0.0, 0, 0, 0)] for e in estacoes}
+
+    def fetch(self, estacao, inicio, fim):  # pragma: no cover - must not be used
+        raise AssertionError("per-station fetch must not be used with fetch_many")
+
+
+def test_collect_uses_fetch_many_once():
+    src, sleeps, sink = BatchSource(), [], FakeSink()
+    note = ana.collect_ana(src, sink, utc(2026, 11, 17, 12), sleep=sleeps.append)
+    assert note is None and sleeps == []
+    assert src.calls == [(ana.ESTACOES, utc(2026, 11, 15, 12), utc(2026, 11, 17, 12))]
+    assert sorted(p._tags["estacao"] for _, pts in sink.writes for p in pts) == sorted(ana.ESTACOES)
+
+
+def test_collect_batch_failure_raises():
+    sink = FakeSink()
+    with pytest.raises(RuntimeError, match="boom"):
+        ana.collect_ana(BatchSource(exc=RuntimeError("boom")), sink, utc(2026, 11, 17, 12), sleep=lambda s: None)
+    assert sink.writes == []
+
+
+def test_collect_station_without_data_is_ok():
+    sink = FakeSink()
+    r = ana.AnaReading("39770000", utc(2026, 11, 17, 5, 15), 1.0, None, None)
+    note = ana.collect_ana(BatchSource(data={"39770000": [r]}), sink, utc(2026, 11, 17, 12), sleep=lambda s: None)
+    assert note is None
+    assert [p._tags["estacao"] for _, pts in sink.writes for p in pts] == ["39770000"]
+
+
+def test_points_include_status_fields():
+    r = ana.AnaReading("1", utc(2026, 11, 17, 5), 1.0, 2.0, None, 0, 0, None)
+    (p,) = ana._points([r])
+    assert p._fields == {"vazao": 1.0, "nivel": 2.0, "vazao_status": 0, "nivel_status": 0}
+    assert all(isinstance(p._fields[k], int) for k in ("vazao_status", "nivel_status"))
+
+
+def test_points_legacy_has_no_status_fields():
+    (p,) = ana._points([ana.AnaReading("1", utc(2026, 11, 17, 5), 1.0, 2.0, 0.0)])
+    assert p._fields == {"vazao": 1.0, "nivel": 2.0, "chuva": 0.0}
+
+
+def test_backfill_chunks_fit_api_window():
+    src, sink = BatchSource(), FakeSink()
+    ana.backfill_ana(src, sink, date(2026, 1, 1), date(2026, 3, 15), sleep=lambda s: None)
+    assert len(src.calls) == 3
+    prev_end = None
+    for estacoes, inicio, fim in src.calls:
+        assert estacoes == ana.ESTACOES
+        assert (fim.date() - inicio.date()).days + 1 <= 29
+        if prev_end is None:
+            assert inicio == utc(2026, 1, 1)
+        else:
+            assert inicio.date() == prev_end.date() + timedelta(days=1)
+        prev_end = fim
+    assert prev_end == utc(2026, 3, 15, 23, 59, 59)
+
+
+def test_backfill_batch_failure_raises():
+    with pytest.raises(RuntimeError, match="backfill-ana"):
+        ana.backfill_ana(BatchSource(exc=RuntimeError("x")), FakeSink(), date(2026, 1, 1), date(2026, 1, 2),
+                         sleep=lambda s: None)
+
+
+def test_make_ana_source_default_is_hidroweb():
+    from sentinela_worker.collectors.hidroweb import HidroWebSource
+    assert isinstance(ana.make_ana_source({}, httpx.Client()), HidroWebSource)
+    assert isinstance(ana.make_ana_source({"ANA_SOURCE": "hidrowebservice"}, httpx.Client()), HidroWebSource)
+
+
+def test_make_ana_source_legado():
+    assert isinstance(ana.make_ana_source({"ANA_SOURCE": "legado"}, httpx.Client()), ana.AnaLegacySource)
+
+
+def test_make_ana_source_unknown_raises():
+    with pytest.raises(ValueError, match="ANA_SOURCE"):
+        ana.make_ana_source({"ANA_SOURCE": "xpto"}, httpx.Client())
+
+
+def test_missing_credentials_job_fails_with_message(monkeypatch):
+    from sentinela_worker import scheduler
+    monkeypatch.delenv("ANA_SOURCE", raising=False)
+    monkeypatch.delenv("ANA_HIDRO_USER", raising=False)
+    monkeypatch.delenv("ANA_HIDRO_PASS", raising=False)
+    jobs, closers = cli.build_jobs(object(), object(), "config/detector.yaml")
+
+    class Status:
+        def __init__(self):
+            self.rows = []
+
+        def record(self, name, ok, started, duration, error):
+            self.rows.append((name, ok, error))
+
+    status = Status()
+    try:
+        ana_job = next(j for j in jobs if j.name == "ana")
+        scheduler._run_job(ana_job, status, scheduler.utcnow)
+        other = scheduler.Job("other", 60, lambda now: None)
+        scheduler._run_job(other, status, scheduler.utcnow)
+    finally:
+        for c in closers:
+            c.close()
+    (n1, ok1, err1), (n2, ok2, _) = status.rows
+    assert (n1, ok1) == ("ana", False)
+    assert "credencial ANA ausente (ANA_HIDRO_USER/ANA_HIDRO_PASS)" in err1
+    assert (n2, ok2) == ("other", True)
+
+
+def test_redact_covers_ana_auth_headers():
+    from sentinela_worker.redact import redact_text
+    out = redact_text("Identificador: 12345678901 Senha: s3cr3t tokenautenticacao: abc.def Authorization: Bearer xyz")
+    for secret in ("12345678901", "s3cr3t", "abc.def", "xyz"):
+        assert secret not in out

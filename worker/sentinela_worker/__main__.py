@@ -60,7 +60,7 @@ def build_jobs(sink, pg, detector_config_path: str, *, version: str | None = Non
         extra.append(status_sink)
     om_client = openmeteo.make_client()
     ana_client = ana.make_client()
-    source = ana.AnaLegacySource(ana_client)
+    source = ana.make_ana_source(os.environ, ana_client)  # ValueError on unknown ANA_SOURCE: startup error
     jobs = [
         scheduler.Job("openmeteo", 3600, lambda now: openmeteo.collect_openmeteo(om_client, sink, now)),
         scheduler.Job("ana", 900, lambda now: ana.collect_ana(source, sink, now)),
@@ -155,7 +155,7 @@ def cmd_backfill_ana(start: str, end: str | None) -> int:
     sink = InfluxSink(settings.influx_url, settings.influx_org, settings.influx_token)
     try:
         with ana.make_client() as client:
-            ana.backfill_ana(ana.AnaLegacySource(client), sink, d_start, d_end)
+            ana.backfill_ana(ana.make_ana_source(os.environ, client), sink, d_start, d_end)
     finally:
         sink.close()
     return 0

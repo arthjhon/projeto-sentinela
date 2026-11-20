@@ -1,8 +1,11 @@
-"""ANA telemetry collector (legacy ServiceANA.asmx), behind the `AnaSource` interface.
+"""ANA telemetry collector, behind the `AnaSource` interface.
 
-The legacy service is public and fragile: one request per station, pauses between
-requests, bounded response size. `DataHora` is local time (America/Maceio, UTC-3, no
-DST); points are written in UTC. The XML row element is misspelled by ANA
+Two sources, chosen by `ANA_SOURCE` (`make_ana_source`): `hidrowebservice` (default; OAuth
+service, one request for all stations, see `hidroweb.py`) and `legado` (rollback; the public
+ServiceANA.asmx). A source with `fetch_many` is called once per window; one without it
+(legacy) is called per station. The legacy service is fragile: one request per station,
+pauses between requests, bounded response size. Times are local (America/Maceio, UTC-3, no
+DST); points are written in UTC. The legacy XML row element is misspelled by ANA
 (`DadosHidrometereologicos`) and must be matched as such.
 """
 import calendar
@@ -12,6 +15,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from importlib.metadata import PackageNotFoundError, version
+from collections.abc import Mapping
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -59,6 +63,18 @@ class AnaSource(Protocol):
 
 def make_client() -> httpx.Client:
     return httpx.Client(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT})
+
+
+def make_ana_source(env: Mapping[str, str], client: httpx.Client) -> AnaSource:
+    """`ANA_SOURCE`: `hidrowebservice` (default) or `legado`; anything else is a startup error.
+    Missing credentials are not checked here: the HidroWeb source fails the job at run time."""
+    name = (env.get("ANA_SOURCE") or "hidrowebservice").strip().lower()
+    if name == "legado":
+        return AnaLegacySource(client)
+    if name == "hidrowebservice":
+        from .hidroweb import HidroWebSource  # lazy: hidroweb imports this module
+        return HidroWebSource(client, env.get("ANA_HIDRO_USER") or None, env.get("ANA_HIDRO_PASS") or None)
+    raise ValueError("ANA_SOURCE must be 'hidrowebservice' or 'legado'")
 
 
 def _number(text: str | None) -> tuple[float | None, bool]:
@@ -136,6 +152,10 @@ def _points(readings: list[AnaReading]) -> list[Point]:
             p = Point(MEASUREMENT).tag("estacao", r.estacao).time(r.time)
             for k, v in fields.items():
                 p = p.field(k, v)
+            for k, v in (("vazao_status", r.vazao_status), ("nivel_status", r.nivel_status),
+                         ("chuva_status", r.chuva_status)):
+                if v is not None:
+                    p = p.field(k, int(v))
             points.append(p)
     return points
 
@@ -152,12 +172,27 @@ def _raise_if_failed(job: str, failed: list[str]) -> None:
         raise RuntimeError(f"{job} failed for stations: {', '.join(failed)}")
 
 
+def _write_batch(sink, data: dict[str, list[AnaReading]], job: str) -> None:
+    for estacao in ESTACOES:
+        points = _points(data.get(estacao, []))
+        if points:
+            sink.write(BUCKET, points)
+        log("INFO", job, "station done", estacao=estacao, points=len(points))
+
+
 def collect_ana(source: AnaSource, sink, now: datetime, sleep=time.sleep) -> str | None:
-    """Window now-48h..now, one request per station. A failing station does not skip the
+    """With a batch source (`fetch_many`): one request for every station over now-48h..now.
+    A raised error means the whole request failed, hence the primary station too: the job
+    fails. A station with [] is a success with 0 points.
+
+    Per-station source (legacy). Window now-48h..now, one request per station. A failing station does not skip the
     others. The job fails (raises, listing every failed station) only when the primary
     station fails; otherwise the failed secondary stations come back as a short note that
     the scheduler records in the status of an ok run. An ErrorTable ("no data") is a
     successful request with zero points, never a failure."""
+    if hasattr(source, "fetch_many"):
+        _write_batch(sink, source.fetch_many(ESTACOES, now - COLLECT_WINDOW, now), "collect-ana")
+        return None
     failed = []
     for i, estacao in enumerate(ESTACOES):
         if i:
@@ -184,9 +219,35 @@ def _month_chunks(start: date, end: date):
         cur = stop + timedelta(days=1)
 
 
+def _window_chunks(start: date, end: date, days: int):
+    cur = start
+    while cur <= end:
+        stop = min(cur + timedelta(days=days - 1), end)
+        yield cur, stop
+        cur = stop + timedelta(days=1)
+
+
 def backfill_ana(source: AnaSource, sink, start: date, end: date, sleep=time.sleep) -> None:
-    """Monthly chunks per station (UTC days, inclusive), >=2 s between requests. Idempotent:
-    points are keyed by (estacao, time)."""
+    """Batch source: chunks of at most `max_window_days` days (UTC days, inclusive), one
+    `fetch_many` per chunk, >=2 s between requests. Per-station source: monthly chunks per
+    station. Idempotent: points are keyed by (estacao, time)."""
+    if hasattr(source, "fetch_many"):
+        failed_chunks = 0
+        for i, (c_start, c_end) in enumerate(_window_chunks(start, end, source.max_window_days)):
+            if i:
+                sleep(BACKFILL_SLEEP_S)
+            inicio = datetime(c_start.year, c_start.month, c_start.day, tzinfo=timezone.utc)
+            fim = datetime(c_end.year, c_end.month, c_end.day, 23, 59, 59, tzinfo=timezone.utc)
+            try:
+                data = source.fetch_many(ESTACOES, inicio, fim)
+                _write_batch(sink, data, "backfill-ana")
+            except Exception as exc:
+                failed_chunks += 1
+                log("ERROR", "backfill-ana", "chunk failed", start=c_start.isoformat(),
+                    end=c_end.isoformat(), error=type(exc).__name__)
+        if failed_chunks:
+            raise RuntimeError(f"backfill-ana failed for {failed_chunks} chunk(s)")
+        return
     failed: list[str] = []
     first = True
     for estacao in ESTACOES:

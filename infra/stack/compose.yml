@@ -139,6 +139,9 @@ services:
       INFLUX_WORKER_TOKEN: ${INFLUX_WORKER_TOKEN:?INFLUX_WORKER_TOKEN is required}
       PG_WORKER_DSN: ${PG_WORKER_DSN:?PG_WORKER_DSN is required}
       WORKER_VERSION: ${WORKER_TAG}
+      ANA_SOURCE: ${ANA_SOURCE:-hidrowebservice}
+      ANA_HIDRO_USER: ${ANA_HIDRO_USER:-}
+      ANA_HIDRO_PASS: ${ANA_HIDRO_PASS:-}
     networks:
       default: {}
       pg: {}

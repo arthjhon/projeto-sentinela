@@ -471,6 +471,31 @@ sudoedit /srv/sentinela/stack/.env      # nomes em infra/stack/.env.example
   (`/var/log/sentinela-stack-deploy.log`, root 600), sem máscara. O validador escapa caracteres de
   controle (`\n` vira o texto `\n`), então cada violação ocupa uma linha só no log.
 
+### 10b. Fonte ANA (HidroWebService) e rollback
+
+O job `ana` lê o HidroWebService (`ANA_SOURCE=hidrowebservice`, padrão), uma requisição para as 5
+estações a cada 15 min. O serviço legado (`telemetriaws1.ana.gov.br`) fica como fallback
+(`ANA_SOURCE=legado`).
+
+- **Credencial**: `ANA_HIDRO_USER` e `ANA_HIDRO_PASS` no `.env` da VM (`/srv/sentinela/stack/.env`,
+  root 600; passo 10). É a conta pessoal (CPF) do Arthur, uso autorizado em 2026-11-20. Nunca em
+  repositório, log ou argv. Sem a credencial, o job `ana` falha com
+  `credencial ANA ausente (ANA_HIDRO_USER/ANA_HIDRO_PASS)` e os outros jobs seguem. Valor de
+  `ANA_SOURCE` inválido derruba o worker na partida (o deploy faz rollback automático).
+- **Rollback para o legado**: `ANA_SOURCE=legado` no `.env` e
+  `sudo /usr/local/sbin/stack-deploy.sh none` (recria o worker com a mesma imagem). O legado vinha
+  dando timeout em 2026-11-20; confirmar que responde antes de depender dele.
+- **Backfill**: `backfill-ana` usa a mesma fonte. O container avulso do passo 13 precisa de
+  `ANA_SOURCE`, `ANA_HIDRO_USER` e `ANA_HIDRO_PASS` no env-file (mesmo cuidado: tmpfs, root 600,
+  nunca por argv). Janelas de até 29 dias, uma requisição por janela.
+- **Comparação única entre fontes** (validar unidades e cobertura antes de desligar o legado):
+  mesma janela de 24 h nas duas fontes (`ANA_SOURCE=legado` e `hidrowebservice`, container avulso
+  com sink de contagem, sem escrever no Influx) e comparar `vazao`, `nivel` e `chuva` por estação
+  e horário. Conferir em especial a unidade de `Cota_Adotada` (HidroWeb, gravada como `nivel`)
+  contra `Nivel` do legado. Divergência de unidade bloqueia a troca de fonte.
+- O HidroWeb grava também `vazao_status`, `nivel_status` e `chuva_status` (inteiros, só quando a
+  API informa).
+
 ### 11. Primeiro deploy (com sha)
 
 Nota: se `sentinela-influxdb-data` já existir na VM (dados antigos), o InfluxDB ignora os
