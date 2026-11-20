@@ -190,6 +190,14 @@ def test_busca_params_29_days():
     assert busca_params(inicio, fim, date(2026, 11, 19)) == (date(2026, 11, 10), "DIAS_30")
 
 
+def test_busca_params_today_fim_before_now_measures_span_from_now():
+    now = local(2026, 11, 19, 12, 0)
+    inicio, fim = local(2026, 11, 17, 0), local(2026, 11, 19, 0)  # span exactly 2 d, but now is 12 h later
+    assert busca_params(inicio, fim, now.date(), now) == (date(2026, 11, 19), "DIAS_7")
+    # without `now` the window would be mistaken for DIAS_2 and lose the first 12 h
+    assert busca_params(inicio, fim, now.date()) == (date(2026, 11, 19), "DIAS_2")
+
+
 def test_busca_params_uses_local_date_of_fim():
     fim = utc(2026, 11, 11, 1, 0)  # 22:00 on the 10th in Maceio
     assert busca_params(fim - timedelta(hours=3), fim, date(2026, 11, 19))[0] == date(2026, 11, 10)
@@ -203,9 +211,10 @@ def test_busca_params_window_beyond_api_raises():
 # --- fetch_many / token ------------------------------------------------------
 
 
-def test_fetch_many_one_request_for_all_stations():
+def test_fetch_many_one_request_for_all_stations(wall):
     api = Api()
     now = local(2026, 11, 19, 23, 33)
+    wall[0] = now
     src = make(api)
     out = src.fetch_many(ESTACOES, now - timedelta(hours=48), now)
     assert set(out) == set(ESTACOES)
@@ -217,6 +226,25 @@ def test_fetch_many_one_request_for_all_stations():
         "Data de Busca (yyyy-MM-dd)": "2026-11-19",
         "Range Intervalo de busca": "DIAS_2",
     }
+
+
+def test_fetch_many_today_decision_uses_utcnow_seam(wall):
+    wall[0] = local(2026, 11, 19, 12, 0)  # "today" is 2026-11-19 even though the real date is later
+    api = Api()
+    make(api).fetch_many(FOUR, local(2026, 11, 17, 0), local(2026, 11, 19, 0))
+    q = dict(api.series_reqs[0].url.params)
+    assert (q["Data de Busca (yyyy-MM-dd)"], q["Range Intervalo de busca"]) == ("2026-11-19", "DIAS_7")
+    wall[0] = local(2026, 11, 25, 12, 0)  # fim now clearly in the past: midnight-aligned DIAS_2
+    api = Api()
+    make(api).fetch_many(FOUR, local(2026, 11, 18, 0), local(2026, 11, 19, 0))
+    assert dict(api.series_reqs[0].url.params)["Range Intervalo de busca"] == "DIAS_2"
+
+
+def test_auth_response_too_large_raises():
+    api = Api(auth=[httpx.Response(200, content=b"x" * (hidroweb.MAX_AUTH_BODY_BYTES + 1))])
+    with pytest.raises(hidroweb.AnaAuthError, match="too large"):
+        make(api).fetch("39770000", *WIN)
+    assert not api.series_reqs
 
 
 def test_rows_are_filtered_to_window():

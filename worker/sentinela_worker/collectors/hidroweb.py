@@ -26,6 +26,7 @@ AUTH_URL = f"{BASE_URL}/OAUth/v1"
 SERIE_URL = f"{BASE_URL}/HidroinfoanaSerieTelemetricaAdotada/v2"
 TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 MAX_STATIONS = 10
+MAX_AUTH_BODY_BYTES = 64 * 1024
 DEFAULT_TOKEN_LIFE_S = 50 * 60
 TOKEN_MARGIN_S = 5 * 60
 DAY_RANGES = ((2, "DIAS_2"), (7, "DIAS_7"), (14, "DIAS_14"), (21, "DIAS_21"), (30, "DIAS_30"))
@@ -65,13 +66,14 @@ def _parse_validade(text) -> datetime | None:
         return None
 
 
-def busca_params(inicio: datetime, fim: datetime, today: date) -> tuple[date, str]:
+def busca_params(inicio: datetime, fim: datetime, today: date, now: datetime | None = None) -> tuple[date, str]:
     """`(Data de Busca, Range)` for the window inicio..fim (tz-aware). The date is the local
-    date of `fim`. For today the window is the rolling span ending at `fim` (taken as now);
-    for a past date it ends at the end of that day. Raises ValueError beyond DIAS_30."""
+    date of `fim`. For today the server window is the rolling span ending at the real `now`
+    (default: `fim`), so the span is measured from max(fim, now); for a past date it ends at
+    the end of that day. Raises ValueError beyond DIAS_30."""
     d = fim.astimezone(LOCAL_TZ).date()
     if d >= today:
-        span = fim - inicio
+        span = max(fim, now or fim) - inicio
         if span <= timedelta(hours=24):
             return d, "HORA_24"
         for n, name in DAY_RANGES:
@@ -163,15 +165,20 @@ class HidroWebSource:
     # -- auth -----------------------------------------------------------------
     def _authenticate(self) -> None:
         self._token = None
-        resp = self._client.get(
-            AUTH_URL,
+        buf = bytearray()
+        with self._client.stream(
+            "GET", AUTH_URL,
             headers={"Identificador": self._user, "Senha": self._password, "User-Agent": USER_AGENT},
             timeout=TIMEOUT,
-        )
-        if resp.status_code != 200:
-            raise AnaAuthError(f"ANA auth failed: HTTP {resp.status_code}")
+        ) as resp:
+            if resp.status_code != 200:
+                raise AnaAuthError(f"ANA auth failed: HTTP {resp.status_code}")
+            for chunk in resp.iter_bytes():
+                buf += chunk
+                if len(buf) > MAX_AUTH_BODY_BYTES:
+                    raise AnaAuthError("ANA auth failed: response too large")
         try:
-            items = resp.json().get("items") or {}
+            items = json.loads(bytes(buf)).get("items") or {}
             token = items.get("tokenautenticacao")
             ok = items.get("sucesso") is True and isinstance(token, str) and bool(token)
         except (ValueError, AttributeError):
@@ -217,7 +224,8 @@ class HidroWebSource:
             raise ValueError(f"between 1 and {MAX_STATIONS} stations per request")
         if fim - inicio > timedelta(days=self.max_window_days):
             raise ValueError(f"window longer than {self.max_window_days} days")
-        d, rng = busca_params(inicio, fim, datetime.now(LOCAL_TZ).date())
+        now = _utcnow()
+        d, rng = busca_params(inicio, fim, now.astimezone(LOCAL_TZ).date(), now)
         params = {
             "Codigos_Estacoes": ",".join(estacoes),
             "Tipo Filtro Data": "DATA_LEITURA",
