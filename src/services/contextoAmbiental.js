@@ -11,7 +11,7 @@ export const ESTACOES_LABEL = {
   '39800100': 'Maceió-Hidro',
 };
 // Maceió-Hidro (39800100) ainda não devolve dados
-export const ESTACOES_COM_DADOS = Object.keys(ESTACOES_LABEL).slice(0, 4);
+export const ESTACOES_COM_DADOS = ['39770000', '39760000', '39740000', '39700000'];
 export const ESTACAO_PADRAO = '39770000';
 
 const DIA_MS = 24 * 60 * 60 * 1000;
@@ -84,8 +84,11 @@ export async function carregarContexto({ deviceIds, estacao, inicio, duracao }, 
     ['turbidez', () => fetchTurbidezJanela(deviceIds, inicio, duracao, { signal })],
     ['ana', () => fetchAna(estacao, inicio, duracao, { signal })],
   ];
+  // as duas séries entram em loading já, com dados limpos: nada da janela,
+  // estação ou bóia anterior pode ficar ao lado de um erro ou do novo eixo X
+  emit('turbidez', { data: [], loading: true, error: null });
+  emit('ana', { data: ANA_VAZIO, loading: true, error: null });
   for (const [chave, buscar] of passos) {
-    emit(chave, { loading: true, error: null });
     try {
       emit(chave, { data: await buscar(), loading: false, error: null });
     } catch (err) {
