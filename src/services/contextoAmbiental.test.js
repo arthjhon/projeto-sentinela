@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   ESTACOES_LABEL, ESTACOES_COM_DADOS, ESTACAO_PADRAO,
-  janelaAtalho, janelaIntervalo, dominio, mapAnaSeries, fetchAna, fetchTurbidezJanela,
+  janelaAtalho, janelaIntervalo, dominio, mapAnaSeries, comLacunas, PASSO_MS, fetchAna, fetchTurbidezJanela,
 } from './contextoAmbiental';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -109,5 +109,25 @@ describe('fetchTurbidezJanela', () => {
   it('rejects on Influx error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 502, json: async () => ({}) }));
     await expect(fetchTurbidezJanela(['esp_a'], '2026-11-13', '7d')).rejects.toThrow('Influx 502');
+  });
+});
+
+describe('comLacunas', () => {
+  const pt = (ms, value = 1) => ({ time: new Date(ms), value });
+  const H = 3600000;
+
+  it('comLacunas inserts a null break between points more than one bucket apart', () => {
+    const out = comLacunas([pt(5 * H), pt(0), pt(H)], H);
+    expect(out.map(p => [p.time.getTime(), p.value])).toEqual([[0, 1], [H, 1], [2 * H, null], [5 * H, 1]]);
+  });
+
+  it('comLacunas leaves contiguous buckets untouched', () => {
+    const pts = [pt(0), pt(H), pt(2 * H)];
+    expect(comLacunas(pts, H)).toEqual(pts);
+    expect(comLacunas([], H)).toEqual([]);
+  });
+
+  it('bucket ms per duracao', () => {
+    expect(PASSO_MS).toEqual({ '7d': 900000, '30d': 3600000, '90d': 10800000, '180d': 21600000 });
   });
 });

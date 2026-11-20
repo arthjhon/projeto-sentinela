@@ -1,5 +1,6 @@
 // Camada de dados da página /admin/contexto: turbidez de uma bóia empilhada
 // sobre chuva/vazão/nível das estações da ANA, no mesmo eixo de tempo.
+import { DURACOES } from './influxQueries';
 import { fetchNamed, fetchNamedPerDevice, rowsOf } from './influxql';
 import { mapHistorySeries, mergeHistorySeries } from '../hooks/useInfluxHistory';
 
@@ -38,6 +39,30 @@ export function janelaIntervalo(inicio, duracao) {
 export function dominio(inicio, duracao, agora) {
   const { t0, t1 } = janelaIntervalo(inicio, duracao);
   return [t0.getTime(), Math.min(t1.getTime(), agora.getTime())];
+}
+
+/** Tamanho do balde do GROUP BY em ms por duração ('180d' -> 6 h): primeiro token de DURACOES. */
+export const PASSO_MS = Object.fromEntries(Object.entries(DURACOES).map(([duracao, every]) => {
+  const [, n, unidade] = /^(\d+)([mh])/.exec(every);
+  return [duracao, Number(n) * (unidade === 'h' ? 3600000 : 60000)];
+}));
+
+/**
+ * Ordena e insere um ponto `value: null` logo após cada ponto seguido de um
+ * buraco maior que `passoMs` (estritamente), para a linha quebrar em vez de
+ * ligar duas leituras distantes como se houvesse medição no meio.
+ */
+export function comLacunas(points, passoMs) {
+  const sorted = [...points].sort((a, b) => a.time - b.time);
+  const out = [];
+  sorted.forEach((p, i) => {
+    out.push(p);
+    const next = sorted[i + 1];
+    if (next && next.time - p.time > passoMs) {
+      out.push({ time: new Date(p.time.getTime() + passoMs), value: null });
+    }
+  });
+  return out;
 }
 
 /** Série de ana -> { chuva, vazao, nivel }; sem leitura = ponto com value null (lacuna, nunca 0). */

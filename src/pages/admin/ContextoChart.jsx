@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { comLacunas } from '../../services/contextoAmbiental';
 import {
   ResponsiveContainer, LineChart, BarChart, Line, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceArea,
@@ -13,17 +14,24 @@ const TOOLTIP_STYLE = {
   background: '#0D141F', color: '#e6f0fa', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 13,
 };
 
+// ponto sem vizinho válido não forma segmento: sem marcador ele sumiria
+const isolatedDot = (rows, color) => ({ cx, cy, index, value }) => {
+  if (value == null || cx == null || cy == null) return <g key={index} />;
+  const alone = rows[index - 1]?.v == null && rows[index + 1]?.v == null;
+  return alone ? <circle key={index} cx={cx} cy={cy} r={3} fill={color} /> : <g key={index} />;
+};
+
 /**
  * Um gráfico do contexto ambiental. `state` = { data: [{time: Date, value}], loading, error }.
  * Todos os gráficos compartilham `syncId`, o domínio X e o arrasto de zoom (`drag`).
  */
 export default function ContextoChart({
-  id, title, state, kind = 'line', color, unit, domain, zoom, drag, onDragStart, onDragMove, onDragEnd,
+  id, title, state, passoMs, kind = 'line', color, unit, domain, zoom, drag, onDragStart, onDragMove, onDragEnd,
 }) {
   const rows = useMemo(() => {
-    const all = state.data.map(p => ({ t: p.time.getTime(), v: p.value }));
+    const all = (kind === 'bar' ? state.data : comLacunas(state.data, passoMs)).map(p => ({ t: p.time.getTime(), v: p.value }));
     return zoom ? all.filter(r => r.t >= zoom[0] && r.t <= zoom[1]) : all;
-  }, [state.data, zoom]);
+  }, [state.data, zoom, kind, passoMs]);
   const hasValue = rows.some(r => r.v != null);
   const validDomain = domain.every(Number.isFinite);
   const xDomain = validDomain ? domain : ['dataMin', 'dataMax'];
@@ -73,7 +81,7 @@ export default function ContextoChart({
           <LineChart {...common}>
             {axes}
             <Line
-              type="linear" dataKey="v" stroke={color} strokeWidth={2} dot={false}
+              type="linear" dataKey="v" stroke={color} strokeWidth={2} dot={isolatedDot(rows, color)}
               connectNulls={false} isAnimationActive={false}
             />
           </LineChart>

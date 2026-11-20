@@ -3,7 +3,7 @@ import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { deviceIdsOf } from '../../services/buoyRegistry';
 import { useContextoAmbiental } from '../../hooks/useContextoAmbiental';
 import {
-  ESTACOES_LABEL, ESTACOES_COM_DADOS, ESTACAO_PADRAO, janelaAtalho, dominio,
+  ESTACOES_LABEL, ESTACOES_COM_DADOS, ESTACAO_PADRAO, janelaAtalho, dominio, PASSO_MS,
 } from '../../services/contextoAmbiental';
 import ContextoChart from './ContextoChart';
 import './ContextoPage.css';
@@ -42,7 +42,7 @@ export default function ContextoPage() {
     }
     setDrag(null);
   };
-  const dragProps = { zoom, drag, onDragStart, onDragMove, onDragEnd, domain };
+  const dragProps = { passoMs: PASSO_MS[janela.duracao], zoom, drag, onDragStart, onDragMove, onDragEnd, domain };
 
   const nomeEstacao = ESTACOES_LABEL[estacao];
   const nomeBoia = buoy ? `${buoy.codigo} ${buoy.nome}` : '—';
