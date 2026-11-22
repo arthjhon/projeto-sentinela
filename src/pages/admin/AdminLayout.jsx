@@ -66,7 +66,7 @@ const AdminLayout = () => {
                       onClick={fecharMenu}
                       className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                     >
-                      <Icon size={20} />
+                      <Icon size={18} />
                       <span>{item.label}</span>
                     </NavLink>
                   );
