@@ -16,6 +16,12 @@ export function normalizeDeviceIds(input) {
   return out;
 }
 
+/** Serial atual da bóia se estiver no formato aceito (DEVICE_ID_RE); senão null. Card, painel e MQTT usam este. */
+export function serialValido(buoy) {
+  const id = buoy?.deviceId;
+  return typeof id === 'string' && DEVICE_ID_RE.test(id) ? id : null;
+}
+
 /** [deviceId atual, ...deviceIdsAnteriores] — só ids válidos, sem duplicata. */
 export function deviceIdsOf(buoy) {
   return normalizeDeviceIds([buoy?.deviceId, ...(buoy?.deviceIdsAnteriores ?? [])]);

@@ -1,6 +1,7 @@
 import { getSetting, saveSetting } from './settings';
 import { FLEET } from '../config/fleet';
 
+import { serialValido } from '../utils/deviceIds';
 export { deviceIdsOf, applyDeviceIdChange } from '../utils/deviceIds';
 
 export const MAP_BUOYS_KEY = 'map_buoys';
@@ -32,8 +33,9 @@ export async function saveBuoyRegistry(buoys) {
 /** Tópicos MQTT das bóias com deviceId, no mesmo formato de getMqttTopics (fleet.js). */
 export function topicsForRegistry(buoys, suffixes = ['sensores', 'status', 'availability']) {
   return buoys
-    .filter(b => b.deviceId)
-    .flatMap(b => suffixes.map(s => `${b.deviceId}/${s}`));
+    .map(b => serialValido(b))
+    .filter(Boolean)
+    .flatMap(id => suffixes.map(s => `${id}/${s}`));
 }
 
 /**

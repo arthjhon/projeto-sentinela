@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   formatIdade, ultimaLeituraMs, conexaoDaBoia, rotuloConexao, rotuloGravada,
   formatValor, minMax, serieGrafico, resumoColeta, resumoBoia, formatTick,
-  mensagemDaSessao, extremos24h, avisoBroker,
+  mensagemDaSessao, extremos24h, avisoBroker, rotuloOrigem, estadoColeta, seloManutencao, textoSemSaude,
 } from './dashboardView';
 
 describe('formatIdade', () => {
@@ -282,5 +282,100 @@ describe('avisoBroker', () => {
   it('antes da primeira conexão = conectando; depois de cair = desconectado', () => {
     expect(avisoBroker({ conectado: false, jaConectou: false })).toBe('conectando');
     expect(avisoBroker({ conectado: false, jaConectou: true })).toBe('desconectado');
+  });
+});
+
+describe('extremos24h com o buffer da sessão (MQTT)', () => {
+  const agoraMs = 1_000_000_000;
+  const hist24 = { ph: [{ time: new Date(1), value: 7 }], temperatura: [], turbidez: [] };
+  it('inclui as leituras ao vivo das últimas 24 h', () => {
+    const buffer = [{ ts: agoraMs - 5000, ph: 9.2 }, { ts: agoraMs - 1000, ph: 5.1 }];
+    expect(extremos24h(hist24, [], 'ph', agoraMs, buffer)).toEqual({ min: 5.1, max: 9.2 });
+  });
+  it('ignora entrada com mais de 24 h (borda inclusa), sem o campo ou nula', () => {
+    const buffer = [
+      { ts: agoraMs - 86400e3, ph: 8 },
+      { ts: agoraMs - 86400e3 - 1, ph: 99 },
+      { ts: agoraMs - 10, ph: null },
+      { ts: agoraMs - 10, temperatura: 30 },
+    ];
+    expect(extremos24h(hist24, [], 'ph', agoraMs, buffer)).toEqual({ min: 7, max: 8 });
+  });
+  it('só o buffer tem valor: usa o buffer; sem buffer segue como antes', () => {
+    expect(extremos24h(hist24, [], 'temperatura', agoraMs, [{ ts: agoraMs - 1, temperatura: 28 }])).toEqual({ min: 28, max: 28 });
+    expect(extremos24h(hist24, [], 'temperatura', agoraMs)).toBeNull();
+  });
+  it('carregando e erro valem mesmo com buffer', () => {
+    const buffer = [{ ts: agoraMs - 1, ph: 7 }];
+    expect(extremos24h(null, [], 'ph', agoraMs, buffer)).toBeUndefined();
+    expect(extremos24h({ erro: 'x' }, [], 'ph', agoraMs, buffer)).toBe('erro');
+  });
+});
+
+describe('rotuloOrigem (idade da mensagem da sessão)', () => {
+  const agoraMs = 10_000_000;
+  it('até 60 s: ao vivo', () => {
+    expect(rotuloOrigem({ fonte: 'ao-vivo', em: agoraMs - 4000 }, agoraMs)).toBe('ao vivo, há 4 s');
+    expect(rotuloOrigem({ fonte: 'ao-vivo', em: agoraMs - 60000 }, agoraMs)).toBe('ao vivo, há 1 min');
+  });
+  it('acima de 60 s: recebida há X, nunca "ao vivo"', () => {
+    expect(rotuloOrigem({ fonte: 'ao-vivo', em: agoraMs - 60001 }, agoraMs)).toBe('recebida há 1 min');
+    expect(rotuloOrigem({ fonte: 'ao-vivo', em: agoraMs - 2 * 3600e3 }, agoraMs)).toBe('recebida há 2 h');
+  });
+  it('sem hora de chegada: ao vivo sem inventar idade', () => {
+    expect(rotuloOrigem({ fonte: 'ao-vivo', em: null }, agoraMs)).toBe('ao vivo');
+  });
+  it('gravada e sem dado', () => {
+    expect(rotuloOrigem({ fonte: 'gravada', em: agoraMs - 3600e3 }, agoraMs)).toMatch(/^gravada (às|em)/);
+    expect(rotuloOrigem({ fonte: null, em: null }, agoraMs)).toBe('nem no MQTT nem no histórico gravado');
+  });
+});
+
+describe('estadoColeta (undefined = carregando, null = falhou)', () => {
+  const agora = new Date('2026-11-22T12:00:00Z');
+  it('carregando', () => expect(estadoColeta(undefined, agora)).toEqual({ tipo: 'carregando' }));
+  it('falhou', () => expect(estadoColeta(null, agora)).toEqual({ tipo: 'falha' }));
+  it('sem jobs (ou só o status)', () => {
+    expect(estadoColeta([], agora)).toEqual({ tipo: 'vazio' });
+    expect(estadoColeta([{ job: 'status', ok: true, ultimo_sucesso: agora.toISOString() }], agora)).toEqual({ tipo: 'vazio' });
+  });
+  it('com jobs: itens de resumoColeta', () => {
+    const jobs = [{ job: 'ana', ok: true, ultimo_sucesso: agora.toISOString() }];
+    const r = estadoColeta(jobs, agora);
+    expect(r.tipo).toBe('itens');
+    expect(r.itens).toEqual(resumoColeta(jobs, agora));
+  });
+});
+
+describe('seloManutencao', () => {
+  it('registro aberto: em manutenção, com o motivo', () => {
+    expect(seloManutencao({ motivo: 'troca de sonda' })).toEqual({ tipo: 'aberta', texto: 'em manutenção', title: 'troca de sonda' });
+    expect(seloManutencao({ motivo: null }).title).toBeUndefined();
+  });
+  it('leitura falhou: indisponível, nunca some', () => {
+    expect(seloManutencao('erro')).toEqual({ tipo: 'indisponivel', texto: 'manutenção: indisponível' });
+  });
+  it('sem manutenção ou ainda não lida: nenhum selo', () => {
+    expect(seloManutencao(null)).toBeNull();
+    expect(seloManutencao(undefined)).toBeNull();
+  });
+});
+
+describe('textoSemSaude (card e painel dizem o mesmo)', () => {
+  it('leitura falhou: saúde indisponível; senão sem avaliação', () => {
+    expect(textoSemSaude(true)).toBe('saúde indisponível');
+    expect(textoSemSaude(false)).toBe('sem avaliação');
+  });
+});
+
+describe('serial fora do formato (DEVICE_RE) = sem serial válido', () => {
+  const agoraMs = Date.parse('2026-11-22T12:00:00Z');
+  it('resumoBoia: sem hardware e sem saúde de outra bóia', () => {
+    const r = resumoBoia({
+      buoy: { codigo: 'SM-01', deviceId: 'ab c', modo: 'campo' }, mqtt: {}, ultimas: [],
+      healthRows: [{ device_id: 'ab c', sensor: 'ph', estado: 'falha' }], agoraMs,
+    });
+    expect(r.conexao).toBe('sem-hardware');
+    expect(r.saude).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import React from 'react';
 import { classifyParam, WATER_PARAMS } from '../../../config/waterQuality';
 import { estadoMeta } from '../../../services/sensorHealth';
-import { TOM_CLASSE, formatIdade, formatValor, rotuloGravada } from '../../../utils/dashboardView';
+import { TOM_CLASSE, formatValor, rotuloOrigem, textoSemSaude } from '../../../utils/dashboardView';
 
 const PARAM = Object.fromEntries(WATER_PARAMS.map((p) => [p.key, p]));
 
@@ -10,14 +10,12 @@ const PARAM = Object.fromEntries(WATER_PARAMS.map((p) => [p.key, p]));
  * detector e mín./máx. das últimas 24 h. `saude` = linha do sensor em
  * healthForDevice (ou null); `extremos` = {min, max} | null (sem leitura) | undefined (carregando) | 'erro'.
  */
-export default function SensorCard({ campo, atual, saude, extremos, agoraMs }) {
+export default function SensorCard({ campo, atual, saude, saudeIndisponivel, extremos, agoraMs }) {
   const p = PARAM[campo];
   const Icone = p.icon;
   const faixa = classifyParam(campo, atual.valor);
   const meta = saude ? estadoMeta(saude.estado) : null;
-  const origem = atual.fonte === 'ao-vivo'
-    ? `ao vivo, ${formatIdade(agoraMs - atual.em) ?? ''}`
-    : atual.fonte === 'gravada' ? rotuloGravada(atual.em, agoraMs) : 'nem no MQTT nem no histórico gravado';
+  const origem = rotuloOrigem(atual, agoraMs);
 
   return (
     <div className="sensor-card glass" style={faixa ? { borderColor: `${faixa.color}55` } : undefined}>
@@ -33,7 +31,7 @@ export default function SensorCard({ campo, atual, saude, extremos, agoraMs }) {
           <dd>
             {meta
               ? <span className={`badge ${TOM_CLASSE[meta.tone]}`} title={saude.motivo ?? undefined}>{meta.label}</span>
-              : <span className="text-muted">sem avaliação</span>}
+              : <span className="text-muted">{textoSemSaude(saudeIndisponivel)}</span>}
           </dd>
         </div>
         <div>

@@ -89,13 +89,18 @@ export async function listarManutencoes(boiaId) {
   return data ?? [];
 }
 
-/** Manutenção aberta da bóia, se houver (para a UI saber o estado real). */
+/**
+ * Manutenção aberta da bóia, se houver (para a UI saber o estado real). Com
+ * mais de uma aberta (maybeSingle lançaria), vale a mais recente: continua "aberta".
+ */
 export async function manutencaoAberta(boiaId) {
   const { data, error } = await supabase
     .from('maintenance_logs')
     .select('*')
     .eq('boia_id', boiaId)
     .is('timestamp_fim', null)
+    .order('timestamp_inicio', { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data;

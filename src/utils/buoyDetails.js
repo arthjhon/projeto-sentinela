@@ -1,4 +1,5 @@
 import { qualidadeSinal } from './dashboard';
+import { formatIdade } from './dashboardView';
 
 // Formatação do modal "Detalhes da bóia". Valor ausente devolve null: quem
 // renderiza decide o texto ("sem leitura"); nunca se inventa número.
@@ -31,6 +32,12 @@ export function formatMemoria(free, total) {
   if (!f) return null;
   const t = formatBytes(total);
   return t ? `${f} livres de ${t}` : `${f} livres`;
+}
+
+/** "recebido há X" de um valor de /status da sessão (`_recebidoEm`); sem hora = null. */
+export function rotuloRecebido(recebidoEm, agoraMs) {
+  const idade = typeof recebidoEm === 'number' && Number.isFinite(recebidoEm) ? formatIdade(agoraMs - recebidoEm) : null;
+  return idade ? `recebido ${idade}` : null;
 }
 
 /** RSSI + qualidade em texto. */

@@ -19,6 +19,10 @@ describe('topicsForRegistry', () => {
     ]);
   });
 
+  it('serial fora do formato não vira tópico (não se assina MQTT com ele)', () => {
+    expect(topicsForRegistry([{ codigo: 'X', deviceId: 'ab c' }, { codigo: 'Y', deviceId: 'a/#' }])).toEqual([]);
+  });
+
   it('respeita suffixes customizados', () => {
     expect(topicsForRegistry(buoys, ['ota/status'])).toEqual([
       'esp_a/ota/status',

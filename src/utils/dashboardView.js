@@ -1,12 +1,11 @@
-import { estadoConexao, valorAtual, piorSaude } from './dashboard';
+import { estadoConexao, valorAtual, piorSaude, num, SEM_LEITURA_MS } from './dashboard';
+import { serialValido } from './deviceIds';
 import { healthForDevice, jobStaleness, jobTitle } from '../services/sensorHealth';
 import { normalizeModo } from '../services/buoyRegistry';
 import { WATER_PARAMS } from '../config/waterQuality';
 
 // Formatação e resumo da visão geral (faixa da frota e painel da bóia).
 // Puro: sem React, sem I/O; `agoraMs` sempre vem de quem chama.
-
-const num = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
 export const CAMPOS = ['temperatura', 'ph', 'turbidez'];
 
@@ -122,15 +121,44 @@ const DIA_MS = 86400e3;
 
 /**
  * Mín./máx. das últimas 24 h de um campo: médias de 10 min gravadas
- * (`hist24[campo]`, history 24h) + leituras brutas de `ultimas` com até 24 h
- * (borda inclusa). `hist24` null = carregando (undefined); {erro} = 'erro';
- * nenhum valor = null.
+ * (`hist24[campo]`, history 24h) + leituras brutas de `ultimas` + o buffer MQTT
+ * da sessão (`buffer`: [{ts, <campo>}]), estes dois só com até 24 h (borda
+ * inclusa). `hist24` null = carregando (undefined); {erro} = 'erro'; nenhum
+ * valor = null.
  */
-export function extremos24h(hist24, ultimas, campo, agoraMs) {
+export function extremos24h(hist24, ultimas, campo, agoraMs, buffer = []) {
   if (hist24 === null) return undefined;
   if (hist24.erro) return 'erro';
   const brutas = (ultimas ?? []).filter((r) => agoraMs - r.time <= DIA_MS).map((r) => num(r[campo]));
-  return minMax([...(hist24[campo] ?? []).map((d) => d.value), ...brutas]);
+  const aoVivo = (buffer ?? []).filter((e) => agoraMs - e.ts <= DIA_MS).map((e) => num(e[campo]));
+  return minMax([...(hist24[campo] ?? []).map((d) => d.value), ...brutas, ...aoVivo]);
+}
+
+/**
+ * Origem do valor no card. Mensagem MQTT com mais de 60 s (SEM_LEITURA_MS) não
+ * é "ao vivo": diz "recebida há X". Sem hora de chegada, "ao vivo" sem idade.
+ */
+export function rotuloOrigem(atual, agoraMs) {
+  if (atual.fonte === 'ao-vivo') {
+    if (atual.em == null) return 'ao vivo';
+    const ms = agoraMs - atual.em;
+    return ms > SEM_LEITURA_MS ? `recebida ${formatIdade(ms)}` : `ao vivo, ${formatIdade(ms)}`;
+  }
+  if (atual.fonte === 'gravada') return rotuloGravada(atual.em, agoraMs);
+  return 'nem no MQTT nem no histórico gravado';
+}
+
+/** Texto de "sem saúde para mostrar": leitura falhou x bóia sem linhas (mesmo texto no card e no painel). */
+export const textoSemSaude = (indisponivel) => (indisponivel ? 'saúde indisponível' : 'sem avaliação');
+
+/**
+ * Selo de manutenção do card. `manutencao`: registro aberto | null (nenhuma) |
+ * 'erro' (leitura falhou) | undefined (ainda não lida). Falha nunca some.
+ */
+export function seloManutencao(manutencao) {
+  if (manutencao === 'erro') return { tipo: 'indisponivel', texto: 'manutenção: indisponível' };
+  if (manutencao) return { tipo: 'aberta', texto: 'em manutenção', title: manutencao.motivo ?? undefined };
+  return null;
 }
 
 /**
@@ -148,6 +176,17 @@ export function serieGrafico(history, buffer, campo) {
 }
 
 const JOB_ROTULO = { openmeteo: 'Open-Meteo', ana: 'ANA', detector: 'Detector' };
+
+/**
+ * Estado da coleta do worker para a UI: `jobs` undefined = carregando, null =
+ * leitura falhou. {tipo: 'carregando' | 'falha' | 'vazio' | 'itens', itens?}.
+ */
+export function estadoColeta(jobs, agora) {
+  if (jobs === undefined) return { tipo: 'carregando' };
+  if (jobs === null) return { tipo: 'falha' };
+  const itens = resumoColeta(jobs, agora);
+  return itens.length ? { tipo: 'itens', itens } : { tipo: 'vazio' };
+}
 
 /**
  * Resumo da coleta do worker: um item por job (menos `status`, que é sinal da
@@ -179,10 +218,12 @@ export function resumoBoia({ buoy, mqtt, ultimas, healthRows, agoraMs, brokerCon
   const sensores = mqtt?.sensores ?? null;
   const ultimaMs = ultimaLeituraMs({ sensores, ultimas });
   const valores = Object.fromEntries(CAMPOS.map((c) => [c, valorAtual({ mqtt: sensores, ultimas }, c)]));
-  const saude = buoy?.deviceId ? piorSaude(healthForDevice(healthRows, buoy.deviceId, modo).sensores) : null;
+  // serial fora do formato = sem serial válido (igual ao painel, que só usa deviceIdsOf)
+  const serial = serialValido(buoy);
+  const saude = serial ? piorSaude(healthForDevice(healthRows, serial, modo).sensores) : null;
   return {
     modo,
-    conexao: conexaoDaBoia({ deviceId: buoy?.deviceId, lwt: mqtt?.lwt, ultimaMs, agoraMs, brokerConectado }),
+    conexao: conexaoDaBoia({ deviceId: serial, lwt: mqtt?.lwt, ultimaMs, agoraMs, brokerConectado }),
     ultimaMs,
     valores,
     saude,

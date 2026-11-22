@@ -26,8 +26,8 @@
   padding: 0.55rem 0.9rem;
   border-radius: 8px;
   font-size: 0.85rem;
-  color: #cbd5e1;
-  background: rgba(100, 116, 139, 0.12);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 30%, transparent);
 }
 .dash-broker-conectando { color: var(--text-muted); }

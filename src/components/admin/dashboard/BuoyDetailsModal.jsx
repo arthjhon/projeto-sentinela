@@ -3,28 +3,17 @@ import { createPortal } from 'react-dom';
 import { MapContainer, TileLayer, CircleMarker, AttributionControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { X } from 'lucide-react';
+import { TILES } from '../../../config/mapTiles';
 import { supabase } from '../../../lib/supabase';
 import { listarManutencoes, ultimasCalibracoes, manutencaoAberta } from '../../../services/maintenance';
 import { ultimoDeploy } from '../../../services/otaCommand';
 import { normalizeModo } from '../../../services/buoyRegistry';
 import {
-  formatUptime, formatMemoria, formatRssi, blocosDetalhes, estadoFirmware, estadoManutencao,
+  formatUptime, formatMemoria, formatRssi, blocosDetalhes, estadoFirmware, estadoManutencao, rotuloRecebido,
 } from '../../../utils/buoyDetails';
+import { serialValido } from '../../../utils/deviceIds';
+import { destinoTab } from '../../../utils/focusTrap';
 import './BuoyDetailsModal.css';
-
-// Mesmo basemap do mapa público (InteractiveMap): Carto com key, senão Esri.
-const CARTO_KEY = import.meta.env.VITE_CARTO_BASEMAPS_KEY;
-const TILES = CARTO_KEY
-  ? {
-      url: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,
-      subdomains: 'abcd',
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    }
-  : {
-      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-      attribution: '&copy; <a href="https://www.esri.com">Esri</a>',
-      className: 'bdm-tiles-fallback',
-    };
 
 const SEM_LEITURA = 'sem leitura desde que o painel abriu';
 const FALHA = 'indisponível (falha na leitura)';
@@ -46,7 +35,7 @@ const Row = ({ label, children }) => (
 
 const Muted = ({ children, title }) => <span className="bdm-muted" title={title}>{children}</span>;
 
-export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
+export default function BuoyDetailsModal({ buoy, statusMsg, agoraMs, onClose }) {
   const titleRef = useRef(null);
   const dialogRef = useRef(null);
   const [dados, setDados] = useState({ codigo: null, blocos: null });
@@ -66,12 +55,17 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
     const onKey = (e) => {
       if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); return; }
       if (e.key !== 'Tab' || !dialogRef.current) return;
-      const focaveis = dialogRef.current.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');
-      if (!focaveis.length) return;
-      const primeiro = focaveis[0];
-      const ultimo = focaveis[focaveis.length - 1];
-      if (e.shiftKey && document.activeElement === primeiro) { e.preventDefault(); ultimo.focus(); }
-      else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primeiro.focus(); }
+      const focaveis = dialogRef.current.querySelectorAll('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])');
+      const ativo = document.activeElement;
+      const destino = destinoTab({
+        ativo,
+        titulo: titleRef.current,
+        primeiro: focaveis[0],
+        ultimo: focaveis[focaveis.length - 1],
+        dentro: dialogRef.current.contains(ativo),
+        shift: e.shiftKey,
+      });
+      if (destino) { e.preventDefault(); destino.focus(); }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -98,9 +92,14 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
   const memoria = formatMemoria(statusMsg?.free_heap, statusMsg?.total_heap);
   const uptime = formatUptime(statusMsg?.uptime);
   const latencia = Number.isFinite(statusMsg?.mqtt_latency) ? `${Math.round(statusMsg.mqtt_latency)} ms` : null;
+  // idade do /status: o valor não é "agora", é o da última mensagem recebida
+  const recebido = rotuloRecebido(statusMsg?._recebidoEm, agoraMs);
+  const comIdade = (valor) => (valor && <>{valor}{recebido && <Muted> · {recebido}</Muted>}</>);
+  const serial = serialValido(buoy);
   const anteriores = buoy.deviceIdsAnteriores ?? [];
 
   const ausente = <Muted>{SEM_LEITURA}</Muted>;
+  const { fallback, ...tile } = TILES; // `fallback` é só da config; não vai ao TileLayer
 
   return createPortal(
     <div className="bdm-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
@@ -120,7 +119,7 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
               <>
                 <div className="bdm-map">
                   <MapContainer center={[buoy.lat, buoy.lng]} zoom={14} attributionControl={false} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
-                    <TileLayer {...TILES} />
+                    <TileLayer {...tile} className={fallback ? 'bdm-tiles-fallback' : undefined} />
                     <AttributionControl position="bottomright" prefix={false} />
                     <CircleMarker center={[buoy.lat, buoy.lng]} radius={9} pathOptions={{ color: '#00f0ff', fillColor: '#00f0ff', fillOpacity: 0.6 }} />
                   </MapContainer>
@@ -133,7 +132,11 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
           <section className="bdm-sec">
             <h3>Identificação</h3>
             <dl>
-              <Row label="Serial atual">{buoy.deviceId ? <code>{buoy.deviceId}</code> : <Muted>sem serial cadastrado</Muted>}</Row>
+              <Row label="Serial atual">
+                {serial ? <code>{serial}</code>
+                  : buoy.deviceId ? <><code>{String(buoy.deviceId)}</code> <Muted>formato inválido: tratado como sem serial</Muted></>
+                    : <Muted>sem serial cadastrado</Muted>}
+              </Row>
               <Row label="Seriais anteriores">{anteriores.length ? anteriores.map((s) => <code key={s} className="bdm-chip">{s}</code>) : <Muted>nenhum</Muted>}</Row>
               {/* mesmo vocabulário do card (normalizeModo: ausente/inválido = bancada) */}
               <Row label="Modo">{normalizeModo(buoy.modo)}</Row>
@@ -157,10 +160,10 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
                       : ausente}
               </Row>
               <Row label="Calibrada">{typeof statusMsg?.calibrated === 'boolean' ? (statusMsg.calibrated ? 'Sim' : 'Não') : ausente}</Row>
-              <Row label="Tempo ligada">{uptime ?? ausente}</Row>
-              <Row label="Sinal Wi-Fi">{rssi ?? ausente}</Row>
-              <Row label="Memória">{memoria ?? ausente}</Row>
-              <Row label="Latência MQTT">{latencia ?? ausente}</Row>
+              <Row label="Tempo ligada">{comIdade(uptime) || ausente}</Row>
+              <Row label="Sinal Wi-Fi">{comIdade(rssi) || ausente}</Row>
+              <Row label="Memória">{comIdade(memoria) || ausente}</Row>
+              <Row label="Latência MQTT">{comIdade(latencia) || ausente}</Row>
             </dl>
           </section>
 

@@ -9,6 +9,7 @@ import { topicsForRegistry, deviceIdsOf } from '../../services/buoyRegistry';
 import { fetchSensorHealth, fetchWorkerJobs } from '../../services/sensorHealth';
 import { manutencaoAberta } from '../../services/maintenance';
 import { resolverSelecao } from '../../utils/dashboard';
+import { serialValido } from '../../utils/deviceIds';
 import { avisoBroker, mensagemDaSessao, resumoBoia } from '../../utils/dashboardView';
 import { criarFilaSerial } from '../../utils/filaSerial';
 import FleetStrip from '../../components/admin/dashboard/FleetStrip';
@@ -54,8 +55,8 @@ const AdminDashboard = () => {
 
   // ── Saúde, coleta do worker e manutenção aberta (Supabase, 60 s) ──────────
   const [healthRows, setHealthRows] = useState([]);
-  const [jobs, setJobs] = useState(null); // null = indisponível
-  const [manutencao, setManutencao] = useState({}); // codigo -> registro aberto | null
+  const [jobs, setJobs] = useState(undefined); // undefined = carregando, null = leitura falhou
+  const [manutencao, setManutencao] = useState({}); // codigo -> registro aberto | null (nenhuma) | 'erro' (leitura falhou)
   const codigos = buoys.map((b) => b.codigo).join('|');
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +69,7 @@ const AdminDashboard = () => {
       if (cancelled) return;
       setHealthRows(h.status === 'fulfilled' ? h.value : null);
       setJobs(j.status === 'fulfilled' ? j.value : null);
-      setManutencao(Object.fromEntries(lista.map((c, i) => [c, m[i].status === 'fulfilled' ? m[i].value : undefined])));
+      setManutencao(Object.fromEntries(lista.map((c, i) => [c, m[i].status === 'fulfilled' ? m[i].value : 'erro'])));
     };
     load();
     const timer = setInterval(load, 60_000);
@@ -87,7 +88,7 @@ const AdminDashboard = () => {
   const [fila] = useState(criarFilaSerial);
   const [ultimas, setUltimas] = useState({}); // codigo -> {rows, erro}
   const carregarUltimas = useCallback((codigo, ids, signal) => (
-    fila(() => fetchUltimasLeituras(ids, { periodo: '30d', signal }))
+    fila((sinal) => fetchUltimasLeituras(ids, { periodo: '30d', signal: sinal }), { signal })
       .then((rows) => { if (!signal?.aborted) setUltimas((u) => ({ ...u, [codigo]: { rows, erro: null } })); })
       .catch((err) => {
         if (err.name === 'AbortError' || signal?.aborted) return;
@@ -103,7 +104,7 @@ const AdminDashboard = () => {
 
   // ── MQTT por bóia e resumo de cada card ─────────────────────────────────────
   const itens = useMemo(() => buoys.map((buoy) => {
-    const d = buoy.deviceId;
+    const d = serialValido(buoy); // serial fora do formato = sem serial: não assina MQTT com ele
     const mqtt = d ? {
       lwt: messages[`${d}/availability`],
       sensores: mensagemDaSessao(messages[`${d}/sensores`], receivedAt[`${d}/sensores`]),
@@ -193,6 +194,7 @@ const AdminDashboard = () => {
         <BuoyDetailsModal
           buoy={detalhes}
           statusMsg={itens.find((i) => i.buoy.codigo === detalhes.codigo)?.mqtt.status ?? undefined}
+          agoraMs={agoraMs}
           onClose={fecharDetalhes}
         />
       )}

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatUptime, formatBytes, formatMemoria, escolherFirmware, formatRssi,
-  blocosDetalhes, estadoFirmware, estadoManutencao,
+  blocosDetalhes, estadoFirmware, estadoManutencao, rotuloRecebido,
 } from './buoyDetails';
 
 describe('formatUptime', () => {
@@ -111,5 +111,18 @@ describe('estadoManutencao', () => {
     expect(estadoManutencao({ ok: true, valor: null })).toEqual({ tipo: 'nao' });
     const reg = { motivo: 'limpeza', timestamp_inicio: '2026-11-20T10:00:00Z' };
     expect(estadoManutencao({ ok: true, valor: reg })).toEqual({ tipo: 'aberta', registro: reg });
+  });
+});
+
+describe('rotuloRecebido (idade do valor de status)', () => {
+  const agoraMs = 10_000_000;
+  it('recebido há X a partir de _recebidoEm', () => {
+    expect(rotuloRecebido(agoraMs - 4000, agoraMs)).toBe('recebido há 4 s');
+    expect(rotuloRecebido(agoraMs - 3 * 3600e3, agoraMs)).toBe('recebido há 3 h');
+  });
+  it('sem hora de chegada = null (não inventa idade)', () => {
+    expect(rotuloRecebido(undefined, agoraMs)).toBeNull();
+    expect(rotuloRecebido(null, agoraMs)).toBeNull();
+    expect(rotuloRecebido(NaN, agoraMs)).toBeNull();
   });
 });

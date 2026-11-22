@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { Cpu } from 'lucide-react';
-import { fetchStatusHistory, PERIODS } from '../../../hooks/useInfluxHistory';
-import { disponibilidade } from '../../../utils/dashboard';
-import { formatIdade, formatTick, resumoColeta } from '../../../utils/dashboardView';
+import { fetchStatusHistory, chaveHistorico, PERIODS } from '../../../hooks/useInfluxHistory';
+import { disponibilidadeDoPeriodo } from '../../../utils/dashboard';
+import { estadoColeta, formatIdade, formatTick } from '../../../utils/dashboardView';
 import ChartTooltip from './ChartTooltip';
 
 const SERIES = [
@@ -53,17 +53,18 @@ function MiniGrafico({ serie, dados, periodo }) {
  * Sistema da bóia selecionada: RSSI, latência MQTT e memória livre (status
  * gravado no Influx), disponibilidade no período (da série do gráfico de
  * sensores) e resumo da coleta do worker.
- * @param {{ids: string[], periodo: string, fila: Function, historico: {data, loading, error},
- *   campoRotulo: string, jobs: object[]|null, agoraMs: number}} props
+ * @param {{ids: string[], periodo: string, fila: Function, historico: {data, loading, error, chave},
+ *   campo: string, campoRotulo: string, jobs: object[]|null|undefined (undefined = carregando, null = falhou),
+ *   agoraMs: number}} props
  */
-export default function SystemPanel({ ids, periodo, fila, historico, campoRotulo, jobs, agoraMs }) {
+export default function SystemPanel({ ids, periodo, fila, historico, campo, campoRotulo, jobs, agoraMs }) {
   const idsKey = JSON.stringify(ids);
   const [status, setStatus] = useState({ chave: null, data: [], error: null });
   const chave = `${idsKey}|${periodo}`;
 
   useEffect(() => {
     const ctrl = new AbortController();
-    fila(() => fetchStatusHistory(JSON.parse(idsKey), periodo, { signal: ctrl.signal }))
+    fila((signal) => fetchStatusHistory(JSON.parse(idsKey), periodo, { signal }), { signal: ctrl.signal })
       .then((data) => { if (!ctrl.signal.aborted) setStatus({ chave: `${idsKey}|${periodo}`, data, error: null }); })
       .catch((err) => {
         if (ctrl.signal.aborted || err.name === 'AbortError') return;
@@ -73,9 +74,10 @@ export default function SystemPanel({ ids, periodo, fila, historico, campoRotulo
   }, [idsKey, periodo, fila]);
 
   const carregando = status.chave !== chave;
-  const disp = ids.length > 0 && !historico.loading && !historico.error
-    ? disponibilidade(historico.data, periodo) : null;
-  const coleta = jobs ? resumoColeta(jobs, new Date(agoraMs)) : null;
+  // só com a série do período/campo pedido: sem ela é "calculando…", nunca 0% nem dado velho
+  const disp = ids.length > 0
+    ? disponibilidadeDoPeriodo(historico, chaveHistorico(campo, periodo, ids), periodo) : null;
+  const coleta = estadoColeta(jobs, new Date(agoraMs));
 
   return (
     <section className="dash-section glass">
@@ -112,13 +114,15 @@ export default function SystemPanel({ ids, periodo, fila, historico, campoRotulo
 
       <div className="sys-coleta">
         <h4>Coleta do worker</h4>
-        {coleta === null ? (
+        {coleta.tipo === 'carregando' ? (
+          <p className="text-muted">Carregando coleta…</p>
+        ) : coleta.tipo === 'falha' ? (
           <p className="text-muted">Coleta indisponível (leitura falhou).</p>
-        ) : coleta.length === 0 ? (
+        ) : coleta.tipo === 'vazio' ? (
           <p className="text-muted">Nenhum job registrado.</p>
         ) : (
           <ul>
-            {coleta.map((j) => (
+            {coleta.itens.map((j) => (
               <li key={j.job} title={j.title}>
                 <span className={`badge ${ESTADO_JOB[j.estado].classe}`}>{ESTADO_JOB[j.estado].texto}</span>
                 <span>{j.rotulo}</span>

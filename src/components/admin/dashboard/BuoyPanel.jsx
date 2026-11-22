@@ -4,6 +4,8 @@ import { Download, Info, Radio, RefreshCw, ShieldAlert, Table2 } from 'lucide-re
 import { useInfluxHistory, fetchHistory, PERIODS } from '../../../hooks/useInfluxHistory';
 import { fetchHistoryCsv, downloadCsv } from '../../../utils/exportHistoryCsv';
 import { deviceIdsOf } from '../../../services/buoyRegistry';
+import { serialValido } from '../../../utils/deviceIds';
+import { num } from '../../../utils/dashboard';
 import { healthForDevice } from '../../../services/sensorHealth';
 import { HealthEvents } from '../SensorHealth';
 import { WATER_PARAMS } from '../../../config/waterQuality';
@@ -18,7 +20,6 @@ import './dashboard.css';
 const MAX_BUFFER = 120; // ≈ 10 min de leituras ao vivo (uma a cada 5 s)
 const PERIODO_PADRAO = '24h';
 const PARAM = Object.fromEntries(WATER_PARAMS.map((p) => [p.key, p]));
-const num = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
 const celula = (v, campo) => (num(v) === null ? '—' : formatValor(v, campo));
 
 /**
@@ -58,7 +59,7 @@ export default function BuoyPanel({
     const lista = JSON.parse(idsKey);
     (async () => {
       const out = {};
-      for (const c of CAMPOS) out[c] = await fila(() => fetchHistory(c, '24h', lista, { signal: ctrl.signal }));
+      for (const c of CAMPOS) out[c] = await fila((signal) => fetchHistory(c, '24h', lista, { signal }), { signal: ctrl.signal });
       return out;
     })()
       .then((out) => { if (!ctrl.signal.aborted) setHist24(out); })
@@ -66,7 +67,10 @@ export default function BuoyPanel({
     return () => ctrl.abort();
   }, [idsKey, fila]);
 
-  const saudeSensores = buoy.deviceId ? healthForDevice(healthRows, buoy.deviceId, resumo.modo).sensores : [];
+  // serial fora do formato = sem serial válido (igual ao card)
+  const serial = serialValido(buoy);
+  const saudeIndisponivel = healthRows === null;
+  const saudeSensores = serial ? healthForDevice(healthRows, serial, resumo.modo).sensores : [];
   const idade = resumo.ultimaMs != null ? formatIdade(agoraMs - resumo.ultimaMs) : null;
   const conexao = rotuloConexao(resumo.conexao, idade);
   const param = PARAM[campo];
@@ -115,7 +119,8 @@ export default function BuoyPanel({
       <div className="sensor-grid">
         {CAMPOS.map((c) => (
           <SensorCard key={c} campo={c} atual={resumo.valores[c]} agoraMs={agoraMs}
-            saude={saudeSensores.find((s) => s.sensor === c) ?? null} extremos={extremos24h(hist24, ultimas, c, agoraMs)} />
+            saude={saudeSensores.find((s) => s.sensor === c) ?? null} saudeIndisponivel={saudeIndisponivel}
+            extremos={extremos24h(hist24, ultimas, c, agoraMs, buffer)} />
         ))}
       </div>
 
@@ -179,15 +184,15 @@ export default function BuoyPanel({
       </section>
 
       <SystemPanel ids={ids} periodo={periodo} fila={fila} historico={historico}
-        campoRotulo={paramTexto} jobs={jobs} agoraMs={agoraMs} />
+        campo={campo} campoRotulo={paramTexto} jobs={jobs} agoraMs={agoraMs} />
 
       <div className="bp-duo">
         <section className="dash-section glass">
           <div className="dash-section-head">
             <h3><ShieldAlert size={18} className="text-primary" /> Eventos do detector</h3>
           </div>
-          {buoy.deviceId
-            ? <HealthEvents deviceId={buoy.deviceId} modo={resumo.modo} />
+          {serial
+            ? <HealthEvents deviceId={serial} modo={resumo.modo} />
             : <p className="text-muted">Bóia sem serial cadastrado: sem eventos.</p>}
         </section>
 

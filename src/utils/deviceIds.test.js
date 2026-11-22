@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deviceIdsOf, applyDeviceIdChange, mergeRegistryEdit, normalizeDeviceIds, deviceScope, DEVICE_ID_RE } from './deviceIds';
+import { deviceIdsOf, applyDeviceIdChange, mergeRegistryEdit, normalizeDeviceIds, deviceScope, DEVICE_ID_RE, serialValido } from './deviceIds';
 import { DEVICE_RE } from '../services/influxQueries';
 
 describe('deviceIdsOf', () => {
@@ -93,5 +93,16 @@ describe('mergeRegistryEdit', () => {
     const r = mergeRegistryEdit(previous, { nome: 'old', deviceId: null });
     expect(r.deviceId).toBeNull();
     expect(r.deviceIdsAnteriores).toEqual(['esp_sururu', 'snt-0001']);
+  });
+});
+
+describe('serialValido', () => {
+  it('serial no formato do broker/proxy é devolvido', () => {
+    expect(serialValido({ deviceId: 'snt-0001' })).toBe('snt-0001');
+  });
+  it('ausente, vazio ou fora do formato = null (card e painel concordam)', () => {
+    for (const b of [null, undefined, {}, { deviceId: '' }, { deviceId: 'ab c' }, { deviceId: 'a/b' }, { deviceId: 42 }]) {
+      expect(serialValido(b)).toBeNull();
+    }
   });
 });

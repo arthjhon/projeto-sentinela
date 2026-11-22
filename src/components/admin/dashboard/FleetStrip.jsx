@@ -3,7 +3,7 @@ import { Info, Wrench } from 'lucide-react';
 import { classifyParam, WATER_PARAMS } from '../../../config/waterQuality';
 import { estadoMeta } from '../../../services/sensorHealth';
 import {
-  CAMPOS, TOM_CLASSE, formatIdade, formatValor, rotuloConexao, rotuloGravada,
+  CAMPOS, TOM_CLASSE, formatIdade, formatValor, rotuloConexao, rotuloGravada, seloManutencao, textoSemSaude,
 } from '../../../utils/dashboardView';
 import './dashboard.css';
 
@@ -34,6 +34,7 @@ export default function FleetStrip({
         const conexao = rotuloConexao(resumo.conexao, idade);
         const saude = resumo.saude ? estadoMeta(resumo.saude) : null;
         const ativa = buoy.codigo === selecionada;
+        const selo = seloManutencao(manutencao);
         return (
           <article key={buoy.codigo} className={`fleet-card glass${ativa ? ' is-active' : ''}`}>
             <button
@@ -51,9 +52,9 @@ export default function FleetStrip({
                   <span className={`fc-dot tom-${conexao.tom}`} aria-hidden="true" />{conexao.texto}
                 </span>
                 <span className="badge badge-planejada">{resumo.modo}</span>
-                {manutencao && (
-                  <span className="badge sh-info" title={manutencao.motivo ?? undefined}>
-                    <Wrench size={12} /> em manutenção
+                {selo && (
+                  <span className={`badge ${selo.tipo === 'aberta' ? 'sh-info' : 'badge-planejada'}`} title={selo.title}>
+                    <Wrench size={12} /> {selo.texto}
                   </span>
                 )}
               </span>
@@ -68,7 +69,7 @@ export default function FleetStrip({
                 {saude ? (
                   <span className={`badge ${TOM_CLASSE[saude.tone]}`}>{saude.label}</span>
                 ) : (
-                  <span>{saudeIndisponivel ? 'saúde indisponível' : 'sem avaliação'}</span>
+                  <span>{textoSemSaude(saudeIndisponivel)}</span>
                 )}
               </span>
             </button>
