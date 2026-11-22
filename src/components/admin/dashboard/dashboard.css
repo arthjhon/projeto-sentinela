@@ -1,0 +1,237 @@
+/* Visão geral do painel admin: faixa da frota, painel da bóia e sistema. */
+
+.dash-small { font-size: 0.78rem; }
+
+/* ── Faixa da frota ─────────────────────────────────────── */
+.fleet-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr));
+  gap: 1rem;
+}
+
+.fleet-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  min-width: 0;
+}
+.fleet-card:hover { border-color: rgba(255, 255, 255, 0.18); }
+.fleet-card.is-active {
+  border-color: rgba(0, 240, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.25), 0 0 18px rgba(0, 240, 255, 0.08);
+}
+
+.fc-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  flex: 1;
+  width: 100%;
+  padding: 1rem 1rem 0.6rem;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 12px 12px 0 0;
+}
+.fc-select:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.fc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+.fc-nome { font-weight: 600; font-size: 1rem; color: #fff; overflow-wrap: anywhere; }
+.fc-codigo { font-family: monospace; font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
+
+.fc-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.fc-chips .badge { font-size: 0.7rem; padding: 0.15rem 0.6rem; }
+.fc-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; }
+
+.fc-ultima { font-size: 0.78rem; }
+
+.fc-valores {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.fc-valor { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.fc-valor-rotulo {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-valor-num { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 1rem; color: #cbd5e1; }
+.fc-valor-num.is-vazio { color: #64748b; font-weight: 600; font-size: 0.85rem; }
+.fc-valor-nota { font-size: 0.68rem; color: #64748b; }
+
+.fc-saude { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; font-size: 0.78rem; }
+.fc-saude .badge { font-size: 0.7rem; padding: 0.15rem 0.6rem; }
+
+.fc-detalhes { align-self: flex-end; margin: 0 1rem 0.9rem; }
+
+/* ── Painel da bóia ─────────────────────────────────────── */
+.buoy-panel { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
+
+.bp-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.bp-head h2 { font-size: 1.4rem; margin: 0 0 0.2rem; }
+.bp-codigo { font-family: monospace; font-size: 0.9rem; color: var(--text-muted); font-weight: 400; }
+.bp-head-acoes { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+
+.sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 1rem;
+}
+
+.sensor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 0;
+}
+.sc-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.sc-nome { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--text-muted); font-size: 0.9rem; }
+.sc-faixa { font-size: 0.75rem; font-weight: 700; }
+.sc-valor { font-family: 'Outfit', sans-serif; font-size: 1.8rem; font-weight: 700; color: #cbd5e1; }
+.sc-valor.is-vazio { color: #64748b; font-size: 1.25rem; font-weight: 600; }
+.sc-origem { font-size: 0.75rem; }
+.sc-dados { display: grid; gap: 0.35rem; margin: 0.4rem 0 0; font-size: 0.8rem; }
+.sc-dados div { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.sc-dados dt { color: var(--text-muted); }
+.sc-dados dd { margin: 0; text-align: right; }
+
+.dash-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 12px;
+  min-width: 0;
+}
+.dash-section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+.dash-section-head h3 { display: inline-flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 1.05rem; }
+.dash-section p { margin: 0; font-size: 0.85rem; }
+.dash-section h4 { margin: 0 0 0.4rem; font-size: 0.85rem; color: var(--text-muted); font-weight: 600; }
+
+.bp-duo { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 1.25rem; }
+
+.dash-table-wrap { overflow-x: auto; }
+.dash-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.dash-table th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.dash-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.04); white-space: nowrap; }
+
+.dash-link { color: var(--primary); font-size: 0.85rem; text-decoration: none; }
+.dash-link:hover { text-decoration: underline; }
+
+/* ── Gráfico dos sensores (abas, período, export) ─────────── */
+.chart-param-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+
+.chart-tab {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #64748b;
+  padding: 0.35rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.chart-tab:hover { border-color: rgba(255, 255, 255, 0.2); color: #e2e8f0; }
+.chart-tab.active { font-weight: 600; }
+
+/* Período agrupado à direita: o que medir x quando medir são eixos diferentes. */
+.chart-period-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+  padding: 0.2rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.chart-period-tab {
+  background: transparent;
+  border: 0;
+  color: #64748b;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.chart-period-tab:hover { color: #e2e8f0; }
+.chart-period-tab.active { background: rgba(0, 240, 255, 0.12); color: var(--primary); }
+.chart-period-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.chart-export-btn { margin-left: 0.5rem; }
+.chart-export-error { margin: 0; font-size: 0.75rem; color: var(--warning); }
+
+.chart-body { height: 260px; min-width: 0; }
+.chart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 100%;
+  min-height: 120px;
+  text-align: center;
+  color: #475569;
+}
+.chart-empty span { font-size: 0.9rem; color: #64748b; }
+.chart-empty small { font-size: 0.75rem; }
+.chart-empty-sm { min-height: 90px; }
+.chart-empty-sm span { font-size: 0.8rem; }
+
+.chart-tooltip {
+  background: #0D141F;
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chart-tooltip-time { font-size: 0.7rem; color: #64748b; font-family: 'Courier New', monospace; }
+.chart-tooltip-value { font-size: 0.95rem; font-weight: 700; color: #e2e8f0; }
+
+/* ── Sistema da bóia ─────────────────────────────────────── */
+.sys-disp { margin: 0; font-size: 0.9rem; }
+.sys-disp strong { font-family: 'Outfit', sans-serif; font-size: 1.05rem; color: #fff; }
+.sys-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1rem; }
+.sys-chart { min-width: 0; }
+.sys-chart-body { height: 150px; }
+.sys-coleta { display: flex; flex-direction: column; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+.sys-coleta ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.85rem; }
+.sys-coleta li { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+
+@media (max-width: 600px) {
+  .chart-period-tabs { margin-left: 0; }
+  .chart-export-btn { margin-left: 0; }
+  .fc-detalhes { align-self: stretch; }
+  .dash-section { padding: 1rem; }
+  .dash-table { font-size: 0.74rem; }
+  .dash-table th, .dash-table td { padding: 0.3rem 0.25rem; }
+}

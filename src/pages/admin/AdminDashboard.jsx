@@ -1,541 +1,193 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import {
-  ResponsiveContainer, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip,
-} from 'recharts';
-import {
-  PieChart, Thermometer, Droplet, Activity,
-  Wifi, WifiOff, Radio, Download,
-} from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { WifiOff } from 'lucide-react';
 import { useMqtt } from '../../hooks/useMqtt';
-import { useInfluxHistory, PERIODS } from '../../hooks/useInfluxHistory';
-import { fetchHistoryCsv, downloadCsv } from '../../utils/exportHistoryCsv';
-import { getMqttTopics } from '../../config/fleet';
-// 2.1 — reusa a classificação da página pública: as faixas (CONAMA 357) já
-// vivem em config/waterQuality.js. Duplicá-las aqui criaria duas verdades.
-import { classifyParam } from '../../config/waterQuality';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
+import { fetchUltimasLeituras } from '../../hooks/useInfluxHistory';
+import { getMqttTopics } from '../../config/fleet';
 import { topicsForRegistry, deviceIdsOf } from '../../services/buoyRegistry';
-import { computeFleetAverage } from '../../utils/fleetAverage';
+import { fetchSensorHealth, fetchWorkerJobs } from '../../services/sensorHealth';
+import { manutencaoAberta } from '../../services/maintenance';
+import { resolverSelecao } from '../../utils/dashboard';
+import { resumoBoia } from '../../utils/dashboardView';
+import { criarFilaSerial } from '../../utils/filaSerial';
+import FleetStrip from '../../components/admin/dashboard/FleetStrip';
+import BuoyPanel from '../../components/admin/dashboard/BuoyPanel';
 import './AdminDashboard.css';
 
-// Mantém os últimos 120 pontos (≈ 10 min com leituras a cada 5 s)
-const MAX_BUFFER = 120;
+// Visão geral: a frota primeiro (um card por bóia do cadastro), depois tudo da
+// bóia selecionada. Seleção no endereço (?boia=<codigo>) para link e "voltar".
+// Só dado real: sem leitura aparece como "sem leitura", nunca 0 nem valor de
+// outra bóia.
 
-const PARAMS = {
-  temperatura: { label: 'Temperatura (°C)', unit: '°C',  color: '#ef4444' },
-  ph:          { label: 'pH',               unit: '',    color: '#00f0ff' },
-  turbidez:    { label: 'Turbidez (NTU)',   unit: ' NTU', color: '#f59e0b' },
-};
-
-// Tooltip customizado para o gráfico
-const ChartTooltip = ({ active, payload, label, unit }) => {
-  if (!active || !payload?.length || payload[0].value == null) return null;
-  return (
-    <div className="chart-tooltip">
-      <span className="chart-tooltip-time">{label}</span>
-      <span className="chart-tooltip-value">
-        {payload[0].value}{unit}
-      </span>
-    </div>
-  );
-};
-
-// Janelas curtas mostram hora; janelas longas precisam da data para o eixo
-// fazer sentido (30d de "14:32" seria ilegível).
-function formatTick(date, period) {
-  const opts = (period === '1h' || period === '24h')
-    ? { hour: '2-digit', minute: '2-digit' }
-    : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' };
-  return date.toLocaleString('pt-BR', opts);
+/** Mensagem MQTT recebida nesta sessão (retida não conta: é velha) com a hora de chegada. */
+function daSessao(msg, chegada) {
+  if (!msg || typeof msg !== 'object' || !chegada || chegada.retained) return null;
+  return { ...msg, _recebidoEm: chegada.at };
 }
 
 const AdminDashboard = () => {
-  const { messages, connected, addTopics } = useMqtt(getMqttTopics());
-
-  // ── Registro de bóias + seletor ───────────────────────────────────────────────
-  const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
-  const [selectedBuoy, setSelectedBuoy] = useState('todas'); // 'todas' | codigo da bóia
+  const { buoys, loading: registryLoading, error: registryError, reload: reloadRegistry } = useBuoyRegistry();
+  const { messages, receivedAt, addTopics } = useMqtt(getMqttTopics());
 
   useEffect(() => {
-    if (registryBuoys.length) addTopics(topicsForRegistry(registryBuoys));
-  }, [registryBuoys]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (buoys.length) addTopics(topicsForRegistry(buoys));
+  }, [buoys]); // eslint-disable-line react-hooks/exhaustive-deps -- addTopics é estável (ref interno do hook)
 
-  const liveBuoys = registryBuoys.filter(b => b.deviceId);
-  const onlineBuoys = liveBuoys.filter(b => messages[`${b.deviceId}/availability`] === 'online');
-
-  // Bóia "focada" pro gráfico/histórico/CSV: a selecionada, ou a primeira com
-  // deviceId quando "Todas as Bóias" está ativo — ver nota de escopo do plano.
-  const focusedBuoy = selectedBuoy === 'todas'
-    ? liveBuoys[0]
-    : liveBuoys.find(b => b.codigo === selectedBuoy);
-  const focusedDeviceId = focusedBuoy?.deviceId ?? null;
-  // Histórico (Influx) usa o atual + anteriores; MQTT/saúde ficam só no atual.
-  const focusedHistoryIds = useMemo(
-    () => (focusedBuoy ? deviceIdsOf(focusedBuoy) : null), // sem bóia = null (frota); bóia sem id válido = [] (nada)
-    [focusedBuoy],
-  );
-  const focusedId = focusedBuoy?.codigo ?? null;
-
-  // ── Buffer circular de leituras ───────────────────────────────────────────────
-  const [buffer, setBuffer]         = useState([]);
-  const [activeParam, setActiveParam] = useState('temperatura');
-  const [period, setPeriod]           = useState('1h');
-
-  // Histórico persistido (InfluxDB). Não substitui o MQTT: o buffer acima
-  // continua alimentando cards e estatísticas em tempo real.
-  const { data: history, loading: historyLoading, error: historyError } =
-    useInfluxHistory(activeParam, period, focusedHistoryIds);
-
-  const sensorMsg = focusedDeviceId ? messages[`${focusedDeviceId}/sensores`] : null;
-
-  // Trocar de bóia zera o buffer. Sem isso a bóia recém-selecionada herdava a
-  // última leitura (e a classificação) da anterior, e ao voltar para uma bóia a
-  // última leitura dela era anexada DE NOVO ao buffer antigo (ponto duplicado no
-  // gráfico, contagem inflada, min/max misturando bóias). Fica ANTES do efeito
-  // abaixo: na mesma renderização zera primeiro e o efeito de `sensorMsg` semeia
-  // o buffer com a última leitura em memória da bóia nova, se houver — com o
-  // horário da troca, porque useMqtt não guarda quando a mensagem chegou.
+  // ── Seleção pela URL ───────────────────────────────────────────────────────
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selecao = resolverSelecao(buoys, searchParams.get('boia'));
+  // Só corrige o endereço com o cadastro de verdade: em fallback (erro), a
+  // lista é a semente/última lida e o código da URL pode existir no real.
   useEffect(() => {
-    setBuffer([]);
-  }, [focusedDeviceId]);
+    if (!registryLoading && !registryError && selecao.corrigir) {
+      setSearchParams({ boia: selecao.codigo }, { replace: true });
+    }
+  }, [registryLoading, registryError, selecao.corrigir, selecao.codigo, setSearchParams]);
+  const selecionar = useCallback((codigo) => setSearchParams({ boia: codigo }), [setSearchParams]);
 
+  // ── Relógio de "há X" e do estado sem-leitura ───────────────────────────────
+  const [agoraMs, setAgoraMs] = useState(() => Date.now());
   useEffect(() => {
-    if (!sensorMsg) return;
+    const id = setInterval(() => setAgoraMs(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, []);
 
-    const now = new Date();
-    const ts = now.toLocaleTimeString('pt-BR', {
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-    });
+  // ── Saúde, coleta do worker e manutenção aberta (Supabase, 60 s) ──────────
+  const [healthRows, setHealthRows] = useState([]);
+  const [jobs, setJobs] = useState(null); // null = indisponível
+  const [manutencao, setManutencao] = useState({}); // codigo -> registro aberto | null
+  const codigos = buoys.map((b) => b.codigo).join('|');
+  useEffect(() => {
+    let cancelled = false;
+    const lista = codigos ? codigos.split('|') : [];
+    const load = async () => {
+      if (document.visibilityState === 'hidden') return;
+      const [h, j, ...m] = await Promise.allSettled([
+        fetchSensorHealth(), fetchWorkerJobs(), ...lista.map((c) => manutencaoAberta(c)),
+      ]);
+      if (cancelled) return;
+      setHealthRows(h.status === 'fulfilled' ? h.value : null);
+      setJobs(j.status === 'fulfilled' ? j.value : null);
+      setManutencao(Object.fromEntries(lista.map((c, i) => [c, m[i].status === 'fulfilled' ? m[i].value : undefined])));
+    };
+    load();
+    const timer = setInterval(load, 60_000);
+    document.addEventListener('visibilitychange', load);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', load);
+    };
+  }, [codigos]);
 
-    setBuffer(prev => {
-      const entry = {
-        time:        ts,
-        // timestamp bruto: o gráfico precisa comparar com o último ponto do
-        // Influx, e `time` já vem formatado para exibição
-        ts:          now.getTime(),
-        temperatura: sensorMsg.temperatura != null ? +sensorMsg.temperatura.toFixed(2) : null,
-        ph:          sensorMsg.ph          != null ? +sensorMsg.ph.toFixed(3)          : null,
-        turbidez:    sensorMsg.turbidez    != null ? +sensorMsg.turbidez.toFixed(1)    : null,
-      };
-      const next = [...prev, entry];
-      return next.length > MAX_BUFFER ? next.slice(-MAX_BUFFER) : next;
-    });
-  }, [sensorMsg]);
+  // ── Últimas leituras gravadas, por bóia, só dos seriais DELA ───────────────
+  // Uma consulta por bóia, em sequência, ao abrir: é o valor de antes da
+  // primeira mensagem MQTT (até 30 dias, a janela mais longa de `ultimas`). A fila é compartilhada com o painel da bóia
+  // (mín./máx. e status), para não passar do limite de conexões do proxy.
+  const [fila] = useState(criarFilaSerial);
+  const [ultimas, setUltimas] = useState({}); // codigo -> {rows, erro}
+  const carregarUltimas = useCallback((codigo, ids, signal) => (
+    fila(() => fetchUltimasLeituras(ids, { periodo: '30d', signal }))
+      .then((rows) => { if (!signal?.aborted) setUltimas((u) => ({ ...u, [codigo]: { rows, erro: null } })); })
+      .catch((err) => {
+        if (err.name === 'AbortError' || signal?.aborted) return;
+        setUltimas((u) => ({ ...u, [codigo]: { rows: u[codigo]?.rows ?? [], erro: err.message } }));
+      })
+  ), [fila]);
+  const alvosKey = JSON.stringify(buoys.map((b) => [b.codigo, deviceIdsOf(b)]));
+  useEffect(() => {
+    const ctrl = new AbortController();
+    for (const [codigo, ids] of JSON.parse(alvosKey)) carregarUltimas(codigo, ids, ctrl.signal);
+    return () => ctrl.abort();
+  }, [alvosKey, carregarUltimas]);
 
-  // ── Export CSV do período selecionado ────────────────────────────────────────
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState(null);
+  // ── MQTT por bóia e resumo de cada card ─────────────────────────────────────
+  const itens = useMemo(() => buoys.map((buoy) => {
+    const d = buoy.deviceId;
+    const mqtt = d ? {
+      lwt: messages[`${d}/availability`],
+      sensores: daSessao(messages[`${d}/sensores`], receivedAt[`${d}/sensores`]),
+      status: daSessao(messages[`${d}/status`], receivedAt[`${d}/status`]),
+    } : {};
+    const rows = ultimas[buoy.codigo]?.rows ?? [];
+    return {
+      buoy,
+      mqtt,
+      ultimas: rows,
+      manutencao: manutencao[buoy.codigo],
+      resumo: resumoBoia({ buoy, mqtt, ultimas: rows, healthRows, agoraMs }),
+    };
+  }), [buoys, messages, receivedAt, ultimas, manutencao, healthRows, agoraMs]);
 
-  async function handleExport() {
-    setExporting(true);
-    setExportError(null);
-    try {
-      const { csv, rows, truncated } = await fetchHistoryCsv(period, focusedHistoryIds, focusedId);
-      if (rows === 0) {
-        setExportError(`Sem leituras em ${PERIODS[period].label} para exportar.`);
-        return;
-      }
-      const stamp = new Date().toISOString().slice(0, 10);
-      downloadCsv(csv, `sentinela_${focusedId ?? 'frota'}_${period}_${stamp}.csv`);
-      if (truncated) {
-        setExportError('Exportação truncada: o período tem mais leituras que o limite do arquivo, e as mais antigas ficaram de fora. Escolha um período menor.');
-      }
-    } catch (err) {
-      setExportError(err.message);
-    } finally {
-      setExporting(false);
-    }
-  }
+  const atual = itens.find((i) => i.buoy.codigo === selecao.codigo) ?? null;
 
-  // Série do gráfico: histórico gravado + leituras que chegaram via MQTT depois
-  // do último ponto do Influx (o Telegraf só faz flush a cada 10s, então sem
-  // isso o gráfico pareceria travado entre uma gravação e outra).
-  const series = useMemo(() => {
-    const points = history.map(d => ({
-      time:  formatTick(d.time, period),
-      value: +d.value.toFixed(3),
-    }));
-    const lastTs = history.at(-1)?.time.getTime() ?? 0;
-    const live = buffer
-      .filter(e => e.ts > lastTs && e[activeParam] != null)
-      .map(e => ({ time: formatTick(new Date(e.ts), period), value: e[activeParam] }));
-    return [...points, ...live];
-  }, [history, buffer, activeParam, period]);
-
-  // ── Última leitura + status do hardware ──────────────────────────────────────
-  const latest        = buffer.at(-1) ?? {};
-  const focusedOnline  = focusedDeviceId ? messages[`${focusedDeviceId}/availability`] === 'online' : false;
-
-  // ── Estatísticas da sessão (avg / min / max) ──────────────────────────────────
-  const stats = useMemo(() => {
-    const result = {};
-    for (const key of ['temperatura', 'ph', 'turbidez']) {
-      const vals = buffer.map(d => d[key]).filter(v => v != null);
-      if (!vals.length) { result[key] = null; continue; }
-      result[key] = {
-        avg:   +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2),
-        min:   +Math.min(...vals).toFixed(2),
-        max:   +Math.max(...vals).toFixed(2),
-        count: vals.length,
-      };
-    }
-    return result;
-  }, [buffer]);
-
-  // ── Frota: contagem real a partir do registro de bóias ───────────────────────
-  const fleetActive = onlineBuoys.length;
-  const fleetTotal  = registryBuoys.length;
-  // Só a divisão precisa de proteção: registro vazio mostra 0%, e não um
-  // "Total: 1 bóias" que não existe.
-  const fleetPct    = fleetTotal ? (fleetActive / fleetTotal) * 100 : 0;
-
-  // ── Cards paramétricos: valor único (bóia focada) ou média da frota ─────────
-  const fleetValue = (param) => computeFleetAverage(
-    onlineBuoys.map(b => {
-      const msg = messages[`${b.deviceId}/sensores`];
-      return msg?.[param] ?? null;
-    })
-  );
-
-  const cardValue = (param, unit) => {
-    if (selectedBuoy === 'todas') {
-      const avg = fleetValue(param);
-      return avg != null ? `${avg}${unit}` : '---';
-    }
-    return latest[param] != null ? `${latest[param]}${unit}` : '---';
-  };
-
-  const cardTitle = (base) => selectedBuoy === 'todas' ? `${base} (Média da Frota)` : `${base} (${focusedId ?? '—'})`;
-
-  // Classifica o MESMO valor exibido no card: a média da frota em "todas"
-  // (reusa fleetValue, sem duplicar a lógica de média), ou a leitura da bóia
-  // focada — nunca a bóia focada quando o modo exibido é a média (bug 2.1).
-  const cardClassificacao = (param) =>
-    classifyParam(param, selectedBuoy === 'todas' ? fleetValue(param) : latest[param]);
-
-  // ── Metric cards (4 cards superiores) ────────────────────────────────────────
-  const metricCards = [
-    {
-      title: 'MQTT Broker',
-      value: connected ? 'Online' : 'Offline',
-      icon:  connected ? Wifi : WifiOff,
-      color: connected ? 'success' : 'danger',
-      desc:  connected
-        ? `${focusedId ?? '—'} ${focusedOnline ? 'conectada' : 'sem dados'}`
-        : 'Reconectando...',
-      style: {
-        borderColor: connected ? 'rgba(34,197,94,0.25)'  : 'rgba(239,68,68,0.25)',
-        background:  connected ? 'rgba(34,197,94,0.04)'  : 'rgba(239,68,68,0.04)',
-      },
-    },
-    {
-      title: cardTitle('Temperatura'),
-      value: cardValue('temperatura', '°C'),
-      icon:  Thermometer,
-      color: 'danger',
-      desc:  stats.temperatura
-        ? `Sessão: ${stats.temperatura.min} – ${stats.temperatura.max} °C`
-        : 'Aguardando dados...',
-      classificacao: cardClassificacao('temperatura'),
-    },
-    {
-      title: cardTitle('pH'),
-      value: cardValue('ph', ''),
-      icon:  Droplet,
-      color: 'primary',
-      desc:  stats.ph
-        ? `Sessão: ${stats.ph.min} – ${stats.ph.max}`
-        : 'Aguardando dados...',
-      classificacao: cardClassificacao('ph'),
-    },
-    {
-      title: cardTitle('Turbidez'),
-      value: cardValue('turbidez', ' NTU'),
-      icon:  Activity,
-      color: 'warning',
-      desc:  stats.turbidez
-        ? `Sessão: ${stats.turbidez.min} – ${stats.turbidez.max} NTU`
-        : 'Aguardando dados...',
-      classificacao: cardClassificacao('turbidez'),
-    },
-  ];
-
-  const param = PARAMS[activeParam];
+  // ── Modal "Detalhes da bóia" (Task 4) ───────────────────────────────────────
+  // `detalhes` = bóia do modal, ou null. O modal recebe a última mensagem
+  // /status da bóia nesta sessão (com _recebidoEm): itens[...].mqtt.status.
+  const [detalhes, setDetalhes] = useState(null);
 
   return (
     <div className="dashboard-content-area">
       <div className="page-header">
-        <h1>Centro de Comando | Telemetria em Tempo Real</h1>
-        <p>Dados ao vivo via MQTT · Histórico da sessão · Frota de monitoramento</p>
-        <select
-          className="dashboard-buoy-select"
-          value={selectedBuoy}
-          onChange={e => setSelectedBuoy(e.target.value)}
-        >
-          <option value="todas">Todas as Bóias</option>
-          {liveBuoys.map(b => (
-            <option key={b.codigo} value={b.codigo}>{b.nome} ({b.codigo})</option>
-          ))}
-        </select>
+        <h1>Visão geral</h1>
+        <p>A frota e, abaixo, tudo da bóia selecionada: sensores, histórico, eventos e sistema.</p>
       </div>
 
-      {/* ── Metric Cards ── */}
-      <div className="metrics-grid">
-        {metricCards.map((m) => {
-          // 2.1 — sem leitura não há classificação: melhor cinza do que fingir
-          // que "sem dado" é "saudável".
-          const c = m.classificacao;
-          const estilo = c
-            ? { ...m.style, borderColor: `${c.color}55`, background: `${c.color}0d` }
-            : m.style;
-          return (
-            <div key={m.title} className="metric-card glass" style={estilo}>
-              <div className="metric-header">
-                <h4>{m.title}</h4>
-                <m.icon
-                  className={c ? undefined : `text-${m.color}`}
-                  style={c ? { color: c.color } : undefined}
-                  size={22}
-                />
-              </div>
-              <div className="metric-value" style={c ? { color: c.color } : undefined}>{m.value}</div>
-              <p className="metric-trend" style={{ color: 'var(--text-muted)' }}>
-                {c && <span className="metric-faixa" style={{ color: c.color }}>{c.text} · </span>}
-                {m.desc}
-              </p>
-            </div>
-          );
-        })}
-      </div>
+      {registryError && (
+        <div className="badge badge-offline dash-alert" role="alert">
+          <WifiOff size={14} />
+          <span>Cadastro de bóias indisponível ({registryError}): a lista pode estar desatualizada.</span>
+          <button type="button" className="btn-table btn-sm" onClick={reloadRegistry}>Tentar de novo</button>
+        </div>
+      )}
 
-      {/* ── Avg Cards ── */}
-      <div className="averages-grid">
-        {[
-          { name: 'Temperatura Média', key: 'temperatura', unit: '°C',   icon: Thermometer, color: 'var(--danger)'  },
-          { name: 'Turbidez Média',    key: 'turbidez',    unit: ' NTU', icon: Activity,    color: 'var(--warning)' },
-          { name: 'pH Médio',          key: 'ph',          unit: '',     icon: Droplet,     color: 'var(--primary)' },
-        ].map((s) => (
-          <div key={s.key} className="avg-card glass">
-            <div
-              className="avg-icon-wrapper"
-              style={{
-                color: s.color,
-                backgroundColor: `color-mix(in srgb, ${s.color} 15%, transparent)`,
-              }}
-            >
-              <s.icon size={28} />
-            </div>
-            <div className="avg-data">
-              <span className="avg-title">{s.name}</span>
-              <div className="avg-value-row">
-                <span className="avg-value">{stats[s.key]?.avg ?? '---'}</span>
-                <span className="avg-unit">{s.unit}</span>
-              </div>
-              <span className="avg-trend">
-                {stats[s.key]
-                  ? `${stats[s.key].count} leituras na sessão`
-                  : 'Aguardando leituras...'}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Charts ── */}
-      <div className="charts-grid">
-
-        {/* Gráfico de linha — tempo real */}
-        <div className="chart-panel glass">
-          <div className="chart-panel-header">
-            <div className="chart-title">
-              <Radio size={20} className="text-primary" />
-              <h3>Histórico da Sessão — Tempo Real</h3>
-            </div>
-            <span className={`mqtt-badge ${connected ? 'mqtt-online' : 'mqtt-offline'}`}>
-              {connected ? <Wifi size={12} /> : <WifiOff size={12} />}
-              {connected ? 'MQTT Online' : 'MQTT Offline'}
-            </span>
-          </div>
-
-          {/* Seletor de parâmetro */}
-          <div className="chart-param-tabs">
-            {Object.entries(PARAMS).map(([key, cfg]) => (
-              <button
-                key={key}
-                className={`chart-tab ${activeParam === key ? 'active' : ''}`}
-                style={activeParam === key ? { borderColor: cfg.color, color: cfg.color } : {}}
-                onClick={() => setActiveParam(key)}
-              >
-                {cfg.label}
-              </button>
-            ))}
-
-            {/* Seletor de período (histórico do InfluxDB) */}
-            <div className="chart-period-tabs">
-              {Object.entries(PERIODS).map(([key, cfg]) => (
-                <button
-                  key={key}
-                  className={`chart-period-tab ${period === key ? 'active' : ''}`}
-                  onClick={() => setPeriod(key)}
-                  aria-pressed={period === key}
-                >
-                  {cfg.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Export do período selecionado */}
-            <button
-              className="btn-table action-btn chart-export-btn"
-              onClick={handleExport}
-              disabled={exporting}
-              title={`Exportar as leituras de ${PERIODS[period].label} em CSV`}
-            >
-              <Download size={14} />
-              {exporting ? 'Gerando...' : 'Exportar CSV'}
-            </button>
-          </div>
-
-          {exportError && (
-            <p className="chart-export-error" role="status">{exportError}</p>
+      {registryLoading && !buoys.length ? (
+        <p className="text-muted">Carregando cadastro de bóias…</p>
+      ) : !buoys.length ? (
+        <div className="dash-empty glass">
+          <h3>Nenhuma bóia cadastrada</h3>
+          <p className="text-muted">Cadastre a primeira bóia para ver os dados aqui.</p>
+          <Link to="/admin/boias/frota" className="btn-table">Ir para Bóias</Link>
+        </div>
+      ) : (
+        <>
+          <FleetStrip
+            itens={itens}
+            selecionada={selecao.codigo}
+            onSelecionar={selecionar}
+            onDetalhes={setDetalhes}
+            detalhesCodigo={detalhes?.codigo ?? null}
+            saudeIndisponivel={healthRows === null}
+            agoraMs={agoraMs}
+          />
+          {atual && (
+            <BuoyPanel
+              key={atual.buoy.codigo}
+              buoy={atual.buoy}
+              mqtt={atual.mqtt}
+              resumo={atual.resumo}
+              ultimas={atual.ultimas}
+              ultimasErro={ultimas[atual.buoy.codigo]?.erro ?? null}
+              onAtualizarUltimas={() => carregarUltimas(atual.buoy.codigo, deviceIdsOf(atual.buoy))}
+              healthRows={healthRows}
+              jobs={jobs}
+              fila={fila}
+              agoraMs={agoraMs}
+              onDetalhes={setDetalhes}
+            />
           )}
+        </>
+      )}
 
-          {/* Área do gráfico */}
-          <div className="chart-body">
-            {historyError ? (
-              <div className="chart-empty">
-                <Radio size={32} />
-                <span>Não foi possível carregar o histórico.</span>
-                <small>{historyError}</small>
-              </div>
-            ) : historyLoading && series.length === 0 ? (
-              <div className="chart-empty">
-                <Radio size={32} />
-                <span>Carregando histórico...</span>
-              </div>
-            ) : series.length === 0 ? (
-              <div className="chart-empty">
-                <Radio size={32} />
-                <span>Sem leituras registradas em {PERIODS[period].label}.</span>
-                <small>Escolha um período maior ou verifique se o ESP32 está publicando.</small>
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={series} margin={{ top: 5, right: 16, left: -10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis
-                    dataKey="time"
-                    tick={{ fill: '#475569', fontSize: 10 }}
-                    axisLine={{ stroke: 'rgba(255,255,255,0.06)' }}
-                    tickLine={false}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    domain={['auto', 'auto']}
-                    tick={{ fill: '#475569', fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={42}
-                  />
-                  <Tooltip content={<ChartTooltip unit={param.unit} />} />
-                  <Line
-                    type="monotone"
-                    dataKey="value"
-                    stroke={param.color}
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4, fill: param.color, stroke: 'transparent' }}
-                    connectNulls={false}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          <div className="chart-footer">
-            <span className="chart-footer-stat">
-              {buffer.length} leituras · ~{Math.round(buffer.length * 5 / 60)} min
-            </span>
-            {latest.time && (
-              <span className="chart-footer-stat">Última: {latest.time}</span>
-            )}
-          </div>
-        </div>
-
-        {/* Ring chart — frota */}
-        <div className="chart-panel glass fleet-panel">
-          <div className="chart-panel-header">
-            <div className="chart-title">
-              <PieChart size={20} className="text-success" />
-              <h3>Status da Frota</h3>
-            </div>
-            <span className="badge">
-              {registryLoading && !fleetTotal ? 'Carregando...' : `Total: ${fleetTotal} bóias`}
-            </span>
-          </div>
-
-          <div className="fleet-stats-container">
-            <div className="fleet-ring-chart">
-              <svg viewBox="0 0 36 36" className="circular-chart">
-                <path
-                  className="circle-bg"
-                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                />
-                <path
-                  className="circle active-stroke"
-                  strokeDasharray={`${fleetPct}, 100`}
-                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                />
-                <text x="18" y="16" className="percentage">
-                  {Math.round(fleetPct)}%
-                </text>
-                <text x="18" y="22" className="percentage-sub">Online</text>
-              </svg>
-            </div>
-
-            <div className="fleet-legends">
-              <div className="legend-item">
-                <span className="legend-color bg-success" />
-                <span>Online / Operando</span>
-                <span className="legend-val">{fleetActive}</span>
-              </div>
-              <div className="legend-item">
-                <span className="legend-color" style={{ background: '#475569' }} />
-                <span>Sem Hardware</span>
-                <span className="legend-val">{fleetTotal - fleetActive}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Alertas ── */}
-      <div className="recent-alerts view-panel glass">
-        <h3>Últimos Alertas Reportados</h3>
-        <ul className="alert-list">
-          <li className="alert-item warning-item">
-            <span className="alert-time">Hoje, 08:30</span>
-            <span className="alert-msg">
-              Baixo nível de OD (3.1 mg/L) detectado no Sensor B-04 (Mundaú)
-            </span>
-          </li>
-          <li className="alert-item error-item">
-            <span className="alert-time">Ontem, 22:15</span>
-            <span className="alert-msg">
-              Falha de comunicação no Sensor M-02 (Manguaba).{' '}
-              <b>Equipe de manutenção acionada.</b>
-            </span>
-          </li>
-          <li className="alert-item success-item">
-            <span className="alert-time">12 Jun, 14:00</span>
-            <span className="alert-msg">
-              Retorno à operação da Bóia SM-08 após calibração preventiva.
-            </span>
-          </li>
-        </ul>
-      </div>
+      {/* TODO(Task 4): renderizar o modal aqui, ex.:
+          {detalhes && (
+            <BuoyDetailsModal
+              buoy={detalhes}
+              statusMsg={itens.find((i) => i.buoy.codigo === detalhes.codigo)?.mqtt.status ?? null}
+              onClose={() => setDetalhes(null)}
+            />
+          )} */}
     </div>
   );
 };
