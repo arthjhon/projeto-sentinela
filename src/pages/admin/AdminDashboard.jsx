@@ -13,6 +13,7 @@ import { mensagemDaSessao, resumoBoia } from '../../utils/dashboardView';
 import { criarFilaSerial } from '../../utils/filaSerial';
 import FleetStrip from '../../components/admin/dashboard/FleetStrip';
 import BuoyPanel from '../../components/admin/dashboard/BuoyPanel';
+import BuoyDetailsModal from '../../components/admin/dashboard/BuoyDetailsModal';
 import './AdminDashboard.css';
 
 // Visão geral: a frota primeiro (um card por bóia do cadastro), depois tudo da
@@ -116,10 +117,12 @@ const AdminDashboard = () => {
 
   const atual = itens.find((i) => i.buoy.codigo === selecao.codigo) ?? null;
 
-  // ── Modal "Detalhes da bóia" (Task 4) ───────────────────────────────────────
+  // ── Modal "Detalhes da bóia" ───────────────────────────────────────
   // `detalhes` = bóia do modal, ou null. O modal recebe a última mensagem
   // /status da bóia nesta sessão (com _recebidoEm): itens[...].mqtt.status.
   const [detalhes, setDetalhes] = useState(null);
+  // estável: o modal reassina o keydown quando onClose muda (o relógio re-renderiza a cada 5 s)
+  const fecharDetalhes = useCallback(() => setDetalhes(null), []);
 
   return (
     <div className="dashboard-content-area">
@@ -174,14 +177,13 @@ const AdminDashboard = () => {
         </>
       )}
 
-      {/* TODO(Task 4): renderizar o modal aqui, ex.:
-          {detalhes && (
-            <BuoyDetailsModal
-              buoy={detalhes}
-              statusMsg={itens.find((i) => i.buoy.codigo === detalhes.codigo)?.mqtt.status ?? null}
-              onClose={() => setDetalhes(null)}
-            />
-          )} */}
+      {detalhes && (
+        <BuoyDetailsModal
+          buoy={detalhes}
+          statusMsg={itens.find((i) => i.buoy.codigo === detalhes.codigo)?.mqtt.status ?? undefined}
+          onClose={fecharDetalhes}
+        />
+      )}
     </div>
   );
 };
