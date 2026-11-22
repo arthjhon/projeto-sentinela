@@ -9,7 +9,6 @@ export const PERFIS_GESTAO = Object.freeze(['admin', 'visualizador']);
 
 /** Fail closed: perfil ausente ou desconhecido vale como operador. */
 export const ehPerfilGestao = (role) => PERFIS_GESTAO.includes(role);
-const ehGestao = ehPerfilGestao;
 
 const SECOES = Object.freeze([
   {
@@ -40,7 +39,7 @@ const ABAS = Object.freeze({
   ],
 });
 
-const visivel = (role) => (x) => !x.gestao || ehGestao(role);
+const visivel = (role) => (x) => !x.gestao || ehPerfilGestao(role);
 
 /** Seções do menu lateral visíveis para o perfil; seções vazias são omitidas. */
 export function navParaPerfil(role) {

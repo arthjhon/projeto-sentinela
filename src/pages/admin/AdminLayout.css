@@ -356,8 +356,21 @@ a.header-status {
   }
 
   .admin-header-status {
-    flex-shrink: 0;
+    flex-shrink: 1;
+    min-width: 0;
     gap: 0.5rem;
+  }
+
+  /* Selo de demonstração: só "Modo Demonstração", com reticências se faltar espaço */
+  .admin-header-status .badge-warning {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .badge-demo-extra {
+    display: none;
   }
 
   .header-status {

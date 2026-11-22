@@ -20,7 +20,7 @@ const AdminLayout = () => {
   const mobile = useSyncExternalStore(subscribeMobile, getMobile, () => false);
   const sidebarRef = useRef(null);
   const toggleRef = useRef(null);
-  const jaAbriuRef = useRef(false);
+  const abertoAntesRef = useRef(false);
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -46,11 +46,10 @@ const AdminLayout = () => {
   // Foco: ao abrir vai ao primeiro link; ao fechar volta ao botão. Fechar por
   // navegação também devolve o foco ao botão (o link clicado ficou inerte).
   useEffect(() => {
-    const alvo = focoDoMenu({ mobile, aberto: menuAberto, jaAbriu: jaAbriuRef.current });
-    if (menuAberto) jaAbriuRef.current = true;
+    const alvo = focoDoMenu({ mobile, aberto: menuAberto, jaAbriu: abertoAntesRef.current });
+    abertoAntesRef.current = menuAberto;
     if (alvo === 'primeiro-link') sidebarRef.current?.querySelector('a')?.focus();
     else if (alvo === 'botao') toggleRef.current?.focus();
-    if (!menuAberto) jaAbriuRef.current = false;
   }, [menuAberto, mobile]);
 
   const handleLogout = () => {
@@ -135,7 +134,7 @@ const AdminLayout = () => {
             <div className="admin-header-status">
               {currentUser?.role === 'visualizador' && (
                 <span className="badge badge-warning">
-                  <Eye size={14} /> Modo Demonstração — Somente Leitura
+                  <Eye size={14} /> Modo Demonstração<span className="badge-demo-extra"> — Somente Leitura</span>
                 </span>
               )}
               <StatusBadge />
