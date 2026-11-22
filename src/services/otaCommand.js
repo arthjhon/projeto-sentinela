@@ -73,3 +73,20 @@ export async function requestOtaCommand(supabaseClient, deployId) {
 
   return { ok: false, code, status, message: otaErrorMessage(code) };
 }
+
+/**
+ * Último deploy de firmware com sucesso da bóia (boia_id = código do cadastro),
+ * ou null. Usado pelo modal de detalhes quando a bóia ainda não mandou status.
+ */
+export async function ultimoDeploy(supabaseClient, boiaId) {
+  const { data, error } = await supabaseClient
+    .from('firmware_deploys')
+    .select('*')
+    .eq('boia_id', boiaId)
+    .eq('status', 'sucesso')
+    .order('data_deploy', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ?? null;
+}

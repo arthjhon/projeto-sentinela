@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildDeployRow, requestOtaCommand, otaErrorMessage } from './otaCommand';
+import { buildDeployRow, requestOtaCommand, otaErrorMessage, ultimoDeploy } from './otaCommand';
 
 const httpError = (status, body) => ({
   name: 'FunctionsHttpError',
@@ -78,5 +78,37 @@ describe('otaErrorMessage', () => {
       expect(otaErrorMessage(c)).not.toBe(otaErrorMessage('???'));
     }
     expect(otaErrorMessage('???')).toMatch(/\?\?\?/);
+  });
+});
+
+describe('ultimoDeploy', () => {
+  const makeReader = (result) => {
+    const limit = vi.fn(() => ({ maybeSingle: vi.fn().mockResolvedValue(result) }));
+    const order = vi.fn(() => ({ limit }));
+    const eq2 = vi.fn(() => ({ order }));
+    const eq1 = vi.fn(() => ({ eq: eq2 }));
+    const select = vi.fn(() => ({ eq: eq1 }));
+    return { client: { from: vi.fn(() => ({ select })) }, eq1, eq2, order, limit };
+  };
+
+  it('returns the most recent successful deploy of the buoy', async () => {
+    const row = { versao: 'v5.1', status: 'sucesso' };
+    const r = makeReader({ data: row, error: null });
+    await expect(ultimoDeploy(r.client, 'SM-01')).resolves.toEqual(row);
+    expect(r.client.from).toHaveBeenCalledWith('firmware_deploys');
+    expect(r.eq1).toHaveBeenCalledWith('boia_id', 'SM-01');
+    expect(r.eq2).toHaveBeenCalledWith('status', 'sucesso');
+    expect(r.order).toHaveBeenCalledWith('data_deploy', { ascending: false });
+    expect(r.limit).toHaveBeenCalledWith(1);
+  });
+
+  it('returns null when there is none', async () => {
+    const r = makeReader({ data: null, error: null });
+    await expect(ultimoDeploy(r.client, 'SM-01')).resolves.toBeNull();
+  });
+
+  it('throws on query error', async () => {
+    const r = makeReader({ data: null, error: { message: 'boom' } });
+    await expect(ultimoDeploy(r.client, 'SM-01')).rejects.toThrow('boom');
   });
 });
