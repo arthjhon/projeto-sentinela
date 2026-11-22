@@ -19,6 +19,10 @@ export const DEVICE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 // 180d usa time(6h,3h): o offset alinha os baldes de 6 h ao dia local (00h, 06h, 12h, 18h).
 export const DURACOES = { '7d': '15m', '30d': '1h', '90d': '3h', '180d': '6h,3h' };
 export const ESTACOES_ANA = ['39770000', '39760000', '39740000', '39700000', '39800100'];
+// Painel de clima: pontos de previsão (tag `ponto` de previsao_atual, gravada pelo worker openmeteo)
+// e a estação ANA da bacia do Mundaú, fixa em ana-recente. Lista fechada: o map do nginx repete.
+export const PONTOS_PREVISAO = ['celmm', 'bacia_mundau'];
+export const ESTACAO_ANA_RECENTE = '39770000';
 export const INICIO_RE = /^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
 // sufixo que faz da data local o instante da meia-noite de Maceió; o map do nginx
 // (sentinela-http.conf) repete o literal e o teste de paridade confere os dois
@@ -27,6 +31,7 @@ export const T0_UTC = 'T03:00:00Z';
 export const QUERY_DB = {
   history: 'iot', ultimas: 'iot', 'leituras-24h': 'iot', primeira: 'iot', export: 'iot',
   ana: 'externos', 'turbidez-janela': 'iot', status: 'iot',
+  previsao: 'externos', 'ana-recente': 'externos',
 };
 
 function pick(value, allowed, name) {
@@ -54,7 +59,7 @@ function janela(params) {
 }
 
 /** Nomes aceitos por buildNamedQuery. */
-export const QUERY_NAMES = ['history', 'ultimas', 'leituras-24h', 'primeira', 'export', 'ana', 'turbidez-janela', 'status'];
+export const QUERY_NAMES = ['history', 'ultimas', 'leituras-24h', 'primeira', 'export', 'ana', 'turbidez-janela', 'status', 'previsao', 'ana-recente'];
 
 /**
  * Monta o InfluxQL de uma consulta nomeada.
@@ -62,7 +67,7 @@ export const QUERY_NAMES = ['history', 'ultimas', 'leituras-24h', 'primeira', 'e
  * @param {object} params history: {campo, periodo, device?}; ultimas: {device, periodo};
  *                        export: {device, periodo}; leituras-24h e primeira: {};
  *                        ana: {estacao, inicio, duracao}; turbidez-janela: {device, inicio, duracao};
- *                        status: {device, periodo}
+ *                        status: {device, periodo}; previsao: {ponto}; ana-recente: {}
  * @returns {string} InfluxQL
  * @throws {Error} nome ou parâmetro inválido
  */
@@ -111,6 +116,16 @@ export function buildNamedQuery(name, params = {}) {
       return 'SELECT mean("rssi") AS "rssi", mean("mqtt_latency") AS "mqtt_latency", min("free_heap") AS "free_heap" ' +
         `FROM "status" WHERE "topic" = ${topic} AND time > now() - ${periodo} GROUP BY time(${EVERY[periodo]}) fill(none)`;
     }
+    case 'previsao': {
+      const ponto = pick(params.ponto, PONTOS_PREVISAO, 'ponto');
+      return 'SELECT mean("precipitation") AS "precipitation", mean("precipitation_probability") AS "precipitation_probability", ' +
+        'mean("temperature_2m") AS "temperature_2m", mean("wind_speed_10m") AS "wind_speed_10m", mean("cloud_cover") AS "cloud_cover" ' +
+        `FROM "previsao_atual" WHERE "ponto" = '${ponto}' AND time >= now() - 24h AND time < now() + 7d GROUP BY time(1h) fill(none)`;
+    }
+    case 'ana-recente':
+      // duas instruções (resultado results[0] = chuva 3 d, results[1] = vazão 30 d)
+      return `SELECT sum("chuva") AS "chuva" FROM "ana_telemetria" WHERE "estacao" = '${ESTACAO_ANA_RECENTE}' AND time > now() - 3d GROUP BY time(1h) fill(none); ` +
+        `SELECT mean("vazao") AS "vazao" FROM "ana_telemetria" WHERE "estacao" = '${ESTACAO_ANA_RECENTE}' AND time > now() - 30d GROUP BY time(1h) fill(none)`;
     default:
       throw new Error(`consulta desconhecida: ${name}`);
   }

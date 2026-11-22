@@ -73,6 +73,8 @@ for (const duracao of Object.keys(DURACOES)) {
 }
 
 for (const periodo of ['1h', '24h', '7d', '30d']) cases.push(['status', { device: 'esp_sururu', periodo }]);
+for (const ponto of ['celmm', 'bacia_mundau']) cases.push(['previsao', { ponto }]);
+cases.push(['ana-recente', {}]);
 
 describe('paridade nginx <-> buildNamedQuery', () => {
   it('cobre exatamente os endpoints nomeados do nginx', () => {

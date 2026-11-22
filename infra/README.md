@@ -742,6 +742,8 @@ inválido responde 400. Todos são `GET`; resposta = JSON do `/query` do InfluxD
 | `/influx/q/ana` | `estacao` = 39770000\|39760000\|39740000\|39700000\|39800100; `inicio` = `AAAA-MM-DD`; `duracao` = 7d\|30d\|90d\|180d | **db `externos`**: `sum(chuva)`, `mean(vazao)`, `mean(nivel)` de `ana_telemetria` na janela `[inicio, inicio+duracao)`; `GROUP BY time(15m\|1h\|3h\|6h,3h)` (7d/30d/90d/180d), `fill(none)` |
 | `/influx/q/turbidez-janela` | `device`; `inicio`; `duracao` (como acima) | **db `iot`**: `mean(turbidez)` do device na mesma janela e com o mesmo `GROUP BY` |
 | `/influx/q/status` | `device`; `periodo` = 1h\|24h\|7d\|30d | **db `iot`**: `mean(rssi)`, `mean(mqtt_latency)`, `min(free_heap)` do topic `<device>/status` (medição `status`, Telegraf), mesmas janelas de `history`, `fill(none)` |
+| `/influx/q/previsao` | `ponto` = celmm\|bacia_mundau | **db `externos`**: médias horárias de `previsao_atual` (precipitation, precipitation_probability, temperature_2m, wind_speed_10m, cloud_cover) do `ponto`, de now-24h a now+7d, `GROUP BY time(1h) fill(none)` |
+| `/influx/q/ana-recente` | nenhum | **db `externos`**: duas instruções em uma chamada (`results[0]` = `sum(chuva)` 3 d, `results[1]` = `mean(vazao)` 30 d; estação 39770000, `time(1h)`) |
 
 `inicio` é a data local de Maceió (UTC-3, sem horário de verão); o nginx a converte em
 `'AAAA-MM-DDT03:00:00Z'` (regex `20AA-MM-DD` com mês 01-12 e dia 01-31, só a data capturada chega

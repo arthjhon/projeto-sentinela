@@ -53,8 +53,8 @@ describe('buildNamedQuery', () => {
     expect(() => buildNamedQuery('export', { device: ['a'], periodo: '1h' })).toThrow();
   });
 
-  it('QUERY_NAMES lista os 8 endpoints e QUERY_DB cobre todos', () => {
-    expect(QUERY_NAMES).toEqual(['history', 'ultimas', 'leituras-24h', 'primeira', 'export', 'ana', 'turbidez-janela', 'status']);
+  it('QUERY_NAMES lista os 10 endpoints e QUERY_DB cobre todos', () => {
+    expect(QUERY_NAMES).toEqual(['history', 'ultimas', 'leituras-24h', 'primeira', 'export', 'ana', 'turbidez-janela', 'status', 'previsao', 'ana-recente']);
     expect(Object.keys(QUERY_DB).sort()).toEqual([...QUERY_NAMES].sort());
     expect(QUERY_DB.ana).toBe('externos');
     expect(QUERY_DB['turbidez-janela']).toBe('iot');
@@ -110,3 +110,30 @@ describe('buildNamedQuery', () => {
     expect(buildNamedQuery('ana', { estacao: '39770000', inicio: '2026-05-01', duracao: '180d' })).toContain('GROUP BY time(6h,3h) fill(none)');
   });
 });
+
+describe('previsao e ana-recente (painel de clima)', () => {
+  it('previsao monta o modelo fixo para cada ponto', () => {
+    for (const ponto of ['celmm', 'bacia_mundau']) {
+      expect(buildNamedQuery('previsao', { ponto })).toBe(
+        'SELECT mean("precipitation") AS "precipitation", mean("precipitation_probability") AS "precipitation_probability", ' +
+        'mean("temperature_2m") AS "temperature_2m", mean("wind_speed_10m") AS "wind_speed_10m", mean("cloud_cover") AS "cloud_cover" ' +
+        `FROM "previsao_atual" WHERE "ponto" = '${ponto}' AND time >= now() - 24h AND time < now() + 7d GROUP BY time(1h) fill(none)`);
+    }
+    expect(QUERY_DB.previsao).toBe('externos');
+  });
+
+  it('previsao rejeita ponto fora da lista', () => {
+    for (const ponto of ['x', '../', "'", '', undefined, null, ['celmm'], 'CELMM', "celmm' OR 1=1"]) {
+      expect(() => buildNamedQuery('previsao', { ponto })).toThrow();
+    }
+    expect(() => buildNamedQuery('previsao')).toThrow();
+  });
+
+  it('ana-recente: duas instruções fixas, sem parâmetro', () => {
+    expect(buildNamedQuery('ana-recente')).toBe(
+      'SELECT sum("chuva") AS "chuva" FROM "ana_telemetria" WHERE "estacao" = \'39770000\' AND time > now() - 3d GROUP BY time(1h) fill(none); ' +
+      'SELECT mean("vazao") AS "vazao" FROM "ana_telemetria" WHERE "estacao" = \'39770000\' AND time > now() - 30d GROUP BY time(1h) fill(none)');
+    expect(QUERY_DB['ana-recente']).toBe('externos');
+  });
+});
+
