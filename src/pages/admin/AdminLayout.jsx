@@ -10,16 +10,22 @@ import './AdminLayout.css';
 const AdminLayout = () => {
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
-  // Menu no celular (<= 768 px): guarda a rota em que foi aberto, então
-  // trocar de rota fecha sozinho, sem efeito extra.
-  const [abertoEm, setAbertoEm] = useState(null);
-  const menuAberto = abertoEm === pathname;
-  const fecharMenu = () => setAbertoEm(null);
+  const location = useLocation();
+  // Menu no celular (<= 768 px). Fecha em qualquer navegação: cada push,
+  // replace ou "voltar" traz uma location.key nova (ajuste durante o render,
+  // sem efeito). Comparar o pathname reabria o menu ao voltar para a rota em
+  // que ele foi aberto.
+  const [menuAberto, setMenuAberto] = useState(false);
+  const [keyVista, setKeyVista] = useState(location.key);
+  if (location.key !== keyVista) {
+    setKeyVista(location.key);
+    setMenuAberto(false);
+  }
+  const fecharMenu = () => setMenuAberto(false);
 
   useEffect(() => {
     if (!menuAberto) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') setAbertoEm(null); };
+    const onKey = (e) => { if (e.key === 'Escape') setMenuAberto(false); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [menuAberto]);
@@ -57,6 +63,7 @@ const AdminLayout = () => {
                       key={item.to}
                       to={item.to}
                       end={item.to === '/admin/dashboard'}
+                      onClick={fecharMenu}
                       className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                     >
                       <Icon size={20} />
@@ -91,7 +98,7 @@ const AdminLayout = () => {
               aria-label="Abrir menu"
               aria-expanded={menuAberto}
               aria-controls="admin-sidebar"
-              onClick={() => setAbertoEm(menuAberto ? null : pathname)}
+              onClick={() => setMenuAberto((aberto) => !aberto)}
             >
               <Menu size={22} />
             </button>
