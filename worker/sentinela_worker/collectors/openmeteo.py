@@ -27,6 +27,13 @@ FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 PREVIOUS_RUNS_URL = "https://previous-runs-api.open-meteo.com/v1/forecast"
 CELMM_LAT = -9.6559
 CELMM_LON = -35.7701
+# (ponto, lat, lon). bacia_mundau = ANA station 39770000 coordinates (HidroWebService
+# inventory, queried 2026-11-22).
+PONTOS = (
+    ("celmm", CELMM_LAT, CELMM_LON),
+    ("bacia_mundau", -9.4672, -35.8597),
+)
+CURRENT_MEASUREMENT = "previsao_atual"
 BUCKET = "externos"
 MEASUREMENT = "previsao"
 MODEL = "best_match"
@@ -85,15 +92,16 @@ def _parse_time(s: str) -> datetime:
     return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
 
 
-def _point(t: datetime, lead_h: int, fields: dict) -> Point:
+def _point(t: datetime, lead_h: int | None, fields: dict, ponto: str = "celmm") -> Point:
     p = (
-        Point(MEASUREMENT)
+        Point(MEASUREMENT if lead_h is not None else CURRENT_MEASUREMENT)
         .tag("fonte", "openmeteo")
         .tag("modelo", MODEL)
-        .tag("ponto", "celmm")
-        .tag("antecedencia_h", str(lead_h))
+        .tag("ponto", ponto)
         .time(t)
     )
+    if lead_h is not None:
+        p = p.tag("antecedencia_h", str(lead_h))
     for name, value in fields.items():
         p = p.field(name, float(value))
     return p
@@ -108,7 +116,7 @@ def _column(hourly: dict, key: str, n: int) -> list | None:
     return col
 
 
-def forecast_points(payload: dict, fetched_at: datetime) -> list[Point]:
+def _lead_points(payload: dict, fetched_at: datetime, ponto: str, with_lead: bool) -> list[Point]:
     hourly = payload["hourly"]
     times = hourly["time"]
     cols = {v: _column(hourly, v, len(times)) for v in VARIABLES}
@@ -121,8 +129,17 @@ def forecast_points(payload: dict, fetched_at: datetime) -> list[Point]:
             continue
         fields = {v: c[i] for v, c in cols.items() if c is not None and c[i] is not None}
         if fields:
-            points.append(_point(t, lead, fields))
+            points.append(_point(t, lead if with_lead else None, fields, ponto))
     return points
+
+
+def forecast_points(payload: dict, fetched_at: datetime, ponto: str = "celmm") -> list[Point]:
+    return _lead_points(payload, fetched_at, ponto, True)
+
+
+def current_points(payload: dict, fetched_at: datetime, ponto: str) -> list[Point]:
+    """Latest forecast for the future hours: no lead tag, overwritten by each collection."""
+    return _lead_points(payload, fetched_at, ponto, False)
 
 
 def previous_runs_points(payload: dict) -> list[Point]:
@@ -139,10 +156,22 @@ def previous_runs_points(payload: dict) -> list[Point]:
 
 
 def collect_openmeteo(client: httpx.Client, sink, now: datetime) -> None:
-    """Raises on HTTP/parse errors; nothing is written unless everything parsed."""
-    payload = fetch_forecast(client, CELMM_LAT, CELMM_LON)
-    points = forecast_points(payload, now)
-    sink.write(BUCKET, points)
+    """One write per point; a failing point does not block the others.
+
+    Nothing is written for a point unless it fully parsed. Raises the first error at the end.
+    """
+    first_error: Exception | None = None
+    for ponto, lat, lon in PONTOS:
+        try:
+            payload = fetch_forecast(client, lat, lon)
+            points = forecast_points(payload, now, ponto) + current_points(payload, now, ponto)
+            sink.write(BUCKET, points)
+        except Exception as exc:
+            log("ERROR", "openmeteo", "point failed", ponto=ponto, error=str(exc))
+            if first_error is None:
+                first_error = exc
+    if first_error is not None:
+        raise first_error
 
 
 def _month_chunks(start: date, end: date):

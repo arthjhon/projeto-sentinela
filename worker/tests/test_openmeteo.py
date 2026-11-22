@@ -125,15 +125,70 @@ def test_fetch_forecast_request_params_and_user_agent():
     assert req.headers["user-agent"].startswith("sentinela-worker/")
 
 
+def test_current_points_have_no_lead_tag_and_measurement_previsao_atual():
+    pts = om.current_points(load("openmeteo_forecast.json"), utc(2026, 11, 17, 10, 37), "bacia_mundau")
+    assert pts
+    for p in pts:
+        assert p._name == "previsao_atual"
+        assert "antecedencia_h" not in p._tags
+        assert p._tags["ponto"] == "bacia_mundau"
+        assert p._tags["fonte"] == "openmeteo" and p._tags["modelo"] == "best_match"
+        assert set(p._fields) <= set(om.VARIABLES)
+
+
+def test_current_points_skip_past_hours():
+    pts = om.current_points(load("openmeteo_forecast.json"), utc(2026, 11, 17, 10, 37), "celmm")
+    assert min(p._time for p in pts) == utc(2026, 11, 17, 10)
+    assert not any(p._time == utc(2026, 11, 17, 9) for p in pts)
+
+
+def test_forecast_points_tag_ponto():
+    fc = load("openmeteo_forecast.json")
+    now = utc(2026, 11, 17, 10, 37)
+    assert {p._tags["ponto"] for p in om.forecast_points(fc, now)} == {"celmm"}
+    assert {p._tags["ponto"] for p in om.forecast_points(fc, now, "bacia_mundau")} == {"bacia_mundau"}
+
+
+def test_pontos_constant():
+    assert om.PONTOS == (("celmm", -9.6559, -35.7701), ("bacia_mundau", -9.4672, -35.8597))
+
+
 @respx.mock
-def test_collect_writes_once_to_externos():
+def test_fetch_uses_point_coordinates():
+    route = respx.get(FORECAST_URL).respond(200, json=load("openmeteo_forecast.json"))
+    sink = FakeSink()
+    with httpx.Client() as c:
+        om.collect_openmeteo(c, sink, utc(2026, 11, 17, 10, 37))
+    got = {(r.request.url.params["latitude"], r.request.url.params["longitude"]) for r in route.calls}
+    assert got == {("-9.6559", "-35.7701"), ("-9.4672", "-35.8597")}
+
+
+@respx.mock
+def test_collect_writes_once_per_point():
     respx.get(FORECAST_URL).respond(200, json=load("openmeteo_forecast.json"))
     sink = FakeSink()
     with httpx.Client() as c:
         om.collect_openmeteo(c, sink, utc(2026, 11, 17, 10, 37))
+    assert len(sink.writes) == 2
+    assert all(b == "externos" for b, _ in sink.writes)
+    for (_, pts), ponto in zip(sink.writes, ["celmm", "bacia_mundau"]):
+        assert {p._tags["ponto"] for p in pts} == {ponto}
+        assert {p._name for p in pts} == {"previsao", "previsao_atual"}
+
+
+@respx.mock
+def test_one_point_failure_still_writes_other():
+    def handler(request):
+        if request.url.params["latitude"] == "-9.4672":
+            return httpx.Response(500, text="boom")
+        return httpx.Response(200, json=load("openmeteo_forecast.json"))
+
+    respx.get(FORECAST_URL).mock(side_effect=handler)
+    sink = FakeSink()
+    with httpx.Client() as c, pytest.raises(httpx.HTTPStatusError):
+        om.collect_openmeteo(c, sink, utc(2026, 11, 17, 10, 37))
     assert len(sink.writes) == 1
-    bucket, pts = sink.writes[0]
-    assert bucket == "externos" and pts
+    assert {p._tags["ponto"] for p in sink.writes[0][1]} == {"celmm"}
 
 
 @respx.mock
