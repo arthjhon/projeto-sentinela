@@ -15,6 +15,8 @@ import {
   UploadCloud, Cpu, Wifi, WifiOff, CheckCircle2,
   AlertTriangle, RotateCw, Radio, FileCode2, Trash2,
 } from 'lucide-react';
+import AcessoNegado from '../../components/admin/AcessoNegado';
+import { ehPerfilGestao } from '../../config/adminNav';
 import './OtaPage.css';
 
 // 'availability' é o LWT do firmware (retido): status real de cada bóia. O
@@ -26,7 +28,7 @@ const ALL_TOPICS = getMqttTopics(TOPIC_SUFFIXES);
 const MAX_VERSION_CHARS = 32;
 
 // ─── Componente ───────────────────────────────────────────────────────────────
-const OtaPage = () => {
+const OtaPageConteudo = () => {
   const { messages, connected, addTopics } = useMqtt(ALL_TOPICS);
   const { buoys: registryBuoys, loading: registryLoading } = useBuoyRegistry();
   const readOnly = useReadOnly();
@@ -527,6 +529,16 @@ const OtaPage = () => {
       )}
     </div>
   );
+};
+
+// Guarda de perfil fora do componente: os hooks da tela não rodam para quem
+// não pode vê-la (e a regra de hooks não permite retorno antecipado depois deles).
+const OtaPage = () => {
+  const { currentUser } = useAuth();
+  if (!ehPerfilGestao(currentUser?.role)) {
+    return <AcessoNegado>Você não possui privilégios de Administrador para consultar o firmware das bóias.</AcessoNegado>;
+  }
+  return <OtaPageConteudo />;
 };
 
 export default OtaPage;

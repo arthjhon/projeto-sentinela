@@ -9,11 +9,14 @@ import {
   CATEGORIAS, CATEGORIA_COLORS,
 } from '../../services/changelog';
 import { getSetting, saveSetting, MONITORAMENTO_INICIO_KEY } from '../../services/settings';
+import { useAuth } from '../../contexts/AuthContext';
+import AcessoNegado from '../../components/admin/AcessoNegado';
+import { ehPerfilGestao } from '../../config/adminNav';
 import './ChangelogPage.css';
 
 const initialFormData = { titulo: '', descricao: '', categoria: 'Hardware', data: '' };
 
-const ChangelogPage = () => {
+const ChangelogPageConteudo = () => {
   const { addToast } = useToast();
   const readOnly = useReadOnly();
 
@@ -379,6 +382,16 @@ const ChangelogPage = () => {
       />
     </div>
   );
+};
+
+// Guarda de perfil fora do componente: os hooks da tela não rodam para quem
+// não pode vê-la (e a regra de hooks não permite retorno antecipado depois deles).
+const ChangelogPage = () => {
+  const { currentUser } = useAuth();
+  if (!ehPerfilGestao(currentUser?.role)) {
+    return <AcessoNegado>Você não possui privilégios de Administrador para consultar o changelog.</AcessoNegado>;
+  }
+  return <ChangelogPageConteudo />;
 };
 
 export default ChangelogPage;

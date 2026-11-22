@@ -1,13 +1,26 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { LogOut, Eye, Menu } from 'lucide-react';
 import { navParaPerfil } from '../../config/adminNav';
 import { SystemStatusProvider } from '../../contexts/SystemStatusContext';
+import { menuInerte, focoDoMenu } from '../../utils/menuMobile';
 import StatusBadge from '../../components/admin/StatusBadge';
 import './AdminLayout.css';
 
+const MQ_MOBILE = '(max-width: 768px)';
+const subscribeMobile = (cb) => {
+  const mq = window.matchMedia(MQ_MOBILE);
+  mq.addEventListener('change', cb);
+  return () => mq.removeEventListener('change', cb);
+};
+const getMobile = () => window.matchMedia(MQ_MOBILE).matches;
+
 const AdminLayout = () => {
+  const mobile = useSyncExternalStore(subscribeMobile, getMobile, () => false);
+  const sidebarRef = useRef(null);
+  const toggleRef = useRef(null);
+  const jaAbriuRef = useRef(false);
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -30,6 +43,16 @@ const AdminLayout = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [menuAberto]);
 
+  // Foco: ao abrir vai ao primeiro link; ao fechar volta ao botão. Fechar por
+  // navegação também devolve o foco ao botão (o link clicado ficou inerte).
+  useEffect(() => {
+    const alvo = focoDoMenu({ mobile, aberto: menuAberto, jaAbriu: jaAbriuRef.current });
+    if (menuAberto) jaAbriuRef.current = true;
+    if (alvo === 'primeiro-link') sidebarRef.current?.querySelector('a')?.focus();
+    else if (alvo === 'botao') toggleRef.current?.focus();
+    if (!menuAberto) jaAbriuRef.current = false;
+  }, [menuAberto, mobile]);
+
   const handleLogout = () => {
     logout();
     navigate('/');
@@ -44,7 +67,12 @@ const AdminLayout = () => {
           <div className="admin-sidebar-backdrop" onClick={fecharMenu} aria-hidden="true" />
         )}
 
-        <aside id="admin-sidebar" className={`admin-sidebar glass ${menuAberto ? 'open' : ''}`}>
+        <aside
+          id="admin-sidebar"
+          ref={sidebarRef}
+          inert={menuInerte({ mobile, aberto: menuAberto })}
+          className={`admin-sidebar glass ${menuAberto ? 'open' : ''}`}
+        >
           <div className="sidebar-header">
             <div className="admin-logo">
               <img src="/sentinela-escudo.svg" alt="Sentinela" className="sidebar-logo-img" />
@@ -94,6 +122,7 @@ const AdminLayout = () => {
           <header className="admin-header glass">
             <button
               type="button"
+              ref={toggleRef}
               className="menu-toggle"
               aria-label="Abrir menu"
               aria-expanded={menuAberto}
@@ -103,7 +132,7 @@ const AdminLayout = () => {
               <Menu size={22} />
             </button>
             <h2>Centro de Comando</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div className="admin-header-status">
               {currentUser?.role === 'visualizador' && (
                 <span className="badge badge-warning">
                   <Eye size={14} /> Modo Demonstração — Somente Leitura

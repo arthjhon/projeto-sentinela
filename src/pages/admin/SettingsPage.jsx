@@ -9,9 +9,11 @@ import {
   collectionRings, normalizeCollectionRadius,
   DEFAULT_COLLECTION_RADIUS_M, MIN_COLLECTION_RADIUS_M, MAX_COLLECTION_RADIUS_M,
 } from '../../utils/collectionRadius';
+import AcessoNegado from '../../components/admin/AcessoNegado';
+import { ehPerfilGestao } from '../../config/adminNav';
 import './SettingsPage.css';
 
-const SettingsPage = () => {
+const SettingsPageConteudo = () => {
   const [mockEnabled, setMockEnabled] = useMockMode();
   const [salvandoMock, setSalvandoMock] = useState(false);
   const { addToast } = useToast();
@@ -237,6 +239,16 @@ const SettingsPage = () => {
       </div>
     </div>
   );
+};
+
+// Guarda de perfil fora do componente: os hooks da tela não rodam para quem
+// não pode vê-la (e a regra de hooks não permite retorno antecipado depois deles).
+const SettingsPage = () => {
+  const { currentUser } = useAuth();
+  if (!ehPerfilGestao(currentUser?.role)) {
+    return <AcessoNegado>Você não possui privilégios de Administrador para consultar as configurações do site público.</AcessoNegado>;
+  }
+  return <SettingsPageConteudo />;
 };
 
 export default SettingsPage;

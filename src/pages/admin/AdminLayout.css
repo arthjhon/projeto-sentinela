@@ -183,6 +183,12 @@
   font-weight: 500;
 }
 
+.admin-header-status {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .header-status {
   display: flex;
   align-items: center;
@@ -327,6 +333,36 @@ a.header-status {
 
   .admin-main {
     margin-left: 0;
+  }
+
+  /* Cabeçalho em 375 px: título numa linha só, ao lado do ☰ e do selo */
+  .admin-header {
+    padding: 0.75rem 1rem;
+    gap: 0.5rem;
+  }
+
+  .admin-header h2 {
+    flex: 1;
+    min-width: 0;
+    font-size: 1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .menu-toggle {
+    margin-right: 0;
+    flex-shrink: 0;
+  }
+
+  .admin-header-status {
+    flex-shrink: 0;
+    gap: 0.5rem;
+  }
+
+  .header-status {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.8rem;
   }
 }
 

@@ -5,6 +5,7 @@ import {
   abasDaSecao,
   REDIRECTS_LEGADOS,
   legacyTarget,
+  ehPerfilGestao,
 } from './adminNav.js';
 
 const resumo = (secoes) =>
@@ -99,5 +100,15 @@ describe('redirecionamentos legados', () => {
   it('legacyTarget devolve null para caminho que não é legado', () => {
     expect(legacyTarget('boias')).toBeNull();
     expect(legacyTarget('constructor')).toBeNull();
+  });
+});
+
+describe('ehPerfilGestao', () => {
+  it('admits management profiles only, failing closed', () => {
+    expect(ehPerfilGestao('admin')).toBe(true);
+    expect(ehPerfilGestao('visualizador')).toBe(true);
+    expect(ehPerfilGestao('operador')).toBe(false);
+    expect(ehPerfilGestao(undefined)).toBe(false);
+    expect(ehPerfilGestao('qualquer')).toBe(false);
   });
 });

@@ -6,6 +6,8 @@ import { logAcao, AUDIT } from './../../services/auditLog';
 import ConfirmModal from './../../components/ConfirmModal';
 import { Search, Plus, Edit2, Trash2, Shield, User, Eye, KeyRound, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import AcessoNegado from '../../components/admin/AcessoNegado';
+import { ehPerfilGestao } from '../../config/adminNav';
 import './UsersPage.css';
 
 const UsersPage = () => {
@@ -36,16 +38,8 @@ const UsersPage = () => {
   };
   const [formData, setFormData] = useState(initialFormData);
 
-  if (currentUser?.role !== 'admin' && currentUser?.role !== 'visualizador') {
-    return (
-      <div className="dashboard-content-area">
-        <div className="alert-permission glass mt-4">
-          <Shield size={32} className="text-danger mb-3" />
-          <h2>Acesso Negado</h2>
-          <p>Você não possui privilégios de Administrador para gerenciar a base de dados de operadores.</p>
-        </div>
-      </div>
-    );
+  if (!ehPerfilGestao(currentUser?.role)) {
+    return <AcessoNegado>Você não possui privilégios de Administrador para gerenciar a base de dados de operadores.</AcessoNegado>;
   }
 
   const handleOpenCreate = () => {

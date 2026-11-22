@@ -7,8 +7,9 @@ import { LayoutDashboard, ActivitySquare, CloudRain, HeartPulse, SlidersHorizont
 /** Perfis que veem as telas de gestão (Firmware, Configurações). */
 export const PERFIS_GESTAO = Object.freeze(['admin', 'visualizador']);
 
-// Fail closed: perfil ausente ou desconhecido vale como operador.
-const ehGestao = (role) => PERFIS_GESTAO.includes(role);
+/** Fail closed: perfil ausente ou desconhecido vale como operador. */
+export const ehPerfilGestao = (role) => PERFIS_GESTAO.includes(role);
+const ehGestao = ehPerfilGestao;
 
 const SECOES = Object.freeze([
   {
