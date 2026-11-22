@@ -17,6 +17,9 @@ export const PERIODS = Object.fromEntries(
   Object.entries(EVERY).map(([key, every]) => [key, { label: key, every }]),
 );
 
+/** Identifica o que um resultado de history representa: campo, período e seriais. */
+export const chaveHistorico = (field, period, deviceIds) => `${field}|${period}|${JSON.stringify(deviceIds ?? null)}`;
+
 /** Série de history ([time, mean]) -> [{time: Date, value}], sem pontos nulos. */
 export function mapHistorySeries(series) {
   const out = [];
@@ -90,7 +93,7 @@ export function useInfluxHistory(field, period, deviceIds) {
   const idsKey = JSON.stringify(deviceIds ?? null);
   // Estado único: data/loading/error mudam sempre juntos, e agrupá-los evita
   // três renders por transição.
-  const [state, setState] = useState({ data: [], loading: false, error: null });
+  const [state, setState] = useState({ data: [], loading: false, error: null, chave: null });
 
   useEffect(() => {
     if (!PERIODS[period] || !field) return;
@@ -103,7 +106,9 @@ export function useInfluxHistory(field, period, deviceIds) {
       setState(s => ({ ...s, loading: true, error: null }));
       try {
         const data = await fetchHistory(field, period, JSON.parse(idsKey), { signal: controller.signal });
-        setState({ data, loading: false, error: null });
+        // `chave` diz de qual campo/período/seriais é `data`: quem calcula em
+        // cima dela não mistura o dado velho com o período novo
+        setState({ data, loading: false, error: null, chave: chaveHistorico(field, period, JSON.parse(idsKey)) });
       } catch (err) {
         // abort é troca de período/desmontagem, não falha: o efeito seguinte
         // já está buscando a janela nova

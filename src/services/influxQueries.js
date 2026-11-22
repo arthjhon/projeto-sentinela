@@ -34,20 +34,16 @@ function pick(value, allowed, name) {
   return value;
 }
 
-function deviceTopic(device) {
+// topic MQTT gravado pelo Telegraf: <device>/sensores (leituras) ou <device>/status
+// (telemetria de saúde da placa, measurement "status")
+function topicDe(device, sufixo) {
   if (typeof device !== 'string' || !DEVICE_RE.test(device)) {
     throw new Error('parâmetro inválido: device');
   }
-  return `'${device}/sensores'`;
+  return `'${device}/${sufixo}'`;
 }
-
-// topic da telemetria de saúde da placa (measurement "status"): <device>/status
-function statusTopic(device) {
-  if (typeof device !== 'string' || !DEVICE_RE.test(device)) {
-    throw new Error('parâmetro inválido: device');
-  }
-  return `'${device}/status'`;
-}
+const deviceTopic = (device) => topicDe(device, 'sensores');
+const statusTopic = (device) => topicDe(device, 'status');
 
 function janela(params) {
   const { inicio } = params;

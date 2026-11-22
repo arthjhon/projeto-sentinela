@@ -17,7 +17,7 @@ export const ESTADO_META = {
 export const DADOS_INSUFICIENTES_HINT =
   'Detector estatístico precisa de ~3 dias de dados após manutenção ou troca de modo; regras básicas seguem ativas.';
 
-const TONE_RANK = { bad: 4, warn: 3, info: 2, neutral: 1, ok: 0 };
+export const TONE_RANK = { bad: 4, warn: 3, info: 2, neutral: 1, ok: 0 };
 /** Meta de um estado; estado desconhecido mostra o valor cru em tom neutro. */
 export const estadoMeta = (estado) =>
   ESTADO_META[estado] ?? { label: String(estado ?? '—'), tone: 'neutral' };

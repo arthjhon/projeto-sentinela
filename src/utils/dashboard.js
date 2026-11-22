@@ -1,5 +1,5 @@
 import { EVERY } from '../services/influxQueries';
-import { estadoMeta, ESTADO_META } from '../services/sensorHealth';
+import { estadoMeta, ESTADO_META, TONE_RANK } from '../services/sensorHealth';
 
 // Lógica pura do painel admin (visão geral). Sem React, sem I/O.
 
@@ -18,7 +18,15 @@ export function estadoConexao({ lwt, ultimaLeituraMs, agoraMs }) {
   return recente ? 'online' : 'desconhecido';
 }
 
-const num = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
+/** Só número finito ou string numérica não vazia; '' , true, NaN e Infinity viram null. */
+export function num(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
 
 /**
  * Valor atual de um campo: MQTT (ao vivo) se trouxer o campo; senão a leitura
@@ -47,6 +55,17 @@ export function disponibilidade(serie, periodo) {
   return Math.min(1, com / (dur / passo));
 }
 
+/**
+ * Disponibilidade só da série do período PEDIDO: `historico` = estado do
+ * useInfluxHistory ({data, loading, error, chave}); `chave` = chaveHistorico do
+ * que o painel pede agora. Série ainda não buscada (montagem), de outro período
+ * ou campo, carregando ou com erro = null (a UI mostra "calculando…"), nunca 0%.
+ */
+export function disponibilidadeDoPeriodo(historico, chave, periodo) {
+  if (!historico || historico.loading || historico.error || historico.chave !== chave) return null;
+  return disponibilidade(historico.data, periodo);
+}
+
 /** Qualidade do RSSI (dBm). */
 export function qualidadeSinal(rssi) {
   const v = num(rssi);
@@ -68,7 +87,6 @@ export function resolverSelecao(buoys, codigoUrl) {
 // sensorHealth: bad > warn > info > neutral > ok). Empate no mesmo tom: o estado
 // que aparece primeiro em ESTADO_META (falha antes de sem_dados). Estado
 // desconhecido cai em 'neutral' via estadoMeta.
-const TONE_RANK = { bad: 4, warn: 3, info: 2, neutral: 1, ok: 0 };
 const ORDEM = Object.keys(ESTADO_META);
 const gravidade = (estado) => TONE_RANK[estadoMeta(estado).tone] * 100 - (ORDEM.indexOf(estado) + 1 || ORDEM.length + 1);
 

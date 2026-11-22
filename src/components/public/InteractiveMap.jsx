@@ -36,27 +36,10 @@ import {
   Play, Pause, SkipBack,
   Wifi, WifiOff, Layers,
 } from 'lucide-react';
+import { TILES } from '../../config/mapTiles';
 import './InteractiveMap.css';
 
-// Basemap: CartoDB Dark Matter exige key desde 2026 (gratuita, sem conta:
-// carto.com/basemaps/apikey — tiles sem key chegam com marca d'água "API KEY
-// REQUIRED"). Com VITE_CARTO_BASEMAPS_KEY definida usa o Carto; sem ela cai no
-// Esri World Dark Gray (sem cadastro), que é cinza-médio e ganha um filtro
-// de escurecimento só nessa camada (ver .imap-tiles-fallback no CSS).
-// Ordem {z}/{y}/{x} no Esri: serviços ArcGIS usam row/col, não x/y.
-const CARTO_KEY = import.meta.env.VITE_CARTO_BASEMAPS_KEY;
-const TILES = CARTO_KEY
-  ? {
-      url: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,
-      subdomains: 'abcd',
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      fallback: false,
-    }
-  : {
-      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-      attribution: '&copy; <a href="https://www.esri.com">Esri</a>',
-      fallback: true,
-    };
+// Basemap (Carto com key, senão Esri): config/mapTiles.js, compartilhada com o modal da bóia.
 
 const PARAMS = [
   { key: 'ph',          label: 'pH',         icon: Droplet,    unit: '' },

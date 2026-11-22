@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { TONE_RANK } from '../services/sensorHealth';
 import {
   SEM_LEITURA_MS, estadoConexao, valorAtual, disponibilidade,
-  qualidadeSinal, resolverSelecao, piorSaude,
+  qualidadeSinal, resolverSelecao, piorSaude, num, disponibilidadeDoPeriodo,
 } from './dashboard';
 
 const pontos = (n) => Array.from({ length: n }, (_, i) => ({ time: i, value: 1 }));
@@ -106,5 +107,45 @@ describe('piorSaude', () => {
     expect(piorSaude([{ estado: 'suspeito' }, { estado: 'falha' }, { estado: 'ok' }])).toBe('falha');
     expect(piorSaude([{ estado: 'ok' }, { estado: 'manutencao' }])).toBe('manutencao');
     expect(piorSaude([{ estado: 'ok' }])).toBe('ok');
+  });
+});
+
+describe('num', () => {
+  it('só número finito ou string numérica não vazia', () => {
+    expect(num(7)).toBe(7);
+    expect(num(0)).toBe(0);
+    expect(num('7.5')).toBe(7.5);
+    expect(num('0')).toBe(0);
+  });
+  it('vazio, só espaços, booleano, objeto, NaN e infinito = null', () => {
+    for (const v of ['', '  ', true, false, null, undefined, {}, [], 'abc', NaN, Infinity, -Infinity]) {
+      expect(num(v)).toBeNull();
+    }
+  });
+  it('valorAtual não trata string vazia nem booleano do MQTT como valor', () => {
+    expect(valorAtual({ mqtt: { ph: '', _recebidoEm: 5 }, ultimas: [{ time: 3, ph: 6.5 }] }, 'ph'))
+      .toEqual({ valor: 6.5, fonte: 'gravada', em: 3 });
+    expect(valorAtual({ mqtt: { ph: true, _recebidoEm: 5 } }, 'ph').valor).toBeNull();
+  });
+});
+
+describe('disponibilidadeDoPeriodo (só com a série do período pedido)', () => {
+  const ok = { data: pontos(72), loading: false, error: null, chave: 'k24' };
+  it('série do período pedido: calcula', () => {
+    expect(disponibilidadeDoPeriodo(ok, 'k24', '24h')).toBe(0.5);
+  });
+  it('ainda sem série (montagem) ou série de outro período/campo: null, nunca 0%', () => {
+    expect(disponibilidadeDoPeriodo({ data: [], loading: false, error: null, chave: null }, 'k24', '24h')).toBeNull();
+    expect(disponibilidadeDoPeriodo(ok, 'k7d', '7d')).toBeNull();
+  });
+  it('carregando ou com erro: null', () => {
+    expect(disponibilidadeDoPeriodo({ ...ok, loading: true }, 'k24', '24h')).toBeNull();
+    expect(disponibilidadeDoPeriodo({ ...ok, error: 'x' }, 'k24', '24h')).toBeNull();
+  });
+});
+
+describe('TONE_RANK compartilhado com sensorHealth', () => {
+  it('escala de gravidade: bad > warn > info > neutral > ok', () => {
+    expect(TONE_RANK).toEqual({ bad: 4, warn: 3, info: 2, neutral: 1, ok: 0 });
   });
 });

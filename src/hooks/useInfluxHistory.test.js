@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   PERIODS, mapHistorySeries, mapUltimasSeries, fetchUltimasLeituras,
-  mergeHistorySeries, fetchHistory, mergeUltimas, fetchStatusHistory,
+  mergeHistorySeries, fetchHistory, mergeUltimas, fetchStatusHistory, chaveHistorico,
 } from './useInfluxHistory';
 import { EVERY, ULTIMAS_LIMIT } from '../services/influxQueries';
 
@@ -188,5 +188,15 @@ describe('fetchStatusHistory', () => {
       expect(await fetchStatusHistory(ids, '1h')).toEqual([]);
     }
     expect(f).not.toHaveBeenCalled();
+  });
+});
+
+describe('chaveHistorico', () => {
+  it('identifica campo, período e seriais do que foi buscado', () => {
+    expect(chaveHistorico('ph', '24h', ['a'])).toBe(chaveHistorico('ph', '24h', ['a']));
+    expect(chaveHistorico('ph', '24h', ['a'])).not.toBe(chaveHistorico('ph', '7d', ['a']));
+    expect(chaveHistorico('ph', '24h', ['a'])).not.toBe(chaveHistorico('temperatura', '24h', ['a']));
+    expect(chaveHistorico('ph', '24h', ['a'])).not.toBe(chaveHistorico('ph', '24h', ['b']));
+    expect(chaveHistorico('ph', '24h', null)).toBe(chaveHistorico('ph', '24h', undefined));
   });
 });
