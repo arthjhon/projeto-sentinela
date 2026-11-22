@@ -140,3 +140,49 @@ export async function fetchUltimasLeituras(deviceIds, { periodo = '24h', signal 
   const perId = await fetchNamedPerDevice('ultimas', { periodo }, deviceIds, { signal });
   return mergeUltimas(perId.map(mapUltimasSeries));
 }
+
+const STATUS_CAMPOS = ['rssi', 'mqtt_latency', 'free_heap'];
+
+/** Série de status -> [{time: number (ms), rssi, mqtt_latency, free_heap}], campo ausente = null. */
+export function mapStatusSeries(series) {
+  const num = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
+  return rowsOf(series)
+    .map(r => ({ time: Number(r.time), rssi: num(r.rssi), mqtt_latency: num(r.mqtt_latency), free_heap: num(r.free_heap) }))
+    .filter(r => Number.isFinite(r.time));
+}
+
+/**
+ * Junta o status de vários seriais por janela: rssi e latência = média simples
+ * das médias dos ids; heap = o menor (pior caso). Ids sem valor no campo não entram.
+ */
+export function mergeStatusSeries(lists) {
+  const byTime = new Map();
+  for (const row of lists.flat()) {
+    const acc = byTime.get(row.time) ?? { time: row.time, rssi: [], mqtt_latency: [], free_heap: [] };
+    for (const c of STATUS_CAMPOS) if (row[c] != null) acc[c].push(row[c]);
+    byTime.set(row.time, acc);
+  }
+  const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+  return [...byTime.values()]
+    .sort((a, b) => a.time - b.time)
+    .map(a => ({
+      time: a.time,
+      rssi: mean(a.rssi),
+      mqtt_latency: mean(a.mqtt_latency),
+      free_heap: a.free_heap.length ? Math.min(...a.free_heap) : null,
+    }));
+}
+
+/**
+ * Saúde da placa (RSSI, latência MQTT, heap livre mínimo) por janela de PERIODS,
+ * somando o serial atual e os anteriores (uma consulta `status` por id, em
+ * sequência). Não há status da frota: `null`, [] ou só ids inválidos = [] sem consulta.
+ * @param {string|string[]|null} deviceIds
+ * @param {string} periodo  chave de PERIODS
+ * @param {{signal?: AbortSignal}} [opts]
+ */
+export async function fetchStatusHistory(deviceIds, periodo, { signal } = {}) {
+  if (deviceIds == null) return [];
+  const perId = await fetchNamedPerDevice('status', { periodo }, deviceIds, { signal });
+  return mergeStatusSeries(perId.map(mapStatusSeries));
+}

@@ -76,6 +76,10 @@ ix v1 dbrp create --db externos --rp autogen --bucket-id "$ext_id" >/dev/null
 ix write -b externos -p s "ana_telemetria,estacao=39770000 chuva=1.5,vazao=10,nivel=2 1777604400
 ana_telemetria,estacao=39770000 chuva=2.5,vazao=20,nivel=4 1777605300
 ana_telemetria,estacao=39760000 chuva=9,vazao=1,nivel=1 1777604400"
+# status telemetry (Telegraf writes topic=<device>/status): two points in the same 30 s ... 1h window of "now"
+ix write -b iot -p s "status,topic=esp_x/status rssi=-60,mqtt_latency=40,free_heap=150000 $((now - 20))
+status,topic=esp_x/status rssi=-70,mqtt_latency=60,free_heap=140000 $((now - 10))
+status,topic=esp_y/status rssi=-30,mqtt_latency=5,free_heap=1 $((now - 15))"
 ix write -b iot -p s "sensores,topic=esp_x/sensores turbidez=30 1777604400
 sensores,topic=esp_x/sensores turbidez=50 1777605300
 sensores,topic=esp_y/sensores turbidez=999 1777604400"
@@ -169,6 +173,13 @@ check "turbidez-janela esp_x 7d: 15m buckets (esp_y excluded)" \
 check "turbidez-janela esp_x 30d: mean 40" \
   '.results[0].series[0].values == [[1777604400000,40]]' \
   turbidez-janela --data-urlencode device=esp_x --data-urlencode inicio=2026-05-01 --data-urlencode duracao=30d
+check "status esp_x 1h: columns, only esp_x (rssi in [-70,-60], heap min 140000)" \
+  '.results[0].series[0] | .columns == ["time","rssi","mqtt_latency","free_heap"] and ([.values[][1]] | all(. >= -70 and . <= -60)) and ([.values[][3]] | min == 140000)' \
+  status --data-urlencode device=esp_x --data-urlencode periodo=1h
+check "status esp_y 24h: only esp_y (rssi -30)" '[.results[0].series[0].values[][1]] | all(. == -30)' \
+  status --data-urlencode device=esp_y --data-urlencode periodo=24h
+check "status unknown device: empty result, not an error" '.results[0] | has("error") | not' \
+  status --data-urlencode device=nao_existe --data-urlencode periodo=24h
 
 # ---- invalid / missing parameters -> 400 ------------------------------------------------
 for qs in "" "campo=ph" "periodo=1h" "campo=foo&periodo=1h" "campo=ph&periodo=2h" "campo=ph&periodo=1h&device=bad%27id" \
@@ -200,6 +211,10 @@ for qs in "" "inicio=2026-05-01&duracao=7d" "device=esp_x&duracao=7d" "device=es
           "device=esp_x&inicio=2026-5-1&duracao=7d" "device=esp_x&inicio=2026-05-01&duracao=365d"; do
   status 400 "turbidez-janela ?$qs" "$U/q/turbidez-janela?$qs"
 done
+for qs in "" "device=esp_x" "periodo=24h" "device=esp_x&periodo=2h" "device=a%2Fb&periodo=24h" "device=&periodo=24h" \
+          "device=a%27b&periodo=24h" "device=esp_x&periodo=24h%20OR%201%3D1" "device=$(printf 'a%.0s' $(seq 41))&periodo=24h"; do
+  status 400 "status ?$qs" "$U/q/status?$qs"
+done
 
 # ---- free-form q and everything else are gone ------------------------------------------
 status 404 "GET /influx/query?q=..." "$U/query?db=iot&q=SHOW%20MEASUREMENTS"
@@ -212,7 +227,7 @@ status 404 "/influx/q/history/ (trailing slash)" "$U/q/history/?campo=ph&periodo
 # --path-as-is: without it curl normalizes the `..` client-side and the proxy never sees it
 status 404 "/influx/q/history/../query (--path-as-is)" --path-as-is "$U/q/history/../query?q=SHOW%20DATABASES"
 for ep in "history?campo=ph&periodo=1h" "ultimas?device=esp_x&periodo=24h" "leituras-24h" "primeira" "export?device=esp_x&periodo=1h" \
-          "ana?$A" "turbidez-janela?device=esp_x&inicio=2026-05-01&duracao=7d"; do
+          "ana?$A" "turbidez-janela?device=esp_x&inicio=2026-05-01&duracao=7d" "status?device=esp_x&periodo=1h"; do
   status 403 "POST /influx/q/$ep" -X POST "$U/q/$ep"
   status 403 "HEAD /influx/q/$ep" -I "$U/q/$ep"
   status 403 "OPTIONS /influx/q/$ep" -X OPTIONS "$U/q/$ep"
@@ -252,7 +267,7 @@ b=$(body -X GET "$U/q/history?$H1" --form-string 'q=SHOW DATABASES' --form-strin
 status 413 "body over 1k" -X GET "$U/q/history?$H1" --form-string "q=$(head -c 3000 /dev/zero | tr '\0' a)"
 hdr=$(docker exec "$nginx_ctr" curl -s -D - -o /dev/null -H "$H" "$U/q/history?$H1")
 for ep in "history?$H1" "ultimas?device=esp_x&periodo=24h" "leituras-24h" "primeira" "export?device=esp_y&periodo=1h" \
-          "ana?$A" "turbidez-janela?device=esp_x&inicio=2026-05-01&duracao=7d"; do
+          "ana?$A" "turbidez-janela?device=esp_x&inicio=2026-05-01&duracao=7d" "status?device=esp_x&periodo=1h"; do
   sleep 0.25
   h=$(docker exec "$nginx_ctr" curl -s -D - -o /dev/null -H "$H" "$U/q/$ep")
   [ "$(grep -ci '^cache-control: no-store' <<<"$h")" = 1 ] && pass "Cache-Control: no-store on /influx/q/${ep%%\?*}" || fail "Cache-Control on /influx/q/${ep%%\?*}: $(head -n1 <<<"$h")"

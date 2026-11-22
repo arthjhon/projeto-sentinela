@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   PERIODS, mapHistorySeries, mapUltimasSeries, fetchUltimasLeituras,
-  mergeHistorySeries, fetchHistory, mergeUltimas,
+  mergeHistorySeries, fetchHistory, mergeUltimas, fetchStatusHistory,
 } from './useInfluxHistory';
 import { EVERY, ULTIMAS_LIMIT } from '../services/influxQueries';
 
@@ -144,6 +144,48 @@ describe('mergeUltimas / fetchUltimasLeituras com vários seriais', () => {
     vi.stubGlobal('fetch', f);
     for (const ids of [null, undefined, [], ['a b']]) {
       expect(await fetchUltimasLeituras(ids, { periodo: '30d' })).toEqual([]);
+    }
+    expect(f).not.toHaveBeenCalled();
+  });
+});
+
+describe('fetchStatusHistory', () => {
+  const cols = ['time', 'rssi', 'mqtt_latency', 'free_heap'];
+
+  it('uma bóia: uma chamada com device e período, linhas numéricas', async () => {
+    const f = vi.fn().mockResolvedValue(v1(cols, [[1000, -55, 40, 150000], [2000, null, null, 140000]]));
+    vi.stubGlobal('fetch', f);
+    const data = await fetchStatusHistory('esp_sururu', '24h');
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(f.mock.calls[0][0]).toBe('/influx/q/status?periodo=24h&device=esp_sururu');
+    expect(data).toEqual([
+      { time: 1000, rssi: -55, mqtt_latency: 40, free_heap: 150000 },
+      { time: 2000, rssi: null, mqtt_latency: null, free_heap: 140000 },
+    ]);
+  });
+
+  it('dois seriais: junta por tempo (média de rssi/latência, mínimo de heap), em ordem', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(v1(cols, [[2000, -60, 30, 100], [3000, -70, 50, 90]]))
+      .mockResolvedValueOnce(v1(cols, [[1000, -50, 20, 200], [2000, -80, null, 80]]));
+    vi.stubGlobal('fetch', f);
+    const data = await fetchStatusHistory(['snt-0001', 'esp_sururu'], '1h');
+    expect(f.mock.calls.map(c => c[0])).toEqual([
+      '/influx/q/status?periodo=1h&device=snt-0001',
+      '/influx/q/status?periodo=1h&device=esp_sururu',
+    ]);
+    expect(data).toEqual([
+      { time: 1000, rssi: -50, mqtt_latency: 20, free_heap: 200 },
+      { time: 2000, rssi: -70, mqtt_latency: 30, free_heap: 80 },
+      { time: 3000, rssi: -70, mqtt_latency: 50, free_heap: 90 },
+    ]);
+  });
+
+  it('sem id válido (ou frota): [] sem chamada', async () => {
+    const f = vi.fn();
+    vi.stubGlobal('fetch', f);
+    for (const ids of [null, [], ['a"b'], ['a b', '']]) {
+      expect(await fetchStatusHistory(ids, '1h')).toEqual([]);
     }
     expect(f).not.toHaveBeenCalled();
   });

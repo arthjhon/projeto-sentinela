@@ -26,7 +26,7 @@ export const T0_UTC = 'T03:00:00Z';
 // banco InfluxQL (db=) de cada consulta; o nginx fixa o mesmo db em cada proxy_pass
 export const QUERY_DB = {
   history: 'iot', ultimas: 'iot', 'leituras-24h': 'iot', primeira: 'iot', export: 'iot',
-  ana: 'externos', 'turbidez-janela': 'iot',
+  ana: 'externos', 'turbidez-janela': 'iot', status: 'iot',
 };
 
 function pick(value, allowed, name) {
@@ -41,6 +41,14 @@ function deviceTopic(device) {
   return `'${device}/sensores'`;
 }
 
+// topic da telemetria de saúde da placa (measurement "status"): <device>/status
+function statusTopic(device) {
+  if (typeof device !== 'string' || !DEVICE_RE.test(device)) {
+    throw new Error('parâmetro inválido: device');
+  }
+  return `'${device}/status'`;
+}
+
 function janela(params) {
   const { inicio } = params;
   if (typeof inicio !== 'string' || !INICIO_RE.test(inicio)) throw new Error('parâmetro inválido: inicio');
@@ -50,14 +58,15 @@ function janela(params) {
 }
 
 /** Nomes aceitos por buildNamedQuery. */
-export const QUERY_NAMES = ['history', 'ultimas', 'leituras-24h', 'primeira', 'export', 'ana', 'turbidez-janela'];
+export const QUERY_NAMES = ['history', 'ultimas', 'leituras-24h', 'primeira', 'export', 'ana', 'turbidez-janela', 'status'];
 
 /**
  * Monta o InfluxQL de uma consulta nomeada.
  * @param {string} name   um de QUERY_NAMES
  * @param {object} params history: {campo, periodo, device?}; ultimas: {device, periodo};
  *                        export: {device, periodo}; leituras-24h e primeira: {};
- *                        ana: {estacao, inicio, duracao}; turbidez-janela: {device, inicio, duracao}
+ *                        ana: {estacao, inicio, duracao}; turbidez-janela: {device, inicio, duracao};
+ *                        status: {device, periodo}
  * @returns {string} InfluxQL
  * @throws {Error} nome ou parâmetro inválido
  */
@@ -99,6 +108,12 @@ export function buildNamedQuery(name, params = {}) {
       const { cond, every } = janela(params);
       return `SELECT mean("turbidez") FROM "sensores" WHERE "topic" = ${topic} AND ${cond} ` +
         `GROUP BY time(${every}) fill(none)`;
+    }
+    case 'status': {
+      const topic = statusTopic(params.device);
+      const periodo = pick(params.periodo, Object.keys(EVERY), 'periodo');
+      return 'SELECT mean("rssi") AS "rssi", mean("mqtt_latency") AS "mqtt_latency", min("free_heap") AS "free_heap" ' +
+        `FROM "status" WHERE "topic" = ${topic} AND time > now() - ${periodo} GROUP BY time(${EVERY[periodo]}) fill(none)`;
     }
     default:
       throw new Error(`consulta desconhecida: ${name}`);

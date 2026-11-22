@@ -53,11 +53,26 @@ describe('buildNamedQuery', () => {
     expect(() => buildNamedQuery('export', { device: ['a'], periodo: '1h' })).toThrow();
   });
 
-  it('QUERY_NAMES lista os 7 endpoints e QUERY_DB cobre todos', () => {
-    expect(QUERY_NAMES).toEqual(['history', 'ultimas', 'leituras-24h', 'primeira', 'export', 'ana', 'turbidez-janela']);
+  it('QUERY_NAMES lista os 8 endpoints e QUERY_DB cobre todos', () => {
+    expect(QUERY_NAMES).toEqual(['history', 'ultimas', 'leituras-24h', 'primeira', 'export', 'ana', 'turbidez-janela', 'status']);
     expect(Object.keys(QUERY_DB).sort()).toEqual([...QUERY_NAMES].sort());
     expect(QUERY_DB.ana).toBe('externos');
     expect(QUERY_DB['turbidez-janela']).toBe('iot');
+    expect(QUERY_DB.status).toBe('iot');
+  });
+
+  it('status monta o modelo fixo com o topic <device>/status', () => {
+    expect(buildNamedQuery('status', { device: 'esp_sururu', periodo: '24h' })).toBe(
+      'SELECT mean("rssi") AS "rssi", mean("mqtt_latency") AS "mqtt_latency", min("free_heap") AS "free_heap" ' +
+      'FROM "status" WHERE "topic" = \'esp_sururu/status\' AND time > now() - 24h GROUP BY time(10m) fill(none)');
+  });
+
+  it('status rejeita período fora da lista e device inválido', () => {
+    expect(() => buildNamedQuery('status', { device: 'esp_sururu', periodo: '2h' })).toThrow();
+    expect(() => buildNamedQuery('status', { device: 'esp_sururu' })).toThrow();
+    for (const device of ['a/b', "a'b", '', undefined, 123]) {
+      expect(() => buildNamedQuery('status', { device, periodo: '24h' })).toThrow();
+    }
   });
 
   it('ana monta o modelo fixo com janela em UTC-3', () => {

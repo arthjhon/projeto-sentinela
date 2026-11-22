@@ -741,6 +741,7 @@ inválido responde 400. Todos são `GET`; resposta = JSON do `/query` do InfluxD
 | `/influx/q/export` | `device`; `periodo` = 1h\|24h\|7d\|30d | leituras brutas (`temperatura, ph, turbidez`) de um device, as 600000 mais recentes (`ORDER BY time DESC LIMIT 600000`, o cliente reordena); 1 por vez |
 | `/influx/q/ana` | `estacao` = 39770000\|39760000\|39740000\|39700000\|39800100; `inicio` = `AAAA-MM-DD`; `duracao` = 7d\|30d\|90d\|180d | **db `externos`**: `sum(chuva)`, `mean(vazao)`, `mean(nivel)` de `ana_telemetria` na janela `[inicio, inicio+duracao)`; `GROUP BY time(15m\|1h\|3h\|6h,3h)` (7d/30d/90d/180d), `fill(none)` |
 | `/influx/q/turbidez-janela` | `device`; `inicio`; `duracao` (como acima) | **db `iot`**: `mean(turbidez)` do device na mesma janela e com o mesmo `GROUP BY` |
+| `/influx/q/status` | `device`; `periodo` = 1h\|24h\|7d\|30d | **db `iot`**: `mean(rssi)`, `mean(mqtt_latency)`, `min(free_heap)` do topic `<device>/status` (medição `status`, Telegraf), mesmas janelas de `history`, `fill(none)` |
 
 `inicio` é a data local de Maceió (UTC-3, sem horário de verão); o nginx a converte em
 `'AAAA-MM-DDT03:00:00Z'` (regex `20AA-MM-DD` com mês 01-12 e dia 01-31, só a data capturada chega
@@ -915,7 +916,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "$H" "$U/api/v2/buckets"            
 
 Desativar: `sudo rm /etc/nginx/sentinela.d/influx-proxy.conf && sudo nginx -t && sudo systemctl reload nginx`.
 
-- Só os 7 endpoints `/influx/q/*` e `GET /influx/health` chegam ao InfluxDB; o resto de `/influx/` é
+- Só os 8 endpoints `/influx/q/*` e `GET /influx/health` chegam ao InfluxDB; o resto de `/influx/` é
   404 (ou 403/400/413/429, conforme acima).
 - Validado localmente com `nginx:1.22.1` (versão do Debian 12) e `influxdb:2.7.12`
   (`infra/tests/influx-proxy.test.sh`): cada endpoint devolve os valores esperados sobre 30 dias de

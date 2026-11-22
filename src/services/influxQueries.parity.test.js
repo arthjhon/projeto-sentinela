@@ -72,6 +72,8 @@ for (const duracao of Object.keys(DURACOES)) {
   cases.push(['turbidez-janela', { device: 'esp_sururu', inicio: '2026-05-01', duracao }]);
 }
 
+for (const periodo of ['1h', '24h', '7d', '30d']) cases.push(['status', { device: 'esp_sururu', periodo }]);
+
 describe('paridade nginx <-> buildNamedQuery', () => {
   it('cobre exatamente os endpoints nomeados do nginx', () => {
     expect(Object.keys(templates).sort()).toEqual([...QUERY_NAMES].sort());
