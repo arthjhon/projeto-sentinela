@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   formatIdade, ultimaLeituraMs, conexaoDaBoia, rotuloConexao, rotuloGravada,
   formatValor, minMax, serieGrafico, resumoColeta, resumoBoia, formatTick,
+  mensagemDaSessao, extremos24h,
 } from './dashboardView';
 
 describe('formatIdade', () => {
@@ -204,5 +205,41 @@ describe('formatTick', () => {
     expect(formatTick(t, '24h')).toBe('09:05');
     expect(formatTick(t, '7d')).toBe('22/11 09:05');
     expect(formatTick(t, '30d')).toBe('22/11 09:05');
+  });
+});
+
+describe('mensagemDaSessao', () => {
+  it('mensagem recebida nesta sessão ganha _recebidoEm', () => {
+    expect(mensagemDaSessao({ ph: 7 }, { at: 500, retained: false })).toEqual({ ph: 7, _recebidoEm: 500 });
+  });
+  it('retida não conta (é velha)', () => {
+    expect(mensagemDaSessao({ ph: 7 }, { at: 500, retained: true })).toBeNull();
+  });
+  it('sem hora de chegada = null', () => {
+    expect(mensagemDaSessao({ ph: 7 }, undefined)).toBeNull();
+  });
+  it('payload que não é objeto (ou ausente) = null', () => {
+    expect(mensagemDaSessao('online', { at: 500, retained: false })).toBeNull();
+    expect(mensagemDaSessao(undefined, { at: 500, retained: false })).toBeNull();
+  });
+});
+
+describe('extremos24h', () => {
+  const agoraMs = 1_000_000_000;
+  const hist24 = { ph: [{ time: new Date(1), value: 7 }, { time: new Date(2), value: 8 }], temperatura: [], turbidez: [] };
+  it('carregando = undefined; falha = "erro"', () => {
+    expect(extremos24h(null, [], 'ph', agoraMs)).toBeUndefined();
+    expect(extremos24h({ erro: 'x' }, [], 'ph', agoraMs)).toBe('erro');
+  });
+  it('junta médias gravadas e leituras brutas das últimas 24 h; a borda exata conta', () => {
+    const ultimas = [
+      { time: new Date(agoraMs - 1000), ph: 6.5 },
+      { time: new Date(agoraMs - 86400e3), ph: 9 },      // exatamente 24 h: entra
+      { time: new Date(agoraMs - 86400e3 - 1), ph: 2 },  // 1 ms além: fora
+    ];
+    expect(extremos24h(hist24, ultimas, 'ph', agoraMs)).toEqual({ min: 6.5, max: 9 });
+  });
+  it('sem valor em nenhuma das fontes = null', () => {
+    expect(extremos24h(hist24, [{ time: new Date(agoraMs), ph: 7 }], 'temperatura', agoraMs)).toBeNull();
   });
 });

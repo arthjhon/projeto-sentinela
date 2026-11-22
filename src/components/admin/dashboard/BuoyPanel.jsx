@@ -8,7 +8,7 @@ import { healthForDevice } from '../../../services/sensorHealth';
 import { HealthEvents } from '../SensorHealth';
 import { WATER_PARAMS } from '../../../config/waterQuality';
 import {
-  CAMPOS, TOM_CLASSE, formatIdade, formatTick, formatValor, minMax, rotuloConexao, serieGrafico,
+  CAMPOS, TOM_CLASSE, extremos24h, formatIdade, formatTick, formatValor, rotuloConexao, serieGrafico,
 } from '../../../utils/dashboardView';
 import SensorCard from './SensorCard';
 import SystemPanel from './SystemPanel';
@@ -17,7 +17,6 @@ import './dashboard.css';
 
 const MAX_BUFFER = 120; // ≈ 10 min de leituras ao vivo (uma a cada 5 s)
 const PERIODO_PADRAO = '24h';
-const DIA_MS = 86400e3;
 const PARAM = Object.fromEntries(WATER_PARAMS.map((p) => [p.key, p]));
 const num = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
 const celula = (v, campo) => (num(v) === null ? '—' : formatValor(v, campo));
@@ -66,12 +65,6 @@ export default function BuoyPanel({
       .catch((err) => { if (!ctrl.signal.aborted && err.name !== 'AbortError') setHist24({ erro: err.message }); });
     return () => ctrl.abort();
   }, [idsKey, fila]);
-  const extremos = (c) => {
-    if (hist24 === null) return undefined;
-    if (hist24.erro) return 'erro';
-    const brutas = ultimas.filter((r) => agoraMs - r.time <= DIA_MS).map((r) => num(r[c]));
-    return minMax([...hist24[c].map((d) => d.value), ...brutas]);
-  };
 
   const saudeSensores = buoy.deviceId ? healthForDevice(healthRows, buoy.deviceId, resumo.modo).sensores : [];
   const idade = resumo.ultimaMs != null ? formatIdade(agoraMs - resumo.ultimaMs) : null;
@@ -122,7 +115,7 @@ export default function BuoyPanel({
       <div className="sensor-grid">
         {CAMPOS.map((c) => (
           <SensorCard key={c} campo={c} atual={resumo.valores[c]} agoraMs={agoraMs}
-            saude={saudeSensores.find((s) => s.sensor === c) ?? null} extremos={extremos(c)} />
+            saude={saudeSensores.find((s) => s.sensor === c) ?? null} extremos={extremos24h(hist24, ultimas, c, agoraMs)} />
         ))}
       </div>
 

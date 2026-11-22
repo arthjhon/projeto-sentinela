@@ -6,6 +6,8 @@ import { WATER_PARAMS } from '../config/waterQuality';
 // Formatação e resumo da visão geral (faixa da frota e painel da bóia).
 // Puro: sem React, sem I/O; `agoraMs` sempre vem de quem chama.
 
+const num = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
+
 export const CAMPOS = ['temperatura', 'ph', 'turbidez'];
 
 /** Tom (rotuloConexao, estadoMeta) -> classe de badge de shared.css / SensorHealth.css. */
@@ -24,6 +26,16 @@ export function formatIdade(ms) {
   const h = Math.floor(min / 60);
   if (h < 48) return `há ${h} h`;
   return `há ${Math.floor(h / 24)} d`;
+}
+
+/**
+ * Mensagem MQTT recebida nesta sessão, com a hora de chegada em `_recebidoEm`.
+ * Retida não conta (o broker entrega a última no subscribe: é velha), nem
+ * payload que não é objeto ou sem hora de chegada. `chegada` = receivedAt[topico] do useMqtt.
+ */
+export function mensagemDaSessao(msg, chegada) {
+  if (!msg || typeof msg !== 'object' || !chegada || chegada.retained) return null;
+  return { ...msg, _recebidoEm: chegada.at };
 }
 
 /** Última leitura: mensagem MQTT da sessão; sem ela, o _time mais recente de `ultimas`. */
@@ -91,6 +103,21 @@ export function minMax(valores) {
   const vs = (valores ?? []).filter((v) => v != null && Number.isFinite(v));
   if (!vs.length) return null;
   return { min: Math.min(...vs), max: Math.max(...vs) };
+}
+
+const DIA_MS = 86400e3;
+
+/**
+ * Mín./máx. das últimas 24 h de um campo: médias de 10 min gravadas
+ * (`hist24[campo]`, history 24h) + leituras brutas de `ultimas` com até 24 h
+ * (borda inclusa). `hist24` null = carregando (undefined); {erro} = 'erro';
+ * nenhum valor = null.
+ */
+export function extremos24h(hist24, ultimas, campo, agoraMs) {
+  if (hist24 === null) return undefined;
+  if (hist24.erro) return 'erro';
+  const brutas = (ultimas ?? []).filter((r) => agoraMs - r.time <= DIA_MS).map((r) => num(r[campo]));
+  return minMax([...(hist24[campo] ?? []).map((d) => d.value), ...brutas]);
 }
 
 /**

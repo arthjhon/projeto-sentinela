@@ -9,7 +9,7 @@ import { topicsForRegistry, deviceIdsOf } from '../../services/buoyRegistry';
 import { fetchSensorHealth, fetchWorkerJobs } from '../../services/sensorHealth';
 import { manutencaoAberta } from '../../services/maintenance';
 import { resolverSelecao } from '../../utils/dashboard';
-import { resumoBoia } from '../../utils/dashboardView';
+import { mensagemDaSessao, resumoBoia } from '../../utils/dashboardView';
 import { criarFilaSerial } from '../../utils/filaSerial';
 import FleetStrip from '../../components/admin/dashboard/FleetStrip';
 import BuoyPanel from '../../components/admin/dashboard/BuoyPanel';
@@ -19,12 +19,6 @@ import './AdminDashboard.css';
 // bóia selecionada. Seleção no endereço (?boia=<codigo>) para link e "voltar".
 // Só dado real: sem leitura aparece como "sem leitura", nunca 0 nem valor de
 // outra bóia.
-
-/** Mensagem MQTT recebida nesta sessão (retida não conta: é velha) com a hora de chegada. */
-function daSessao(msg, chegada) {
-  if (!msg || typeof msg !== 'object' || !chegada || chegada.retained) return null;
-  return { ...msg, _recebidoEm: chegada.at };
-}
 
 const AdminDashboard = () => {
   const { buoys, loading: registryLoading, error: registryError, reload: reloadRegistry } = useBuoyRegistry();
@@ -107,8 +101,8 @@ const AdminDashboard = () => {
     const d = buoy.deviceId;
     const mqtt = d ? {
       lwt: messages[`${d}/availability`],
-      sensores: daSessao(messages[`${d}/sensores`], receivedAt[`${d}/sensores`]),
-      status: daSessao(messages[`${d}/status`], receivedAt[`${d}/status`]),
+      sensores: mensagemDaSessao(messages[`${d}/sensores`], receivedAt[`${d}/sensores`]),
+      status: mensagemDaSessao(messages[`${d}/status`], receivedAt[`${d}/status`]),
     } : {};
     const rows = ultimas[buoy.codigo]?.rows ?? [];
     return {
