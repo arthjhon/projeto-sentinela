@@ -3,9 +3,9 @@ import { ScrollText, RotateCw } from 'lucide-react';
 import { listarAuditoria, AUDIT_LABELS } from '../../services/auditLog';
 import './AuditLogPanel.css';
 
-// Log de auditoria (backlog 6.1). Vive dentro de /admin/operadores como uma
-// aba, e não numa rota nova: auditoria é sobre quem fez o quê, então fica
-// junto de onde os operadores são geridos.
+// Log de auditoria (backlog 6.1). Aba própria em Configurações
+// (/admin/config/auditoria), ao lado de Operadores: auditoria é sobre quem fez
+// o quê. Era aba interna da tela de operadores até a reorganização de 2026-11-22.
 
 function formatarData(iso) {
   const d = new Date(iso);

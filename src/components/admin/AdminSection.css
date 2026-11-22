@@ -1,0 +1,34 @@
+/* Faixa de abas das seções do admin (Bóias, Configurações) */
+.section-tabs {
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.section-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.6rem 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.section-tab:hover { color: #e2e8f0; }
+
+.section-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.section-tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}

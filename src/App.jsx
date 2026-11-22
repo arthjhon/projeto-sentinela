@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { REDIRECTS_LEGADOS, legacyTarget } from './config/adminNav';
 
 import './App.css';
 
@@ -23,6 +24,8 @@ const UsersPage = lazy(() => import('./pages/admin/UsersPage'));
 const OtaPage = lazy(() => import('./pages/admin/OtaPage'));
 const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
 const ChangelogPage = lazy(() => import('./pages/admin/ChangelogPage'));
+const AuditoriaPage = lazy(() => import('./pages/admin/AuditoriaPage'));
+const AdminSection = lazy(() => import('./components/admin/AdminSection'));
 
 const RouteLoader = () => (
   <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
@@ -30,11 +33,17 @@ const RouteLoader = () => (
   </div>
 );
 
-const lazyElement = (Component) => (
+const lazyElement = (Component, props = {}) => (
   <Suspense fallback={<RouteLoader />}>
-    <Component />
+    <Component {...props} />
   </Suspense>
 );
+
+// Endereço antigo do admin -> novo, mantendo ?query e #hash (favoritos, links em e-mail).
+function LegacyRedirect({ antigo }) {
+  const { search, hash } = useLocation();
+  return <Navigate to={legacyTarget(antigo, search, hash)} replace />;
+}
 
 function App() {
   return (
@@ -57,13 +66,24 @@ function App() {
             <Route element={lazyElement(AdminLayout)}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={lazyElement(AdminDashboard)} />
-              <Route path="sensors" element={lazyElement(SensorsPage)} />
+              <Route path="boias" element={lazyElement(AdminSection, { secao: 'boias', rotulo: 'Seções de Bóias' })}>
+                <Route index element={<Navigate to="frota" replace />} />
+                <Route path="frota" element={lazyElement(SensorsPage)} />
+                <Route path="firmware" element={lazyElement(OtaPage)} />
+              </Route>
               <Route path="status" element={lazyElement(StatusPage)} />
               <Route path="contexto" element={lazyElement(ContextoPage)} />
-              <Route path="users" element={lazyElement(UsersPage)} />
-              <Route path="ota" element={lazyElement(OtaPage)} />
-              <Route path="settings" element={lazyElement(SettingsPage)} />
-              <Route path="changelog" element={lazyElement(ChangelogPage)} />
+              <Route path="config" element={lazyElement(AdminSection, { secao: 'config', rotulo: 'Seções de Configurações' })}>
+                <Route index element={<Navigate to="site" replace />} />
+                <Route path="site" element={lazyElement(SettingsPage)} />
+                <Route path="changelog" element={lazyElement(ChangelogPage)} />
+                <Route path="operadores" element={lazyElement(UsersPage)} />
+                <Route path="auditoria" element={lazyElement(AuditoriaPage)} />
+              </Route>
+              {/* Endereços antigos (antes de 2026-11-22) */}
+              {Object.keys(REDIRECTS_LEGADOS).map((antigo) => (
+                <Route key={antigo} path={antigo} element={<LegacyRedirect antigo={antigo} />} />
+              ))}
             </Route>
           </Route>
         </Route>

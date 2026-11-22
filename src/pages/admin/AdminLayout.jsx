@@ -1,7 +1,8 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, LayoutDashboard, ActivitySquare, ShieldAlert, Users, Cpu, SlidersHorizontal, Rss, Eye, HeartPulse, CloudRain } from 'lucide-react';
+import { LogOut, Eye } from 'lucide-react';
+import { navParaPerfil } from '../../config/adminNav';
 import { SystemStatusProvider } from '../../contexts/SystemStatusContext';
 import StatusBadge from '../../components/admin/StatusBadge';
 import './AdminLayout.css';
@@ -30,79 +31,26 @@ const AdminLayout = () => {
             </div>
           </div>
 
-          <nav className="sidebar-nav">
-            <NavLink 
-              to="/admin/dashboard" 
-              end
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            >
-              <LayoutDashboard size={20} />
-              <span>Dashboard</span>
-            </NavLink>
-
-            <NavLink 
-              to="/admin/sensors" 
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            >
-              <ActivitySquare size={20} />
-              <span>Bóias</span>
-            </NavLink>
-
-            <NavLink
-              to="/admin/status"
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            >
-              <HeartPulse size={20} />
-              <span>Status</span>
-            </NavLink>
-
-            <NavLink
-              to="/admin/contexto"
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            >
-              <CloudRain size={20} />
-              <span>Contexto ambiental</span>
-            </NavLink>
-
-            {(currentUser?.role === 'admin' || currentUser?.role === 'visualizador') && (
-              <NavLink
-                to="/admin/users"
-                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-              >
-                <Users size={20} />
-                <span>Operadores</span>
-              </NavLink>
-            )}
-
-            {(currentUser?.role === 'admin' || currentUser?.role === 'visualizador') && (
-              <NavLink
-                to="/admin/ota"
-                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-              >
-                <Cpu size={20} />
-                <span>Firmware</span>
-              </NavLink>
-            )}
-
-            {(currentUser?.role === 'admin' || currentUser?.role === 'visualizador') && (
-              <NavLink
-                to="/admin/settings"
-                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-              >
-                <SlidersHorizontal size={20} />
-                <span>Configurações</span>
-              </NavLink>
-            )}
-
-            {(currentUser?.role === 'admin' || currentUser?.role === 'visualizador') && (
-              <NavLink
-                to="/admin/changelog"
-                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-              >
-                <Rss size={20} />
-                <span>Changelog</span>
-              </NavLink>
-            )}
+          <nav className="sidebar-nav" aria-label="Menu do painel">
+            {navParaPerfil(currentUser?.role).map((secao) => (
+              <div key={secao.titulo} className="nav-section">
+                <p className="nav-section-title">{secao.titulo}</p>
+                {secao.itens.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === '/admin/dashboard'}
+                      className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                    >
+                      <Icon size={20} />
+                      <span>{item.label}</span>
+                    </NavLink>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
 
           <div className="sidebar-footer">

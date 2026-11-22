@@ -301,35 +301,3 @@
   margin-top: 0.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
-
-/* Abas Operadores / Log de Auditoria (6.1) */
-.users-tabs {
-  display: flex;
-  gap: 0.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.users-tab {
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 0.9rem;
-  font-weight: 600;
-  padding: 0.6rem 0.9rem;
-  cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
-}
-
-.users-tab:hover { color: #e2e8f0; }
-
-.users-tab.active {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
-}
-
-.users-tab:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: -2px;
-}

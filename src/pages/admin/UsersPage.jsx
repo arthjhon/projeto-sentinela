@@ -4,7 +4,6 @@ import { useToast } from './../../contexts/ToastContext';
 import { useReadOnly } from '../../hooks/useReadOnly';
 import { logAcao, AUDIT } from './../../services/auditLog';
 import ConfirmModal from './../../components/ConfirmModal';
-import AuditLogPanel from './../../components/admin/AuditLogPanel';
 import { Search, Plus, Edit2, Trash2, Shield, User, Eye, KeyRound, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import './UsersPage.css';
@@ -24,8 +23,6 @@ const UsersPage = () => {
 
   // Confirmation state
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  // 6.1 — auditoria entra como aba aqui, não como rota nova
-  const [aba, setAba] = useState('operadores');
   const [userToDelete, setUserToDelete] = useState(null);
 
   // Validation State
@@ -206,12 +203,11 @@ const UsersPage = () => {
     <div className="dashboard-content-area">
       <div className="page-header d-flex-between">
         <div>
-          <h1>Controle de Operadores e Perfil</h1>
+          <h1>Operadores</h1>
           <p>Supervisão segura das contas com acesso local à Plataforma Sentinela.</p>
         </div>
         
-        {aba === 'operadores' && (
-          <div className="header-actions">
+        <div className="header-actions">
             <div className="search-bar glass">
               <Search size={18} className="text-muted" />
               <input
@@ -227,30 +223,8 @@ const UsersPage = () => {
               </button>
             )}
           </div>
-        )}
       </div>
 
-      {/* Abas: contas x histórico de ações */}
-      <div className="users-tabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={aba === 'operadores'}
-          className={`users-tab ${aba === 'operadores' ? 'active' : ''}`}
-          onClick={() => setAba('operadores')}
-        >
-          Operadores
-        </button>
-        <button
-          role="tab"
-          aria-selected={aba === 'auditoria'}
-          className={`users-tab ${aba === 'auditoria' ? 'active' : ''}`}
-          onClick={() => setAba('auditoria')}
-        >
-          Log de Auditoria
-        </button>
-      </div>
-
-      {aba === 'operadores' && (
       <div className="users-list-wrapper glass mt-4">
         <table className="users-table">
           <thead>
@@ -299,9 +273,6 @@ const UsersPage = () => {
           </tbody>
         </table>
       </div>
-      )}
-
-      {aba === 'auditoria' && <AuditLogPanel operadores={users} />}
 
       {isModalOpen && createPortal(
         <div className="crud-modal-overlay">
