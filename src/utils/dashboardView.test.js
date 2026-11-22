@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   formatIdade, ultimaLeituraMs, conexaoDaBoia, rotuloConexao, rotuloGravada,
   formatValor, minMax, serieGrafico, resumoColeta, resumoBoia, formatTick,
-  mensagemDaSessao, extremos24h,
+  mensagemDaSessao, extremos24h, avisoBroker,
 } from './dashboardView';
 
 describe('formatIdade', () => {
@@ -241,5 +241,46 @@ describe('extremos24h', () => {
   });
   it('sem valor em nenhuma das fontes = null', () => {
     expect(extremos24h(hist24, [{ time: new Date(agoraMs), ph: 7 }], 'temperatura', agoraMs)).toBeNull();
+  });
+});
+
+describe('conexão com o broker do painel (sem broker não se afirma estado da bóia)', () => {
+  const agoraMs = 1_000_000;
+  const base = { deviceId: 'snt-0001', ultimaMs: agoraMs - 120_000, agoraMs };
+  it('broker conectado: segue o LWT', () => {
+    expect(conexaoDaBoia({ ...base, lwt: 'online', brokerConectado: true })).toBe('sem-leitura');
+    expect(conexaoDaBoia({ ...base, lwt: 'offline', brokerConectado: true })).toBe('offline');
+    expect(conexaoDaBoia({ ...base, lwt: undefined, brokerConectado: true })).toBe('desconhecido');
+  });
+  it('broker desconectado: sem-broker para qualquer LWT', () => {
+    for (const lwt of ['online', 'offline', undefined]) {
+      expect(conexaoDaBoia({ ...base, lwt, brokerConectado: false })).toBe('sem-broker');
+    }
+  });
+  it('sem o parâmetro vale conectado (compatível)', () => {
+    expect(conexaoDaBoia({ ...base, lwt: 'offline' })).toBe('offline');
+  });
+  it('sem serial continua sem-hardware, com ou sem broker', () => {
+    expect(conexaoDaBoia({ deviceId: null, agoraMs, brokerConectado: false })).toBe('sem-hardware');
+  });
+  it('rótulo neutro que não culpa a bóia', () => {
+    expect(rotuloConexao('sem-broker', 'há 3 min')).toEqual({ texto: 'painel sem conexão com o broker', tom: 'neutral' });
+  });
+  it('resumoBoia repassa o estado do broker', () => {
+    const r = resumoBoia({
+      buoy: { codigo: 'SM-01', deviceId: 'snt-0001', modo: 'campo' },
+      mqtt: { lwt: 'online' }, ultimas: [], healthRows: [], agoraMs, brokerConectado: false,
+    });
+    expect(r.conexao).toBe('sem-broker');
+  });
+});
+
+describe('avisoBroker', () => {
+  it('conectado = sem aviso', () => {
+    expect(avisoBroker({ conectado: true, jaConectou: true })).toBeNull();
+  });
+  it('antes da primeira conexão = conectando; depois de cair = desconectado', () => {
+    expect(avisoBroker({ conectado: false, jaConectou: false })).toBe('conectando');
+    expect(avisoBroker({ conectado: false, jaConectou: true })).toBe('desconectado');
   });
 });

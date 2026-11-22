@@ -6,7 +6,10 @@ import { X } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { listarManutencoes, ultimasCalibracoes, manutencaoAberta } from '../../../services/maintenance';
 import { ultimoDeploy } from '../../../services/otaCommand';
-import { formatUptime, formatMemoria, formatRssi, escolherFirmware } from '../../../utils/buoyDetails';
+import { normalizeModo } from '../../../services/buoyRegistry';
+import {
+  formatUptime, formatMemoria, formatRssi, blocosDetalhes, estadoFirmware, estadoManutencao,
+} from '../../../utils/buoyDetails';
 import './BuoyDetailsModal.css';
 
 // Mesmo basemap do mapa público (InteractiveMap): Carto com key, senão Esri.
@@ -24,6 +27,7 @@ const TILES = CARTO_KEY
     };
 
 const SEM_LEITURA = 'sem leitura desde que o painel abriu';
+const FALHA = 'indisponível (falha na leitura)';
 const NAO_MEDIDO = ['Bateria', 'Temperatura interna', 'GPS', 'Sinal de gateway'];
 const SENSOR_LABEL = { temperatura: 'Temperatura', ph: 'pH', turbidez: 'Turbidez' };
 
@@ -40,14 +44,15 @@ const Row = ({ label, children }) => (
   </div>
 );
 
-const Muted = ({ children }) => <span className="bdm-muted">{children}</span>;
+const Muted = ({ children, title }) => <span className="bdm-muted" title={title}>{children}</span>;
 
 export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
   const titleRef = useRef(null);
   const dialogRef = useRef(null);
-  const [dados, setDados] = useState({ codigo: null, error: null, manutencoes: [], aberta: null, calibracoes: [], deploy: null });
-  // carregando = os dados guardados ainda são de outra bóia
-  const extra = { ...dados, loading: dados.codigo !== buoy.codigo };
+  const [dados, setDados] = useState({ codigo: null, blocos: null });
+  // Blocos independentes ({ok, valor} | {ok:false, erro}); undefined = carregando
+  // (os dados guardados ainda são de outra bóia).
+  const blocos = dados.codigo === buoy.codigo ? dados.blocos : {};
 
   // foco no título ao abrir; devolve ao elemento anterior ao fechar
   useEffect(() => {
@@ -74,29 +79,26 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
 
   useEffect(() => {
     let cancelado = false;
-    Promise.all([
+    // allSettled: uma leitura que falha não apaga as outras nem vira "nenhuma registrada"
+    Promise.allSettled([
       listarManutencoes(buoy.codigo),
       manutencaoAberta(buoy.codigo),
       ultimasCalibracoes(buoy.codigo),
       ultimoDeploy(supabase, buoy.codigo),
-    ]).then(([manutencoes, aberta, calibs, deploy]) => {
-      if (cancelado) return;
-      const calibracoes = Object.values(calibs).sort((a, b) => new Date(b.calibrated_at) - new Date(a.calibrated_at)).slice(0, 3);
-      setDados({ codigo: buoy.codigo, error: null, manutencoes: manutencoes.slice(0, 3), aberta, calibracoes, deploy });
-    }).catch((err) => {
-      if (!cancelado) setDados({ codigo: buoy.codigo, error: err.message, manutencoes: [], aberta: null, calibracoes: [], deploy: null });
+    ]).then((resultados) => {
+      if (!cancelado) setDados({ codigo: buoy.codigo, blocos: blocosDetalhes(resultados) });
     });
     return () => { cancelado = true; };
   }, [buoy.codigo]);
 
   const temCoord = Number.isFinite(buoy.lat) && Number.isFinite(buoy.lng);
-  const fw = escolherFirmware(statusMsg, extra.deploy);
+  const fw = estadoFirmware(statusMsg, blocos.deploy);
+  const manut = estadoManutencao(blocos.aberta);
   const rssi = formatRssi(statusMsg?.rssi);
   const memoria = formatMemoria(statusMsg?.free_heap, statusMsg?.total_heap);
   const uptime = formatUptime(statusMsg?.uptime);
   const latencia = Number.isFinite(statusMsg?.mqtt_latency) ? `${Math.round(statusMsg.mqtt_latency)} ms` : null;
   const anteriores = buoy.deviceIdsAnteriores ?? [];
-  const modoTxt = extra.aberta ? 'Manutenção' : buoy.modo === 'bancada' ? 'Bancada' : 'Operação';
 
   const ausente = <Muted>{SEM_LEITURA}</Muted>;
 
@@ -133,8 +135,14 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
             <dl>
               <Row label="Serial atual">{buoy.deviceId ? <code>{buoy.deviceId}</code> : <Muted>sem serial cadastrado</Muted>}</Row>
               <Row label="Seriais anteriores">{anteriores.length ? anteriores.map((s) => <code key={s} className="bdm-chip">{s}</code>) : <Muted>nenhum</Muted>}</Row>
-              <Row label="Modo">{modoTxt}</Row>
-              {extra.aberta && <Row label="Manutenção aberta">{extra.aberta.motivo} <Muted>desde {fmtData(extra.aberta.timestamp_inicio)}</Muted></Row>}
+              {/* mesmo vocabulário do card (normalizeModo: ausente/inválido = bancada) */}
+              <Row label="Modo">{normalizeModo(buoy.modo)}</Row>
+              <Row label="Manutenção aberta">
+                {manut.tipo === 'carregando' ? <Muted>carregando…</Muted>
+                  : manut.tipo === 'falha' ? <Muted>{FALHA}</Muted>
+                    : manut.tipo === 'nao' ? 'não'
+                      : <>{manut.registro.motivo} <Muted>desde {fmtData(manut.registro.timestamp_inicio)}</Muted></>}
+              </Row>
             </dl>
           </section>
 
@@ -143,7 +151,10 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
             <dl>
               <Row label="Placa">{statusMsg?.board ?? ausente}</Row>
               <Row label="Firmware">
-                {fw ? <>{fw.texto}{fw.fonte === 'deploy' && <Muted> segundo o último deploy</Muted>}</> : (extra.loading ? <Muted>carregando…</Muted> : ausente)}
+                {fw.tipo === 'valor' ? <>{fw.texto}{fw.fonte === 'deploy' && <Muted> segundo o último deploy</Muted>}</>
+                  : fw.tipo === 'carregando' ? <Muted>carregando…</Muted>
+                    : fw.tipo === 'falha' ? <Muted>sem /status nesta sessão; leitura do último deploy falhou</Muted>
+                      : ausente}
               </Row>
               <Row label="Calibrada">{typeof statusMsg?.calibrated === 'boolean' ? (statusMsg.calibrated ? 'Sim' : 'Não') : ausente}</Row>
               <Row label="Tempo ligada">{uptime ?? ausente}</Row>
@@ -155,11 +166,12 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
 
           <section className="bdm-sec">
             <h3>Histórico</h3>
-            {extra.error && <p className="bdm-error">Não foi possível carregar o histórico: {extra.error}</p>}
             <h4>Últimas manutenções</h4>
-            {extra.loading ? <Muted>carregando…</Muted> : extra.manutencoes.length ? (
+            {!blocos.manutencoes ? <Muted>carregando…</Muted>
+              : !blocos.manutencoes.ok ? <Muted title={blocos.manutencoes.erro}>{FALHA}</Muted>
+              : blocos.manutencoes.valor.length ? (
               <ul className="bdm-list">
-                {extra.manutencoes.map((m) => (
+                {blocos.manutencoes.valor.map((m) => (
                   <li key={m.id}>
                     <strong>{fmtData(m.timestamp_inicio)}</strong>{m.timestamp_fim ? ` → ${fmtData(m.timestamp_fim)}` : ' (em aberto)'}
                     <br /><Muted>{m.operador_nome}: {m.motivo}</Muted>
@@ -168,9 +180,11 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
               </ul>
             ) : <Muted>nenhuma registrada</Muted>}
             <h4>Últimas calibrações</h4>
-            {extra.loading ? <Muted>carregando…</Muted> : extra.calibracoes.length ? (
+            {!blocos.calibracoes ? <Muted>carregando…</Muted>
+              : !blocos.calibracoes.ok ? <Muted title={blocos.calibracoes.erro}>{FALHA}</Muted>
+              : blocos.calibracoes.valor.length ? (
               <ul className="bdm-list">
-                {extra.calibracoes.map((c) => (
+                {blocos.calibracoes.valor.map((c) => (
                   <li key={c.id ?? c.sensor_key}>
                     <strong>{SENSOR_LABEL[c.sensor_key] ?? c.sensor_key}</strong> em {fmtData(c.calibrated_at)}
                     <br /><Muted>{c.operador_nome}{c.observacao ? `: ${c.observacao}` : ''}</Muted>
@@ -179,9 +193,11 @@ export default function BuoyDetailsModal({ buoy, statusMsg, onClose }) {
               </ul>
             ) : <Muted>nenhuma registrada</Muted>}
             <h4>Último deploy de firmware</h4>
-            {extra.loading ? <Muted>carregando…</Muted> : extra.deploy ? (
-              <p><strong>{extra.deploy.versao}</strong> em {fmtData(extra.deploy.data_deploy)}
-                {extra.deploy.operador_nome && <Muted> por {extra.deploy.operador_nome}</Muted>}</p>
+            {!blocos.deploy ? <Muted>carregando…</Muted>
+              : !blocos.deploy.ok ? <Muted title={blocos.deploy.erro}>{FALHA}</Muted>
+              : blocos.deploy.valor ? (
+              <p><strong>{blocos.deploy.valor.versao}</strong> em {fmtData(blocos.deploy.valor.data_deploy)}
+                {blocos.deploy.valor.operador_nome && <Muted> por {blocos.deploy.valor.operador_nome}</Muted>}</p>
             ) : <Muted>nenhum deploy com sucesso registrado</Muted>}
           </section>
 

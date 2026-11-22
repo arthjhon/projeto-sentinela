@@ -19,3 +19,15 @@
 }
 .dash-empty h3 { margin: 0; }
 .dash-empty p { margin: 0; }
+
+/* Aviso de conexão do PAINEL com o broker (não é estado de bóia) */
+.dash-broker {
+  margin: 0;
+  padding: 0.55rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  background: rgba(100, 116, 139, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+.dash-broker-conectando { color: var(--text-muted); }

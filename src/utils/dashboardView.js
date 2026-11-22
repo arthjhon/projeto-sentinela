@@ -46,10 +46,22 @@ export function ultimaLeituraMs({ sensores, ultimas } = {}) {
   return Number.isFinite(t) ? t : null;
 }
 
-/** Bóia sem serial não tem conexão a avaliar; com serial, segue estadoConexao. */
-export function conexaoDaBoia({ deviceId, lwt, ultimaMs, agoraMs }) {
+/**
+ * Bóia sem serial não tem conexão a avaliar. Com o PAINEL desconectado do
+ * broker (`brokerConectado === false`), o LWT guardado é velho e a falta de
+ * leitura é do painel, não da bóia: 'sem-broker', sem afirmar online/offline.
+ * Fora isso, segue estadoConexao. Sem o parâmetro, vale conectado.
+ */
+export function conexaoDaBoia({ deviceId, lwt, ultimaMs, agoraMs, brokerConectado = true }) {
   if (!deviceId) return 'sem-hardware';
+  if (brokerConectado === false) return 'sem-broker';
   return estadoConexao({ lwt, ultimaLeituraMs: ultimaMs ?? undefined, agoraMs });
+}
+
+/** Aviso do topo: null (conectado) | 'conectando' (nunca conectou nesta montagem) | 'desconectado' (caiu). */
+export function avisoBroker({ conectado, jaConectou }) {
+  if (conectado) return null;
+  return jaConectou ? 'desconectado' : 'conectando';
 }
 
 const CONEXAO = {
@@ -58,6 +70,7 @@ const CONEXAO = {
   'sem-leitura': { texto: 'online, sem leitura', tom: 'warn' },
   desconhecido: { texto: 'sem sinal', tom: 'neutral' },
   'sem-hardware': { texto: 'sem hardware', tom: 'neutral' },
+  'sem-broker': { texto: 'painel sem conexão com o broker', tom: 'neutral' },
 };
 
 /** Rótulo e tom (ok | warn | bad | neutral) do estado de conexão. */
@@ -158,10 +171,10 @@ export function resumoColeta(jobs, agora) {
 
 /**
  * Resumo de uma bóia para o card e o painel. `mqtt` = {lwt, sensores} da
- * própria bóia; `ultimas` = leituras gravadas só dos seriais dela. Saúde pelo
+ * própria bóia; `brokerConectado` = useMqtt().connected; `ultimas` = leituras gravadas só dos seriais dela. Saúde pelo
  * serial atual (healthForDevice, com a precedência de bancada do cadastro).
  */
-export function resumoBoia({ buoy, mqtt, ultimas, healthRows, agoraMs }) {
+export function resumoBoia({ buoy, mqtt, ultimas, healthRows, agoraMs, brokerConectado = true }) {
   const modo = normalizeModo(buoy?.modo);
   const sensores = mqtt?.sensores ?? null;
   const ultimaMs = ultimaLeituraMs({ sensores, ultimas });
@@ -169,7 +182,7 @@ export function resumoBoia({ buoy, mqtt, ultimas, healthRows, agoraMs }) {
   const saude = buoy?.deviceId ? piorSaude(healthForDevice(healthRows, buoy.deviceId, modo).sensores) : null;
   return {
     modo,
-    conexao: conexaoDaBoia({ deviceId: buoy?.deviceId, lwt: mqtt?.lwt, ultimaMs, agoraMs }),
+    conexao: conexaoDaBoia({ deviceId: buoy?.deviceId, lwt: mqtt?.lwt, ultimaMs, agoraMs, brokerConectado }),
     ultimaMs,
     valores,
     saude,

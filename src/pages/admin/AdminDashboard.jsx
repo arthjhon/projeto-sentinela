@@ -9,7 +9,7 @@ import { topicsForRegistry, deviceIdsOf } from '../../services/buoyRegistry';
 import { fetchSensorHealth, fetchWorkerJobs } from '../../services/sensorHealth';
 import { manutencaoAberta } from '../../services/maintenance';
 import { resolverSelecao } from '../../utils/dashboard';
-import { mensagemDaSessao, resumoBoia } from '../../utils/dashboardView';
+import { avisoBroker, mensagemDaSessao, resumoBoia } from '../../utils/dashboardView';
 import { criarFilaSerial } from '../../utils/filaSerial';
 import FleetStrip from '../../components/admin/dashboard/FleetStrip';
 import BuoyPanel from '../../components/admin/dashboard/BuoyPanel';
@@ -23,7 +23,11 @@ import './AdminDashboard.css';
 
 const AdminDashboard = () => {
   const { buoys, loading: registryLoading, error: registryError, reload: reloadRegistry } = useBuoyRegistry();
-  const { messages, receivedAt, addTopics } = useMqtt(getMqttTopics());
+  const { messages, receivedAt, connected, addTopics } = useMqtt(getMqttTopics());
+  // Já conectou nesta montagem? Separa "conectando" (abertura) de "caiu" no aviso.
+  const [jaConectou, setJaConectou] = useState(false);
+  if (connected && !jaConectou) setJaConectou(true);
+  const aviso = avisoBroker({ conectado: connected, jaConectou });
 
   useEffect(() => {
     if (buoys.length) addTopics(topicsForRegistry(buoys));
@@ -111,9 +115,9 @@ const AdminDashboard = () => {
       mqtt,
       ultimas: rows,
       manutencao: manutencao[buoy.codigo],
-      resumo: resumoBoia({ buoy, mqtt, ultimas: rows, healthRows, agoraMs }),
+      resumo: resumoBoia({ buoy, mqtt, ultimas: rows, healthRows, agoraMs, brokerConectado: connected }),
     };
-  }), [buoys, messages, receivedAt, ultimas, manutencao, healthRows, agoraMs]);
+  }), [buoys, messages, receivedAt, ultimas, manutencao, healthRows, agoraMs, connected]);
 
   const atual = itens.find((i) => i.buoy.codigo === selecao.codigo) ?? null;
 
@@ -130,6 +134,14 @@ const AdminDashboard = () => {
         <h1>Visão geral</h1>
         <p>A frota e, abaixo, tudo da bóia selecionada: sensores, histórico, eventos e sistema.</p>
       </div>
+
+      {aviso && buoys.length > 0 && (
+        <p className={`dash-broker dash-broker-${aviso}`} role="status">
+          {aviso === 'conectando'
+            ? 'Conectando ao broker MQTT…'
+            : 'Painel sem conexão com o broker MQTT: o estado das bóias e os valores ao vivo ficam parados até reconectar.'}
+        </p>
+      )}
 
       {registryError && (
         <div className="badge badge-offline dash-alert" role="alert">
