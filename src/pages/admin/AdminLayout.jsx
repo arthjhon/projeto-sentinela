@@ -1,7 +1,7 @@
-import React from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, Eye } from 'lucide-react';
+import { LogOut, Eye, Menu } from 'lucide-react';
 import { navParaPerfil } from '../../config/adminNav';
 import { SystemStatusProvider } from '../../contexts/SystemStatusContext';
 import StatusBadge from '../../components/admin/StatusBadge';
@@ -10,6 +10,19 @@ import './AdminLayout.css';
 const AdminLayout = () => {
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  // Menu no celular (<= 768 px): guarda a rota em que foi aberto, então
+  // trocar de rota fecha sozinho, sem efeito extra.
+  const [abertoEm, setAbertoEm] = useState(null);
+  const menuAberto = abertoEm === pathname;
+  const fecharMenu = () => setAbertoEm(null);
+
+  useEffect(() => {
+    if (!menuAberto) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setAbertoEm(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuAberto]);
 
   const handleLogout = () => {
     logout();
@@ -21,9 +34,11 @@ const AdminLayout = () => {
       <div className="admin-container">
         <div className="bg-gradient-main"></div>
 
-        {/* Sidebar Overlay for Mobile could be added here in the future */}
-      
-        <aside className="admin-sidebar glass">
+        {menuAberto && (
+          <div className="admin-sidebar-backdrop" onClick={fecharMenu} aria-hidden="true" />
+        )}
+
+        <aside id="admin-sidebar" className={`admin-sidebar glass ${menuAberto ? 'open' : ''}`}>
           <div className="sidebar-header">
             <div className="admin-logo">
               <img src="/sentinela-escudo.svg" alt="Sentinela" className="sidebar-logo-img" />
@@ -70,6 +85,16 @@ const AdminLayout = () => {
 
         <main className="admin-main">
           <header className="admin-header glass">
+            <button
+              type="button"
+              className="menu-toggle"
+              aria-label="Abrir menu"
+              aria-expanded={menuAberto}
+              aria-controls="admin-sidebar"
+              onClick={() => setAbertoEm(menuAberto ? null : pathname)}
+            >
+              <Menu size={22} />
+            </button>
             <h2>Centro de Comando</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               {currentUser?.role === 'visualizador' && (
