@@ -3,7 +3,7 @@ import { CloudRain, AlertTriangle, Waves } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { fetchPrevisao, fetchAnaRecente } from '../../../hooks/useClima';
 import { LIMITE_CHUVA_FORTE_MM } from '../../../utils/clima';
-import { formatMm, formatNum, modeloClima } from '../../../utils/climaView';
+import { formatMm, formatNum, formatTick, modeloClima } from '../../../utils/climaView';
 import './dashboard.css';
 import './ClimaPanel.css';
 
@@ -84,7 +84,7 @@ function TooltipHora({ active, payload }) {
 }
 
 const eixoX = { dataKey: 'hora', tick: { fill: '#64748b', fontSize: 10 }, tickLine: false, interval: 'preserveStartEnd', minTickGap: 18, axisLine: { stroke: 'rgba(255,255,255,0.06)' } };
-const eixoY = { tick: { fill: '#64748b', fontSize: 10 }, axisLine: false, tickLine: false, width: 34 };
+const eixoY = { tick: { fill: '#64748b', fontSize: 10 }, axisLine: false, tickLine: false, width: 40, tickFormatter: formatTick };
 
 function HorasDeHoje({ horas }) {
   if (!horas.length) return <p className="text-muted clima-vazio">sem dado: nenhuma hora prevista para hoje.</p>;
@@ -94,7 +94,7 @@ function HorasDeHoje({ horas }) {
         <figcaption>Chuva prevista por hora (mm)</figcaption>
         <div className="clima-grafico-corpo">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={horas} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
+            <BarChart data={horas} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
               <XAxis {...eixoX} />
               <YAxis {...eixoY} allowDecimals />
@@ -108,7 +108,7 @@ function HorasDeHoje({ horas }) {
         <figcaption>Temperatura prevista por hora (°C)</figcaption>
         <div className="clima-grafico-corpo">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={horas} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+            <LineChart data={horas} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
               <XAxis {...eixoX} />
               <YAxis {...eixoY} domain={['auto', 'auto']} />
@@ -194,7 +194,7 @@ export default function ClimaPanel({ fila, jobs, agoraMs }) {
       )}
 
       <div className="clima-bloco">
-        <h4>Hoje e próximos 7 dias · lagoa (CELMM) · <span className="clima-tag">previsto</span></h4>
+        <h4>Hoje e próximos dias · lagoa (CELMM) · <span className="clima-tag">previsto</span></h4>
         {lagoa.estado === 'ok' ? (
           <>
             <ul className="clima-dias">{lagoa.dias.map((d) => <DiaCard key={d.dia} d={d} />)}</ul>
@@ -236,7 +236,7 @@ export default function ClimaPanel({ fila, jobs, agoraMs }) {
                   </p>
                 </>
               ) : (
-                <SemDado estado={bacia.medido.estado} erro={bacia.medido.erro} vazio="nenhuma chuva registrada pela estação em 3 dias." />
+                <SemDado estado={bacia.medido.estado} erro={bacia.medido.erro} vazio="nenhuma leitura de chuva da estação 39770000 em 3 dias." />
               )}
             </div>
           </div>

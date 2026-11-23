@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  JOB_PREVISAO, formatMm, formatNum, rotuloDia, quandoLocal, estadoBusca, modeloClima,
+  JOB_PREVISAO, formatMm, formatNum, formatTick, rotuloDia, quandoLocal, estadoBusca, modeloClima,
 } from './climaView';
 
 const H = 3600000;
@@ -29,6 +29,12 @@ describe('formatação', () => {
     expect(rotuloDia('2026-11-25', '2026-11-22')).toBe('qua 25/11');
     expect(rotuloDia('2026-12-01', '2026-11-30')).toBe('Amanhã');
   });
+  it('rótulo de eixo: pt-BR, até 2 casas, sem zeros sobrando', () => {
+    expect(formatTick(0.25)).toBe('0,25');
+    expect(formatTick(5)).toBe('5');
+    expect(formatTick(26.5)).toBe('26,5');
+    expect(formatTick(1234)).toBe('1.234');
+  });
   it('quando: hora local, com data se não for hoje', () => {
     expect(quandoLocal(utc('2026-11-22T14:10:00Z'), AGORA)).toBe('hoje às 11:10');
     expect(quandoLocal(utc('2026-11-22T01:00:00Z'), AGORA)).toBe('21/11 às 22:00');
@@ -51,21 +57,25 @@ describe('estadoBusca', () => {
 });
 
 describe('modeloClima — lagoa', () => {
-  // 24 h passadas da coleta até +7 d, 1 mm/h na lagoa
-  const serieLagoa = horas('2026-11-21T15:00:00Z', 24 + 7 * 24, (time) => ({
+  // Formato real do worker (Open-Meteo, timezone UTC, forecast_days 7): de 00:00 UTC
+  // do dia da coleta até 23:00 UTC de +6 dias = 168 pontos. Às 12:00 em Maceió
+  // (AGORA), isso cobre hoje..+6 e o último dia local para às 20:00.
+  const serieLagoa = horas('2026-11-22T00:00:00Z', 168, (time) => ({
     time, precipitation: 0.5, precipitation_probability: 40, temperature_2m: 26, wind_speed_10m: 12, cloud_cover: 50,
   }));
 
-  it('dias de hoje em diante (até 8), com rótulo e dia parcial marcado', () => {
+  it('dias de hoje em diante: 7 cards (hoje..+6), com rótulo e o último dia parcial', () => {
     const m = modeloClima({ lagoa: ok(serieLagoa), bacia: ok([]), ana: ok({ chuva: [], vazao: [] }), jobs: [], agoraMs: AGORA });
     expect(m.hoje).toBe('2026-11-22');
     expect(m.lagoa.estado).toBe('ok');
     expect(m.lagoa.dias[0]).toMatchObject({ dia: '2026-11-22', rotulo: 'Hoje', horas: 24, parcial: false, chuva_mm: 12 });
     expect(m.lagoa.dias[1].rotulo).toBe('Amanhã');
-    expect(m.lagoa.dias.length).toBe(8);
+    expect(m.lagoa.dias.map((d) => d.dia)).toEqual([
+      '2026-11-22', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28',
+    ]);
     const ultimo = m.lagoa.dias[m.lagoa.dias.length - 1];
-    expect(ultimo.parcial).toBe(true);
-    expect(ultimo.horas).toBeLessThan(24);
+    expect(ultimo).toMatchObject({ dia: '2026-11-28', rotulo: 'sáb 28/11', horas: 21, parcial: true });
+    expect(m.lagoa.dias.slice(0, -1).every((d) => !d.parcial)).toBe(true);
   });
 
   it('hoje hora a hora: só as horas do dia local, em hora de Maceió', () => {

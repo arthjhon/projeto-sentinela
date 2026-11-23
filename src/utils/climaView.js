@@ -16,7 +16,7 @@ export const ROTULO_PONTO = { celmm: 'lagoa (CELMM)', bacia_mundau: 'bacia do Mu
 const ROTULO_CLASSE = { acima: 'acima do normal', normal: 'normal', abaixo: 'abaixo do normal' };
 const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const DIA_MS = 86400000;
-const MAX_DIAS = 8; // hoje + 7
+const MAX_DIAS = 7; // hoje + 6: a previsão de 168 h cobre 7 dias locais (o último, parcial)
 
 const finito = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -26,6 +26,9 @@ export function formatNum(v, casas, unidade) {
   const n = v.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
   return unidade ? `${n} ${unidade}` : n;
 }
+
+/** Rótulo de eixo em pt-BR: até 2 casas, sem zeros sobrando. */
+export const formatTick = (v) => (finito(v) ? v.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '');
 
 /** Chuva em mm, uma casa; ausente = "sem dado". */
 export const formatMm = (v) => formatNum(v, 1, 'mm');
