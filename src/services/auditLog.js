@@ -110,3 +110,19 @@ export async function listarAuditoria({ operador, acao, limite = LIMITE_AUDITORI
   if (error) throw new Error(error.message);
   return data ?? [];
 }
+
+/**
+ * Eventos de uma entidade (ex.: código da bóia) para as ações dadas, mais
+ * recente primeiro. Lança em erro de leitura.
+ */
+export async function listarAuditoriaDaEntidade(entidade, acoes, limite) {
+  const { data, error } = await supabase
+    .from('audit_logs')
+    .select('*')
+    .eq('entidade_afetada', entidade)
+    .in('acao', acoes)
+    .order('created_at', { ascending: false })
+    .limit(limite);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}

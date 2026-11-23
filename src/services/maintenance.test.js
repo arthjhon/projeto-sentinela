@@ -27,7 +27,7 @@ vi.mock('./auditLog', () => ({ logAcao: vi.fn(), AUDIT: { MANUTENCAO_FIM: 'm.fim
 import { logAcao } from './auditLog';
 import {
   manutencaoAberta, nomeDoOperador, montarCancelamento, cancelarManutencao, registrarCalibracao,
-  manutencoesAbertas, SEM_MANUTENCAO_ABERTA, MIN_OBSERVACAO, validarObservacaoCalibracao,
+  manutencoesAbertas, listarManutencoes, listarCalibracoes, ultimaCalibracaoPorSensor, ultimasCalibracoes, SEM_MANUTENCAO_ABERTA, MIN_OBSERVACAO, validarObservacaoCalibracao,
 } from './maintenance';
 
 beforeEach(() => { chain.calls.length = 0; chain.result.data = null; chain.result.error = null; chain.lista.listResult = null; chain.lista.listError = null; vi.clearAllMocks(); });
@@ -148,5 +148,48 @@ describe('registrarCalibracao', () => {
     const ins = chain.calls.find((c) => c[0] === 'insert');
     expect(ins[1].observacao).toBe('padrão pH 4,00 e 7,00');
     expect(ins[1].sensor_key).toBe('Sensor de pH');
+  });
+});
+
+describe('leituras por bóia com limite', () => {
+  it('listarManutencoes aplica .limit quando o limite é inteiro', async () => {
+    chain.lista.listResult = [{ id: 1 }];
+    expect(await listarManutencoes('SM-01', 100)).toEqual([{ id: 1 }]);
+    expect(chain.calls).toContainEqual(['eq', 'boia_id', 'SM-01']);
+    expect(chain.calls).toContainEqual(['order', 'timestamp_inicio', { ascending: false }]);
+    expect(chain.calls).toContainEqual(['limit', 100]);
+  });
+  it('listarManutencoes sem limite (chamadores atuais) não aplica .limit', async () => {
+    chain.lista.listResult = [];
+    await listarManutencoes('SM-01');
+    expect(chain.calls.some((c) => c[0] === 'limit')).toBe(false);
+  });
+  it('listarManutencoes lança em erro e devolve [] com data nula', async () => {
+    chain.lista.listError = { message: 'boom' };
+    await expect(listarManutencoes('SM-01', 100)).rejects.toThrow('boom');
+    chain.lista.listError = null;
+    chain.lista.listResult = [];
+    expect(await listarManutencoes('SM-01', 100)).toEqual([]);
+  });
+  it('listarCalibracoes encadeia eq/order/limit e lança em erro', async () => {
+    chain.lista.listResult = [{ id: 3 }];
+    expect(await listarCalibracoes('SM-01', 50)).toEqual([{ id: 3 }]);
+    expect(chain.calls).toContainEqual(['eq', 'boia_id', 'SM-01']);
+    expect(chain.calls).toContainEqual(['order', 'calibrated_at', { ascending: false }]);
+    expect(chain.calls).toContainEqual(['limit', 50]);
+    chain.lista.listResult = null;
+    chain.lista.listError = { message: 'rls' };
+    await expect(listarCalibracoes('SM-01', 50)).rejects.toThrow('rls');
+  });
+  it('ultimaCalibracaoPorSensor fica com a primeira ocorrência por sensor_key', () => {
+    const r = ultimaCalibracaoPorSensor([
+      { sensor_key: 'Turbidez', id: 2 }, { sensor_key: 'Turbidez', id: 1 }, { sensor_key: 'Termômetro', id: 3 },
+    ]);
+    expect(r).toEqual({ Turbidez: { sensor_key: 'Turbidez', id: 2 }, 'Termômetro': { sensor_key: 'Termômetro', id: 3 } });
+    expect(ultimaCalibracaoPorSensor([])).toEqual({});
+  });
+  it('ultimasCalibracoes segue devolvendo o último por sensor', async () => {
+    chain.lista.listResult = [{ sensor_key: 'pH', id: 9 }, { sensor_key: 'pH', id: 8 }];
+    expect(await ultimasCalibracoes('SM-01')).toEqual({ pH: { sensor_key: 'pH', id: 9 } });
   });
 });

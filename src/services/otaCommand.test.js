@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   buildDeployRow, requestOtaCommand, otaErrorMessage, ultimoDeploy,
-  removeFirmwareFile, listarDeploys, deveRemoverBin,
+  removeFirmwareFile, listarDeploys, listarDeploysDaBoia, deveRemoverBin,
 } from './otaCommand';
 
 const httpError = (status, body) => ({
@@ -185,5 +185,28 @@ describe('listarDeploys', () => {
   it('throws on error instead of returning an empty list', async () => {
     const { client } = chain({ data: null, error: { message: 'rls' } });
     await expect(listarDeploys(client)).rejects.toThrow('rls');
+  });
+});
+
+describe('listarDeploysDaBoia', () => {
+  const chain = (result) => {
+    const limit = vi.fn().mockResolvedValue(result);
+    const order = vi.fn(() => ({ limit }));
+    const eq = vi.fn(() => ({ order }));
+    const select = vi.fn(() => ({ eq }));
+    return { client: { from: vi.fn(() => ({ select })) }, select, eq, order, limit };
+  };
+  it('filters by buoy, newest first, with limit', async () => {
+    const rows = [{ id: '1' }];
+    const { client, select, eq, order, limit } = chain({ data: rows, error: null });
+    expect(await listarDeploysDaBoia(client, 'SM-01', 100)).toEqual(rows);
+    expect(select).toHaveBeenCalledWith('id, boia_id, versao, status, operador_nome, data_deploy, confirmado_em');
+    expect(eq).toHaveBeenCalledWith('boia_id', 'SM-01');
+    expect(order).toHaveBeenCalledWith('data_deploy', { ascending: false });
+    expect(limit).toHaveBeenCalledWith(100);
+  });
+  it('returns [] on null data and throws on error', async () => {
+    expect(await listarDeploysDaBoia(chain({ data: null, error: null }).client, 'SM-01', 5)).toEqual([]);
+    await expect(listarDeploysDaBoia(chain({ data: null, error: { message: 'rls' } }).client, 'SM-01', 5)).rejects.toThrow('rls');
   });
 });

@@ -136,3 +136,15 @@ export async function listarDeploys(supabaseClient, limit = 20) {
   if (error) throw new Error(error.message);
   return data ?? [];
 }
+
+/** Deploys de uma bóia (mais recentes primeiro). Lança em erro de leitura. */
+export async function listarDeploysDaBoia(supabaseClient, boiaId, limite) {
+  const { data, error } = await supabaseClient
+    .from('firmware_deploys')
+    .select('id, boia_id, versao, status, operador_nome, data_deploy, confirmado_em')
+    .eq('boia_id', boiaId)
+    .order('data_deploy', { ascending: false })
+    .limit(limite);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}

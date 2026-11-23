@@ -91,6 +91,18 @@ export async function fetchHealthEvents(deviceId, limit = 10) {
   return data ?? [];
 }
 
+/** Eventos de saúde de vários seriais numa só consulta; lista vazia não consulta. */
+export async function fetchHealthEventsDosSeriais(deviceIds, limite) {
+  if (!deviceIds?.length) return [];
+  const { data, error } = await supabase
+    .from('sensor_health_events').select('*')
+    .in('device_id', deviceIds)
+    .order('inicio', { ascending: false })
+    .limit(limite);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
 export async function fetchWorkerJobs() {
   const { data, error } = await supabase.from('worker_jobs').select('*');
   if (error) throw new Error(error.message);

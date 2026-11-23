@@ -129,13 +129,18 @@ export async function cancelarManutencao(boiaId, notas) {
   return data;
 }
 
-/** Histórico de manutenções da bóia, mais recente primeiro. */
-export async function listarManutencoes(boiaId) {
-  const { data, error } = await supabase
+/**
+ * Histórico de manutenções da bóia, mais recente primeiro. `limite` só é
+ * aplicado quando inteiro: chamadores antigos (sem limite) seguem sem teto.
+ */
+export async function listarManutencoes(boiaId, limite) {
+  let q = supabase
     .from('maintenance_logs')
     .select('*')
     .eq('boia_id', boiaId)
     .order('timestamp_inicio', { ascending: false });
+  if (Number.isInteger(limite)) q = q.limit(limite);
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   return data ?? [];
 }
@@ -203,6 +208,31 @@ export async function registrarCalibracao(boiaId, sensorKey, observacao) {
   return data;
 }
 
+/** Calibrações da bóia, mais recente primeiro. */
+export async function listarCalibracoes(boiaId, limite) {
+  const { data, error } = await supabase
+    .from('sensor_calibrations')
+    .select('*')
+    .eq('boia_id', boiaId)
+    .order('calibrated_at', { ascending: false })
+    .limit(limite);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/**
+ * Última calibração de cada sensor a partir de linhas já ordenadas (mais
+ * recente primeiro): a primeira ocorrência de cada sensor_key vence.
+ * @returns {Record<string, object>} sensor_key -> registro
+ */
+export function ultimaCalibracaoPorSensor(rows) {
+  const porSensor = {};
+  for (const c of rows ?? []) {
+    if (!porSensor[c.sensor_key]) porSensor[c.sensor_key] = c;
+  }
+  return porSensor;
+}
+
 /**
  * Última calibração de cada sensor da bóia.
  * @returns {Promise<Record<string, object>>} sensor_key -> registro
@@ -214,11 +244,5 @@ export async function ultimasCalibracoes(boiaId) {
     .eq('boia_id', boiaId)
     .order('calibrated_at', { ascending: false });
   if (error) throw new Error(error.message);
-
-  // primeira ocorrência de cada sensor = a mais recente (já vem ordenado)
-  const porSensor = {};
-  for (const c of data ?? []) {
-    if (!porSensor[c.sensor_key]) porSensor[c.sensor_key] = c;
-  }
-  return porSensor;
+  return ultimaCalibracaoPorSensor(data);
 }

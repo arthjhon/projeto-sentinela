@@ -1,5 +1,21 @@
-import { describe, it, expect } from 'vitest';
-import { ESTADO_META, healthForDevice, jobStaleness, jobTitle, eventTone, estadoMeta, fmtDate } from './sensorHealth';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const chain = vi.hoisted(() => {
+  const calls = [];
+  const res = { data: null, error: null };
+  const q = new Proxy({}, {
+    get: (_, name) => {
+      if (name === 'then') return (ok) => ok({ data: res.data, error: res.error });
+      return (...args) => { calls.push([name, ...args]); return q; };
+    },
+  });
+  return { calls, res, q };
+});
+vi.mock('../lib/supabase', () => ({ supabase: { from: () => chain.q } }));
+
+import { ESTADO_META, healthForDevice, jobStaleness, jobTitle, eventTone, estadoMeta, fmtDate, fetchHealthEventsDosSeriais } from './sensorHealth';
+
+beforeEach(() => { chain.calls.length = 0; chain.res.data = null; chain.res.error = null; });
 
 const row = (sensor, estado, device_id = 'esp_a') => ({
   device_id, sensor, estado, motivo: null, desde: '2026-11-17T10:00:00Z',
@@ -78,5 +94,25 @@ describe('eventTone / estadoMeta / fmtDate / bancada motivo', () => {
   it('bancada clears motivo', () => {
     const h = healthForDevice([{ device_id: 'd', sensor: 'ph', estado: 'falha', motivo: 'faixa', desde: null }], 'd', 'bancada');
     expect(h.sensores[0].motivo).toBeNull();
+  });
+});
+
+describe('fetchHealthEventsDosSeriais', () => {
+  it('uma consulta .in com order e limit', async () => {
+    chain.res.data = [{ id: 1 }];
+    expect(await fetchHealthEventsDosSeriais(['a', 'b'], 100)).toEqual([{ id: 1 }]);
+    expect(chain.calls).toContainEqual(['in', 'device_id', ['a', 'b']]);
+    expect(chain.calls).toContainEqual(['order', 'inicio', { ascending: false }]);
+    expect(chain.calls).toContainEqual(['limit', 100]);
+  });
+  it('lista vazia resolve [] sem consultar o supabase', async () => {
+    expect(await fetchHealthEventsDosSeriais([], 100)).toEqual([]);
+    expect(chain.calls).toHaveLength(0);
+  });
+  it('lança em erro e devolve [] com data nula', async () => {
+    chain.res.error = { message: 'rls' };
+    await expect(fetchHealthEventsDosSeriais(['a'], 100)).rejects.toThrow('rls');
+    chain.res.error = null;
+    expect(await fetchHealthEventsDosSeriais(['a'], 100)).toEqual([]);
   });
 });
