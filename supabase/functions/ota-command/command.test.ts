@@ -123,6 +123,16 @@ describe('buildRebootCommand', () => {
     expect(JSON.parse(payload)).toEqual({ action: 'reboot', ts: 1795460000, id: 'abc' });
   });
 
+  it.each([1795460000.5, 1795460000000, 0])('refuses non-integer-seconds ts %s', (ts) => {
+    try {
+      buildRebootCommand('snt-0001', ts, 'abc');
+      throw new Error('did not throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(OtaCommandError);
+      expect((e as OtaCommandError).code).toBe('bad_ts');
+    }
+  });
+
   it('refuses a malformed device id', () => {
     expect(() => buildRebootCommand('a/b', 1795460000, 'abc')).toThrow(OtaCommandError);
     try {

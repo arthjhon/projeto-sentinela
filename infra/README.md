@@ -1620,12 +1620,19 @@ Mesma função, mesmo deploy, sem variável nova (não usa `OTA_PUBLIC_BASE_URL`
 
 - Corpo: `{"action":"reboot","boia_id":"<codigo>"}`. `boia_id` não string, vazio ou com mais de
   40 caracteres -> 400 `invalid_boia_id`; `action` desconhecida -> 400 `invalid_action`.
-- Respostas: 200 `{"ok":true,"sent_at":<epoch s>}`; 401 sem sessão; 403 `forbidden` (não admin);
-  422 `no_device` (bóia sem `deviceId` no registro); 502 `broker_unavailable`.
+- Respostas: 200 `{"ok":true,"sent_at":<epoch s>,"id":"<uuid do comando>"}`; 401 sem sessão;
+  403 `forbidden` (não admin); 422 `no_device` (bóia sem `deviceId` no registro) ou código de
+  validação do comando (`bad_device`, `bad_ts`, `too_large`); 502 `broker_unavailable`.
+- Rastro no servidor: cada tentativa que chega a publicar grava uma linha JSON no log da função
+  (`event":"ota-command.reboot"`, `caller_id`, `boia_id`, `device_id`, `command_id`, `sent_at`,
+  `result` = `published` ou `broker_unavailable`). Sem credenciais. O `id` da resposta é o mesmo
+  `command_id` e vai para o `detalhes` da auditoria do painel.
 - Publica `<deviceId>/ota/command` com `{"action":"reboot","ts":<epoch s>,"id":"<uuid>"}`, QoS 1,
   **sem retain** (retido reiniciaria a placa a cada reconexão).
 - `ts` é **inteiro em segundos** (`Math.floor(Date.now()/1000)`): float ou milissegundos a placa
-  rejeita como velho (janela de 300 s). Quem chama o painel usa o `sent_at` da resposta.
+  rejeita como velho (janela de 300 s). A função recusa `ts` fora de 1e9..1e10 (`bad_ts`). O painel
+  não usa o `sent_at` para acompanhar: usa o `Date.now()` do navegador no instante em que a função
+  responde ok (comparado com a hora de chegada do `/status`, também do navegador).
 - Não toca `firmware_deploys`. Sucesso só prova que o broker aceitou (PUBACK); o reinício se
   confirma pelo `/status` da placa. Deploy da função: os mesmos passos acima (`index.ts` e `command.ts`).
 

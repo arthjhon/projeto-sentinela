@@ -1,17 +1,21 @@
 // Publishes `<device>/ota/command` on behalf of an admin. Browsers are anonymous
-// read-only MQTT clients, so the OTA page cannot publish; this function does it
+// read-only MQTT clients, so the panel cannot publish; this function does it
 // with the broker credential `svc/ota` (ACL: write `+/ota/command` only).
 //
-// Flow:
-//   1. Caller JWT -> profiles.role must be 'admin' (service_role client)
-//   2. Load the firmware_deploys row + the buoy's deviceId (app_settings.map_buoys)
-//   3. buildOtaCommand validates everything; nothing is published on failure
-//   4. connect + publish (QoS 1, waits PUBACK) + end, bounded by a 10 s timeout
+// Two actions, both admin only (caller JWT -> profiles.role = 'admin', checked
+// with a service_role client), published QoS 1 and bounded by a 10 s timeout:
 //
-// On success the deploy row is NOT changed: the OTA page and the device's
-// `ota/status` close the loop. On broker failure (502) the deploy becomes `falha`.
+//   deploy (body {deploy_id}): load the firmware_deploys row + the buoy's
+//     deviceId (app_settings.map_buoys); buildOtaCommand validates everything,
+//     nothing is published on failure. On success the deploy row is NOT changed:
+//     the OTA page and the device's `ota/status` close the loop. On broker
+//     failure (502) the deploy becomes `falha`.
+//   reboot (body {action:'reboot', boia_id}): buildRebootCommand, no retain, no
+//     firmware_deploys access. Every attempt writes one structured console.log
+//     line (event ota-command.reboot) for server-side tracing.
 //
-// Env: MQTT_OTA_URL, MQTT_OTA_USER, MQTT_OTA_PASS, OTA_PUBLIC_BASE_URL.
+// Env: MQTT_OTA_URL, MQTT_OTA_USER, MQTT_OTA_PASS; OTA_PUBLIC_BASE_URL only for
+// deploy (reboot does not use it).
 // CORS is handled by Kong (functions-v1 route).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
@@ -91,7 +95,7 @@ type AdminClient = ReturnType<typeof createClient>;
 
 async function authenticateAdmin(
   authHeader: string,
-): Promise<{ response: Response; admin?: undefined } | { admin: AdminClient; response?: undefined }> {
+): Promise<{ response: Response; admin?: undefined; callerId?: undefined } | { admin: AdminClient; callerId: string; response?: undefined }> {
   // Caller session: only used to identify who is calling.
   const callerClient = createClient(SUPABASE_URL, ANON_KEY, {
     global: { headers: { Authorization: authHeader } },
@@ -108,7 +112,7 @@ async function authenticateAdmin(
     .eq('id', caller.id)
     .single();
   if (profileError || profile?.role !== 'admin') return { response: json({ error: 'forbidden' }, 403) };
-  return { admin };
+  return { admin, callerId: caller.id };
 }
 
 // The buoy registry lives in app_settings.map_buoys (array of {codigo, deviceId}).
@@ -147,9 +151,19 @@ async function handleReboot(authHeader: string, boiaId: unknown) {
   if (!lookup.deviceId) return json({ error: 'no_device' }, 422);
 
   const sentAt = Math.floor(Date.now() / 1000);
+  const commandId = crypto.randomUUID();
+  const trace = (result: string) => console.log(JSON.stringify({
+    event: 'ota-command.reboot',
+    caller_id: auth.callerId,
+    boia_id: boiaId,
+    device_id: lookup.deviceId,
+    command_id: commandId,
+    sent_at: sentAt,
+    result,
+  }));
   let command: { topic: string; payload: string };
   try {
-    command = buildRebootCommand(lookup.deviceId, sentAt, crypto.randomUUID());
+    command = buildRebootCommand(lookup.deviceId, sentAt, commandId);
   } catch (e) {
     if (e instanceof OtaCommandError) return json({ error: e.code }, 422);
     throw e;
@@ -159,9 +173,11 @@ async function handleReboot(authHeader: string, boiaId: unknown) {
     await publishOnce(command.topic, command.payload);
   } catch (e) {
     console.error('ota-command: broker failure', e instanceof Error ? e.message : 'unknown');
+    trace('broker_unavailable');
     return json({ error: 'broker_unavailable' }, 502);
   }
-  return json({ ok: true, sent_at: sentAt });
+  trace('published');
+  return json({ ok: true, sent_at: sentAt, id: commandId });
 }
 
 Deno.serve(async (req: Request) => {

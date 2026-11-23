@@ -8,7 +8,8 @@ export type OtaCommandCode =
   | 'bad_path'
   | 'bad_sha'
   | 'no_version'
-  | 'too_large';
+  | 'too_large'
+  | 'bad_ts';
 
 export class OtaCommandError extends Error {
   code: OtaCommandCode;
@@ -76,6 +77,9 @@ export function buildRebootCommand(
 ): { topic: string; payload: string } {
   if (typeof deviceId !== 'string' || !DEVICE_RE.test(deviceId)) {
     throw new OtaCommandError('bad_device');
+  }
+  if (!Number.isSafeInteger(nowEpochS) || nowEpochS < 1e9 || nowEpochS >= 1e10) {
+    throw new OtaCommandError('bad_ts');
   }
   const payload = JSON.stringify({ action: 'reboot', ts: nowEpochS, id });
   if (new TextEncoder().encode(payload).length > MAX_PAYLOAD_BYTES) {
