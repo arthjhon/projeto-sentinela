@@ -38,9 +38,14 @@ O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve 
 - **Histórico persistido** — gráfico por janela de tempo (1h / 24h / 7d / 30d) lido do
   InfluxDB, somado às leituras que continuam chegando por MQTT em tempo real
 - **Exportação CSV** das leituras do período selecionado, pronta para abrir no Excel
-- **Gerenciador de Bóias** — CRUD completo: cadastro, edição, remoção e histórico de leituras. Cada bóia tem **lagoa, latitude, longitude e ID do dispositivo (MQTT)** editáveis no painel: trocar o hardware de uma bóia (ex.: ESP32 → LoRa32 v3, com outro `deviceId`) não exige deploy — mapa, dashboard e OTA passam a escutar o novo dispositivo
-- **Gestão de Operadores** — criação e remoção de usuários (exclusivo para admins)
-- **OTA Firmware** — envio de atualização de firmware para o ESP32 via MQTT, sem acesso físico ao hardware; aceita como destino qualquer bóia cadastrada com dispositivo
+- **Gerenciador de Bóias** — CRUD completo: cadastro, edição e remoção. Cada bóia tem **lagoa, latitude, longitude, modo (bancada/campo) e número de série da placa** editáveis no painel. Trocar a placa de uma bóia não exige deploy: o número antigo fica em "seriais anteriores" e o histórico continua unido
+- **Ficha da bóia** (`/admin/boias/<código>`) — uma página por bóia com:
+  - identificação, dispositivo (conexão, firmware, sinal, memória, cada valor com a idade do dado) e saúde de cada sensor com a última calibração;
+  - uma **linha do tempo única** de manutenção, calibração, firmware, saúde e cadastro, com filtro por tipo.
+- **Gestão de Operadores** — criação e remoção de usuários (exclusivo para admins). A remoção revoga o acesso de verdade, pela Edge Function `admin-delete-user`
+- **Auditoria** — log append-only das ações do painel, restrito a admin e operador. O nome do autor é gravado pelo servidor, então não dá para forjar
+- **OTA Firmware** — atualização remota sem acesso físico: o painel envia o `.bin` e uma função de servidor publica o comando para a placa (ver "Fluxo OTA")
+- **Status** — saúde da plataforma (Supabase, broker, InfluxDB, ingestão, worker) e uma tabela das bóias com link para cada ficha
 - **Configurações** — dados simulados (mock), meta de financiamento e **raio de coleta** desenhado ao redor das bóias no mapa público
 
 <br/>
@@ -62,8 +67,10 @@ O projeto tem foco especial no *Mytella charruana* (sururu) — molusco bivalve 
 
 | Tecnologia | Componente |
 |---|---|
-| **ESP32** | Microcontrolador embarcado nas bóias — coleta sensorial e transmissão MQTT |
-| **Mosquitto (Broker MQTT próprio)** | Mensageria pub/sub para telemetria contínua e comandos OTA; `mqtt.arthlabs.dev` via Cloudflare Tunnel, leitura anônima no navegador e comandos OTA emitidos pela Edge Function `ota-command` |
+| **ESP32-S3 (Heltec WiFi LoRa 32 V3)** | Microcontrolador das bóias, firmware 5.1.x. Coleta sensorial e transmissão MQTT sobre WebSocket com TLS. Número de série e senha MQTT ficam na NVS da placa, nunca no código |
+| **Mosquitto (Broker MQTT próprio)** | Mensageria pub/sub para telemetria e comandos OTA, na VM, exposto só por Cloudflare Tunnel em `mqtt.arthlabs.dev`. Duas portas públicas: `/mqtt` (navegadores, anônimo e só leitura, até 150 conexões) e `/dev` (placas e a função de OTA, só com senha, até 20 conexões), mais rate limiting por IP na Cloudflare |
+| **Edge Functions (Supabase)** | `ota-command` publica o comando de OTA (só admin); `admin-create-user`, `admin-delete-user` e `admin-reset-password` gerenciam operadores |
+| **Worker (Python)** | Coleta Open-Meteo e ANA (HidroWebService), detector de falha de sensor e status da plataforma |
 | **Supabase (PostgreSQL)** | Autenticação, RBAC, perfis de usuário e storage de firmware (.bin) |
 | **Telegraf** | Ingestão MQTT → InfluxDB: assina os tópicos e grava cada leitura, de forma declarativa (`telegraf/telegraf.conf`) |
 | **InfluxDB** | Banco de dados time-series para histórico massivo de leituras |
@@ -88,19 +95,36 @@ As faixas de referência usadas nos selos (Saudável / Atenção / Crítico) e n
 ## Fluxo OTA (Over-the-Air Firmware Update)
 
 ```
-Admin faz upload do .bin → Supabase Storage (SHA-256 calculado no navegador)
+Admin envia o .bin no painel → Supabase Storage (SHA-256 calculado no navegador)
+     ↓  registro em firmware_deploys (pendente)
+Painel chama a Edge Function ota-command (confere no servidor que quem chamou é admin)
      ↓
-Admin confirma "Implantar Firmware" no painel (registro em firmware_deploys)
+Função publica <série>/ota/command { url, version, sha256 } com a conta svc/ota, pela porta /dev
      ↓
-Painel publica via MQTT: <deviceId>/ota/command  { url, version, sha256 }
-     ↓
-ESP32 recebe a URL do firmware, faz download, valida o hash e se reflasha via HTTPUpdate
-     ↓
-ESP32 reinicia com o novo firmware e reporta em <deviceId>/ota/status
-     (downloading → flashing → success | error) — o painel fecha o histórico do deploy
+Placa baixa por HTTPS, confere SHA-256 e cabeçalho da imagem, grava no outro slot e reinicia
+     ↓  reporta em <série>/ota/status (downloading → flashing → success | error)
+Imagem nova fica pendente: só é confirmada quando o broker confirma uma publicação (PUBACK)
+e a inscrição em ota/command (SUBACK). Sem isso, a placa volta sozinha à imagem anterior
+no 3º boot ou com 15 min no ar
 ```
 
-Só o `ota/status` da bóia do deploy em curso muda o estado do formulário; o último status **retido** no broker (de um OTA anterior) aparece apenas no card da frota e não trava um novo deploy.
+- **Sem credencial no navegador:** o painel não publica nada no broker. Ele lê de forma anônima e só leitura.
+- **Imagem pendente:** enquanto a imagem nova não é confirmada, a placa recusa outro OTA (`unconfirmed_image`).
+- **Sem resposta:** um deploy `pendente` com mais de 15 min aparece como "sem resposta".
+- **Status retido:** só o `ota/status` da bóia do deploy em curso muda o estado do formulário. O último status **retido** no broker, de um OTA anterior, aparece apenas no card da frota e não trava um novo deploy.
+- **Teste em produção:** o fluxo foi testado de ponta a ponta na SM-01 em 23/11/2026, com dois OTAs (`5.1.1-teste` e `5.1.2`), ambos confirmados em cerca de 1 minuto.
+
+<br/>
+
+## Identidade das placas e provisionamento
+
+Cada placa tem um **número de série permanente** `snt-NNNN` (sequencial, nunca reaproveitado) e uma **senha MQTT própria**, gravados na NVS por USB pelo `infra/bin/provision-board.py`.
+
+- O script reserva o serial pelo MAC na tabela `dispositivos`, cria o usuário no broker (`infra/bin/mqtt-user.sh`) e manda a senha direto para a placa. A senha não aparece em tela, log nem arquivo.
+- O firmware 5.1.x não tem identificador nem senha no código. O `secrets.h` só leva Wi-Fi, o endereço do broker (`wss://mqtt.arthlabs.dev:443/dev`) e o prefixo de download de firmware.
+- As credenciais do broker vivem só no volume `sentinela-mosquitto-data`, com backup diário (03:40 UTC, 14 cópias).
+
+Passo a passo, rotação de senha e restauração: `infra/README.md` (seções "Broker MQTT", "Provisionar placa" e "15b").
 
 <br/>
 
@@ -281,7 +305,7 @@ para o bundle público — restrinja-a ao domínio do site no painel do CARTO. A
 - [x] Mapa interativo de localização das bóias
 - [x] Página de Apoiadores do projeto
 - [x] Pipeline de deploy automatizado (GitHub Actions + cloudflared)
-- [x] Versionamento de firmware (v0 original → v1 bugfix → v2 OTA)
+- [x] Versionamento de firmware (v0 original → v1 bugfix → v2 OTA → … → v5.1.x modular, ESP32-S3)
 - [x] **Persistência histórica no InfluxDB** — toda leitura publicada no MQTT é
       gravada via Telegraf, então o histórico sobrevive a reinício da stack e
       deixa de depender do buffer em memória da sessão
@@ -319,6 +343,21 @@ para o bundle público — restrinja-a ao domínio do site no painel do CARTO. A
 - [x] **Página inicial honesta** — seção de parâmetros explicativa (faixas de
       referência CONAMA 357, "Monitorado pela bóia" vs. "Planejado"), sem
       leituras simuladas de sensores que não existem
+- [x] **Stack de dados em produção** (21/11/2026) — InfluxDB, Telegraf e worker
+      (Open-Meteo, ANA, detector de falha de sensor, status da plataforma) na VM
+- [x] **Broker MQTT próprio** (23/11/2026) — saída do HiveMQ Cloud; Mosquitto na VM
+      exposto só pelo túnel, navegador anônimo e só leitura, credencial do HiveMQ
+      removida do código público e dos secrets
+- [x] **Número de série e provisionamento das placas** — `snt-NNNN` + senha por placa
+      na NVS; a SM-01 é a `snt-0001`
+- [x] **OTA pelo servidor com rollback automático** — Edge Function `ota-command`;
+      testado de ponta a ponta em 23/11/2026 (firmware 5.1.2 em produção)
+- [x] **Portas separadas no broker e rate limiting** — `/dev` só para dispositivos
+      (vagas próprias), `/mqtt` para navegadores, limite por IP na Cloudflare
+- [x] **Backup diário do volume do broker** (`mosquitto-backup.timer`)
+- [x] **Painel admin revisado** — segurança (auditoria que não dá para forjar, exclusão
+      de operador que revoga acesso), telas enxutas e **ficha da bóia** com linha do
+      tempo única
 
 ### Próximos passos
 
