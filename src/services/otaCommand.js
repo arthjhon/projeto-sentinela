@@ -80,7 +80,7 @@ export async function requestOtaCommand(supabaseClient, deployId) {
 /**
  * Pede à Edge Function o reinício remoto da placa da bóia. Não toca em
  * firmware_deploys. `sentAt` em ms (a função devolve segundos). Nunca lança.
- * @returns {Promise<{ok: true, sentAt: number} | {ok: false, code: string, status: number|null, message: string}>}
+ * @returns {Promise<{ok: true, sentAt: number, id: string|undefined} | {ok: false, code: string, status: number|null, message: string}>}
  */
 export async function requestRebootCommand(supabaseClient, boiaId) {
   const { data, error } = await supabaseClient.functions.invoke('ota-command', {
@@ -88,7 +88,7 @@ export async function requestRebootCommand(supabaseClient, boiaId) {
   });
   if (!error) {
     const s = Number(data?.sent_at);
-    return { ok: true, sentAt: Number.isFinite(s) ? s * 1000 : Date.now() };
+    return { ok: true, sentAt: Number.isFinite(s) ? s * 1000 : Date.now(), id: data?.id };
   }
 
   const status = error.context?.status ?? null;

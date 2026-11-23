@@ -1,6 +1,6 @@
 import React from 'react';
 import { serialValido } from '../../../utils/deviceIds';
-import { formatUptime, formatMemoriaDetalhada, rotuloReinicio, formatRssi, estadoFirmware, rotuloRecebido } from '../../../utils/buoyDetails';
+import { formatUptime, formatMemoriaDetalhada, textoUltimoReinicio, formatRssi, estadoFirmware, rotuloRecebido } from '../../../utils/buoyDetails';
 import './DeviceInfoList.css';
 
 const SEM_LEITURA = 'sem leitura desde que o painel abriu';
@@ -39,7 +39,7 @@ export default function DeviceInfoList({ statusMsg, agoraMs, deployBloco }) {
   const fw = estadoFirmware(statusMsg, deployBloco);
   const rssi = formatRssi(statusMsg?.rssi);
   const memoria = formatMemoriaDetalhada(statusMsg);
-  const ultimoReinicio = rotuloReinicio(statusMsg?.reset_reason);
+  const ultimoReinicio = textoUltimoReinicio(statusMsg);
   const uptime = formatUptime(statusMsg?.uptime);
   const latencia = Number.isFinite(statusMsg?.mqtt_latency) ? `${Math.round(statusMsg.mqtt_latency)} ms` : null;
   // idade do /status: o valor não é "agora", é o da última mensagem recebida
@@ -58,7 +58,11 @@ export default function DeviceInfoList({ statusMsg, agoraMs, deployBloco }) {
       </Row>
       <Row label="Calibrada">{comIdade(typeof statusMsg?.calibrated === 'boolean' ? (statusMsg.calibrated ? 'Sim' : 'Não') : null) || ausente}</Row>
       <Row label="Tempo ligada">{comIdade(uptime) || ausente}</Row>
-      <Row label="Último reinício">{comIdade(ultimoReinicio) || ausente}</Row>
+      <Row label="Último reinício">
+        {ultimoReinicio.tipo === 'valor' ? comIdade(ultimoReinicio.texto)
+          : ultimoReinicio.tipo === 'nao-informado' ? <Muted>{ultimoReinicio.texto}</Muted>
+            : ausente}
+      </Row>
       <Row label="Sinal Wi-Fi">{comIdade(rssi) || ausente}</Row>
       <Row label="Memória">{comIdade(memoria) || ausente}</Row>
       <Row label="Latência MQTT">{comIdade(latencia) || ausente}</Row>

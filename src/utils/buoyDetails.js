@@ -26,8 +26,8 @@ export function formatMemoria(free, total) {
 
 /** Rótulos do motivo do último reset da placa (campo `reset_reason`, firmware >= 5.2.0). */
 export const ROTULO_REINICIO = {
-  poweron: 'Energia ligada',
-  external: 'Botão de reset',
+  poweron: 'Energia ligada ou botão RST',
+  external: 'Reset externo (USB/JTAG)',
   brownout: 'Queda de tensão',
   panic: 'Falha do firmware (panic)',
   task_wdt: 'Watchdog (tarefa travada)',
@@ -42,6 +42,17 @@ export const ROTULO_REINICIO = {
   software: 'Reinício pelo firmware',
   unknown: 'Desconhecido',
 };
+
+/**
+ * Texto da linha "Último reinício": valor, "não informado" (status chegou mas sem
+ * reset_reason: firmware < 5.2.0 ou /status de conexão) ou ausente (sem status).
+ */
+export function textoUltimoReinicio(statusMsg) {
+  if (!statusMsg) return { tipo: 'ausente', texto: null };
+  const texto = rotuloReinicio(statusMsg.reset_reason);
+  if (texto) return { tipo: 'valor', texto };
+  return { tipo: 'nao-informado', texto: 'não informado (firmware < 5.2.0 ou status de conexão)' };
+}
 
 export function rotuloReinicio(codigo) {
   if (codigo === undefined || codigo === null || codigo === '') return null;

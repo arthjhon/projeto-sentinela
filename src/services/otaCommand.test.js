@@ -219,6 +219,10 @@ describe('requestRebootCommand', () => {
     expect(invoke).toHaveBeenCalledWith('ota-command', { body: { action: 'reboot', boia_id: 'SM-01' } });
     expect(from).not.toHaveBeenCalled();
   });
+  it('repassa o id do comando', async () => {
+    const { client } = makeClient({ data: { ok: true, sent_at: 1700000000, id: 'cmd-1' }, error: null });
+    expect(await requestRebootCommand(client, 'SM-01')).toEqual({ ok: true, sentAt: 1700000000000, id: 'cmd-1' });
+  });
   it('erro com código, sem tocar firmware_deploys', async () => {
     const { client, from } = makeClient({ data: null, error: httpError(422, { error: 'no_device' }) });
     const r = await requestRebootCommand(client, 'SM-01');

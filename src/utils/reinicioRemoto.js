@@ -36,7 +36,8 @@ export function permissaoReinicio({ role, isFallback, serial, conexao, firmware 
 
 /**
  * Acompanha o reinício pedido em `enviadoEmMs`. Só um /status recebido depois
- * do envio, com reset_reason 'remote' e uptime coerente com o tempo decorrido,
+ * do envio, com reset_reason 'remote' e uptime coerente com o tempo decorrido até a
+ * RECEPÇÃO dele (não até agora: um status velho não vira confirmação com o passar do tempo),
  * confirma; /status de conexão (sem uptime) ou retido/atrasado não conta.
  */
 export function estadoReinicio({ enviadoEmMs, agoraMs, statusMsg }) {
@@ -45,7 +46,7 @@ export function estadoReinicio({ enviadoEmMs, agoraMs, statusMsg }) {
     Number.isFinite(recebido) && recebido >= enviadoEmMs
     && statusMsg.reset_reason === 'remote'
     && Number.isFinite(statusMsg.uptime)
-    && statusMsg.uptime <= (agoraMs - enviadoEmMs) / 1000 + REINICIO_FOLGA_S
+    && statusMsg.uptime <= (recebido - enviadoEmMs) / 1000 + REINICIO_FOLGA_S
   ) return 'confirmado';
   return agoraMs - enviadoEmMs > REINICIO_TIMEOUT_MS ? 'sem-confirmacao' : 'aguardando';
 }

@@ -55,5 +55,13 @@ describe('estadoReinicio', () => {
   it('181 s sem confirmação', () => expect(estadoReinicio({ enviadoEmMs: env, agoraMs: env + 181000, statusMsg: null })).toBe('sem-confirmacao'));
   it('180 s exatos ainda aguardando', () => expect(estadoReinicio({ enviadoEmMs: env, agoraMs: env + 180000, statusMsg: null })).toBe('aguardando'));
   it('confirmação tardia ainda vale como confirmado', () => expect(estadoReinicio({
-    enviadoEmMs: env, agoraMs: env + 181000, statusMsg: { ...conf, uptime: 100 } })).toBe('confirmado'));
+    enviadoEmMs: env, agoraMs: env + 181000, statusMsg: { ...conf, _recebidoEm: env + 100000, uptime: 100 } })).toBe('confirmado'));
+  it('remote de reinício anterior (uptime 200 s, recebido 2 s após o clique, agora 170 s) -> aguardando', () => expect(estadoReinicio({
+    enviadoEmMs: env, agoraMs: env + 170000,
+    statusMsg: { _recebidoEm: env + 2000, reset_reason: 'remote', uptime: 200 } })).toBe('aguardando'));
+  it('uptime 0 recebido após o clique -> confirmado', () => expect(estadoReinicio({
+    enviadoEmMs: env, agoraMs: env + 25000,
+    statusMsg: { _recebidoEm: env + 20000, reset_reason: 'remote', uptime: 0 } })).toBe('confirmado'));
+  it('sem _recebidoEm -> aguardando', () => expect(estadoReinicio({
+    enviadoEmMs: env, agoraMs: env + 25000, statusMsg: { reset_reason: 'remote', uptime: 10 } })).toBe('aguardando'));
 });

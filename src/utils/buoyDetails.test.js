@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   formatUptime, formatBytes, formatMemoria, escolherFirmware, formatRssi,
   blocosDetalhes, estadoFirmware, estadoManutencao, rotuloRecebido,
-  ROTULO_REINICIO, rotuloReinicio, formatMemoriaDetalhada,
+  ROTULO_REINICIO, rotuloReinicio, textoUltimoReinicio, formatMemoriaDetalhada,
 } from './buoyDetails';
 
 describe('formatUptime', () => {
@@ -122,7 +122,7 @@ describe('rotuloRecebido (idade do valor de status)', () => {
 describe('rotuloReinicio', () => {
   it('15 rótulos exatos', () => {
     expect(ROTULO_REINICIO).toEqual({
-      poweron: 'Energia ligada', external: 'Botão de reset', brownout: 'Queda de tensão',
+      poweron: 'Energia ligada ou botão RST', external: 'Reset externo (USB/JTAG)', brownout: 'Queda de tensão',
       panic: 'Falha do firmware (panic)', task_wdt: 'Watchdog (tarefa travada)',
       int_wdt: 'Watchdog (interrupção)', other_wdt: 'Watchdog', deepsleep: 'Saída do sono profundo',
       ota: 'Atualização de firmware (OTA)', rollback: 'Volta automática (rollback)',
@@ -143,4 +143,15 @@ describe('formatMemoriaDetalhada', () => {
   it('só maior bloco', () => expect(formatMemoriaDetalhada({ free_heap: 200000, max_alloc_heap: 50000 }))
     .toBe('195 KB livres · maior bloco 49 KB'));
   it('sem free_heap', () => { expect(formatMemoriaDetalhada({ min_free_heap: 1 })).toBeNull(); expect(formatMemoriaDetalhada(null)).toBeNull(); });
+});
+
+describe('textoUltimoReinicio', () => {
+  it('com reset_reason -> valor', () => expect(textoUltimoReinicio({ reset_reason: 'remote' }))
+    .toEqual({ tipo: 'valor', texto: 'Comando remoto' }));
+  it('status sem reset_reason -> não informado', () => expect(textoUltimoReinicio({ board: 'x' }))
+    .toEqual({ tipo: 'nao-informado', texto: 'não informado (firmware < 5.2.0 ou status de conexão)' }));
+  it('sem status -> ausente', () => {
+    expect(textoUltimoReinicio(null)).toEqual({ tipo: 'ausente', texto: null });
+    expect(textoUltimoReinicio(undefined)).toEqual({ tipo: 'ausente', texto: null });
+  });
 });

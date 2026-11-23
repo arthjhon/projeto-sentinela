@@ -21,6 +21,7 @@ export default function ReiniciarPlaca({ buoy, role, isFallback, conexao, status
   const [enviando, setEnviando] = useState(false);
   const [enviadoEmMs, setEnviadoEmMs] = useState(null);
   const [erro, setErro] = useState(null);
+  const [auditoriaFalhou, setAuditoriaFalhou] = useState(false);
 
   const serial = serialValido(buoy);
   const permissao = permissaoReinicio({ role, isFallback, serial, conexao, firmware: statusMsg?.firmware });
@@ -31,9 +32,11 @@ export default function ReiniciarPlaca({ buoy, role, isFallback, conexao, status
   const confirmar = async () => {
     setEnviando(true);
     setErro(null);
+    setAuditoriaFalhou(false);
     const r = await requestRebootCommand(supabase, buoy.codigo);
     if (r.ok) {
-      await logAcao(AUDIT.BOIA_REINICIAR, buoy.codigo, { serial });
+      const gravou = await logAcao(AUDIT.BOIA_REINICIAR, buoy.codigo, { serial, command_id: r.id });
+      setAuditoriaFalhou(!gravou);
       // hora do navegador (não a do servidor): estadoReinicio compara com _recebidoEm/agoraMs
       setEnviadoEmMs(Date.now());
     } else {
@@ -65,6 +68,9 @@ export default function ReiniciarPlaca({ buoy, role, isFallback, conexao, status
       </button>
       {!ocupado && <AcaoAviso id={avisoId}>{!permissao.permitido && permissao.motivo}</AcaoAviso>}
       {linha && <p className="text-muted" role="status">{linha}</p>}
+      {auditoriaFalhou && !erro && (
+        <p className="text-muted" role="status">Comando enviado, mas o registro na auditoria falhou.</p>
+      )}
 
       {confirmando && (
         <Modal
