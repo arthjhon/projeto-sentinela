@@ -1,5 +1,5 @@
 .users-list-wrapper {
-  padding: 1.5rem;
+  padding: var(--card-pad);
   overflow-x: auto;
 }
 
@@ -10,19 +10,19 @@
 
 .users-table th {
   text-align: left;
-  padding: 1rem;
-  color: var(--text-muted);
+  padding: 6px var(--sp-3);
+  color: var(--text-subtle);
   font-weight: 500;
-  font-size: 0.85rem;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .users-table td {
-  padding: 1rem;
+  padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  font-size: 0.95rem;
+  font-size: var(--fs-sm);
 }
 
 .users-table tr:last-child td {
@@ -36,13 +36,16 @@
 .user-cell-name {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: var(--sp-3);
+  min-width: 0;
 }
+
+.user-cell-name .font-medium { white-space: nowrap; }
 
 .avatar-mini {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--radius-ctl);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -54,9 +57,9 @@
 .avatar-mini.visualizador { background: rgba(156, 163, 175, 0.15); color: #9ca3af; border: 1px solid rgba(156, 163, 175, 0.3); }
 
 .role-badge {
-  padding: 0.35rem 0.75rem;
-  border-radius: 99px;
-  font-size: 0.75rem;
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.05em;
 }
@@ -69,10 +72,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.8rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
-  padding: 0.2rem 0.6rem;
-  border-radius: 4px;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-ctl);
 }
 
 .alert-badge.warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.2); }
@@ -82,7 +85,7 @@
   text-align: right;
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--sp-2);
 }
 
 .font-medium { font-weight: 500; }
@@ -90,16 +93,16 @@
 /* Utilitarios de texto e .w-100 vivem em styles/shared.css;
    alinhamento e margens (text-center, mt-N, mb-N) ja existem em index.css. */
 .d-flex { display: flex; }
-.rounded { border-radius: 8px; }
+.rounded { border-radius: var(--radius-ctl); }
 
 .password-strategy-panel {
-  padding: 1.5rem;
+  padding: var(--card-pad);
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .password-strategy-panel h4 {
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
   color: #fff;
   border-bottom: 1px solid rgba(255,255,255,0.1);
   padding-bottom: 0.5rem;
@@ -114,7 +117,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -125,8 +128,56 @@
   height: 16px;
 }
 
-/* Header (.d-flex-between/.header-actions/.search-bar), modal (.crud-modal*), .form-group e
+/* Header (.d-flex-between/.search-bar), modal (.crud-modal*), .form-group e
    .input-error vivem em styles/admin-shared.css e components/admin/Modal.css.
    .btn-table e .danger-btn vivem em shared.css. */
 .font-monospace { font-family: 'Courier New', monospace; }
 
+
+/* ≤640px: cada operador vira um cartão (nome, papel, credencial, senha, ações).
+   Os botões e seus aria-describedby ficam como estão. */
+@media (max-width: 640px) {
+  .users-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .users-table,
+  .users-table tbody,
+  .users-table tr,
+  .users-table td { display: block; }
+
+  .users-table tr.user-row {
+    padding: var(--sp-2) var(--sp-3);
+    margin-bottom: var(--sp-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-ctl);
+  }
+
+  .users-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding: var(--sp-1) 0;
+    border-bottom: none;
+  }
+
+  .users-table td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    color: var(--text-subtle);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .users-table td.user-cell-nome::before { display: none; }
+
+  .users-table .actions-cell { justify-content: flex-end; }
+  .users-table tr:hover td { background: transparent; }
+}

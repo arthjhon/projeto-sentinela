@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ScrollText, RotateCw } from 'lucide-react';
+import { RotateCw } from 'lucide-react';
 import { listarAuditoria, AUDIT_LABELS, LIMITE_AUDITORIA } from '../../services/auditLog';
 import { formatDataHoraSeg } from '../../utils/format';
+import { paginar } from '../../utils/paginar';
 import './AuditLogPanel.css';
 
 // Log de auditoria (backlog 6.1). Aba própria em Configurações
@@ -21,12 +22,20 @@ function resumirDetalhes(detalhes) {
   return partes.length ? partes.join(' · ') : null;
 }
 
+const POR_PAGINA = 25;
+
+/** Categoria visual da ação (ponto colorido): prefixo antes do primeiro `_` ou `.`. */
+function categoriaAcao(acao) {
+  return String(acao ?? '').split(/[._]/)[0] || 'outro';
+}
+
 export default function AuditLogPanel({ operadores = [], operadoresIndisponiveis = false }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState(null);
   const [filtroOperador, setFiltroOperador] = useState('');
   const [filtroAcao, setFiltroAcao] = useState('');
+  const [pagina, setPagina] = useState(1);
 
   // Token de requisição: trocar o filtro rápido não deixa a resposta antiga
   // sobrescrever a nova (e o spinner só some quando a última termina).
@@ -41,7 +50,7 @@ export default function AuditLogPanel({ operadores = [], operadoresIndisponiveis
         operador: filtroOperador || undefined,
         acao: filtroAcao || undefined,
       });
-      if (minha === requisicaoRef.current) setLogs(dados);
+      if (minha === requisicaoRef.current) { setLogs(dados); setPagina(1); }
     } catch (err) {
       if (minha === requisicaoRef.current) setErro(err.message);
     } finally {
@@ -51,14 +60,11 @@ export default function AuditLogPanel({ operadores = [], operadoresIndisponiveis
 
   useEffect(() => { carregar(); }, [carregar]);
 
+  const { itens: visiveis, pagina: paginaAtual, totalPaginas } = paginar(logs, pagina, POR_PAGINA);
+
   return (
     <div className="audit-panel glass">
       <div className="audit-header">
-        <div className="audit-title">
-          <ScrollText size={18} className="text-primary" />
-          <h3>Log de Auditoria</h3>
-        </div>
-
         <div className="audit-filters">
           <select
             className="audit-select"
@@ -114,18 +120,42 @@ export default function AuditLogPanel({ operadores = [], operadoresIndisponiveis
               </tr>
             </thead>
             <tbody>
-              {logs.map(l => (
+              {visiveis.map(l => (
                 <tr key={l.id}>
-                  <td className="audit-when">{formatDataHoraSeg(l.created_at)}</td>
-                  <td className="audit-who">{l.operador_nome}</td>
-                  <td><span className="audit-acao">{AUDIT_LABELS[l.acao] ?? l.acao}</span></td>
-                  <td className="audit-alvo">{l.entidade_afetada ?? '—'}</td>
-                  <td className="audit-detalhes">{resumirDetalhes(l.detalhes) ?? '—'}</td>
+                  <td data-label="Quando" className="audit-when">{formatDataHoraSeg(l.created_at)}</td>
+                  <td data-label="Operador" className="audit-who">{l.operador_nome}</td>
+                  <td data-label="Ação" className="audit-acao-cell">
+                    <span className="audit-acao" data-cat={categoriaAcao(l.acao)}>{AUDIT_LABELS[l.acao] ?? l.acao}</span>
+                  </td>
+                  <td data-label="Alvo" className="audit-alvo">{l.entidade_afetada ?? '—'}</td>
+                  <td data-label="Detalhes" className="audit-detalhes">{resumirDetalhes(l.detalhes) ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {!erro && logs.length > POR_PAGINA && (
+        <nav className="audit-paginacao" aria-label="Paginação do log">
+          <button
+            type="button"
+            className="btn-table"
+            onClick={() => setPagina(paginaAtual - 1)}
+            disabled={paginaAtual <= 1}
+          >
+            Anterior
+          </button>
+          <span className="audit-pagina-info" role="status">Página {paginaAtual} de {totalPaginas}</span>
+          <button
+            type="button"
+            className="btn-table"
+            onClick={() => setPagina(paginaAtual + 1)}
+            disabled={paginaAtual >= totalPaginas}
+          >
+            Próxima
+          </button>
+        </nav>
       )}
     </div>
   );

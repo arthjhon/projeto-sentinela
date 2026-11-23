@@ -127,14 +127,17 @@ const SettingsPageConteudo = () => {
     <div className="dashboard-content-area">
       <AcaoAviso id="aviso-config">{readOnly && `Ações desabilitadas: ${MOTIVO_DEMO}`}</AcaoAviso>
 
+      <div className="settings-grid">
       {/* Dados simulados */}
       <div className="settings-card glass">
-        <div className="settings-card-icon" data-on={mockEnabled}>
-          {mockEnabled ? <FlaskConical size={22} /> : mockDesconhecido ? <CircleHelp size={22} /> : <Radio size={22} />}
+        <div className="settings-card-head">
+          <div className="settings-card-icon" data-on={mockEnabled}>
+            {mockEnabled ? <FlaskConical size={18} /> : mockDesconhecido ? <CircleHelp size={18} /> : <Radio size={18} />}
+          </div>
+          <h3>Dados Simulados (Mock)</h3>
         </div>
 
         <div className="settings-card-body">
-          <h3>Dados Simulados (Mock)</h3>
           <p>
             {mockDesconhecido
               ? 'Não foi possível ler o estado atual. O site público pode estar mostrando dados simulados: o interruptor fica bloqueado até a leitura funcionar.'
@@ -170,12 +173,14 @@ const SettingsPageConteudo = () => {
 
       {/* 5.4 — Meta de financiamento */}
       <div className="settings-card glass">
-        <div className="settings-card-icon" data-on="true">
-          <Target size={22} />
+        <div className="settings-card-head">
+          <div className="settings-card-icon" data-on="true">
+            <Target size={18} />
+          </div>
+          <h3>Meta de Financiamento</h3>
         </div>
 
         <div className="settings-card-body">
-          <h3>Meta de Financiamento</h3>
           <p>Valores exibidos na barra de progresso da página <strong>Apoie a Causa</strong>.</p>
           {erroMeta && (
             <p className="settings-hint text-danger" role="alert">
@@ -223,12 +228,14 @@ const SettingsPageConteudo = () => {
 
       {/* Raio de coleta no mapa público */}
       <div className="settings-card glass">
-        <div className="settings-card-icon" data-on="true">
-          <Radar size={22} />
+        <div className="settings-card-head">
+          <div className="settings-card-icon" data-on="true">
+            <Radar size={18} />
+          </div>
+          <h3>Raio de Coleta no Mapa</h3>
         </div>
 
         <div className="settings-card-body">
-          <h3>Raio de Coleta no Mapa</h3>
           <p>Tamanho da área de cobertura desenhada ao redor de cada bóia no mapa de <strong>Monitoramento</strong>.</p>
           {erroRaio && (
             <p className="settings-hint text-danger" role="alert">
@@ -258,6 +265,7 @@ const SettingsPageConteudo = () => {
             {salvandoRaio ? 'Salvando...' : 'Salvar Raio'}
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

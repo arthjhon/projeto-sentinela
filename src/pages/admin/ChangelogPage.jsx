@@ -270,14 +270,14 @@ const ChangelogPageConteudo = () => {
             <tbody>
               {entries.map((entry) => (
                 <tr key={entry.id}>
-                  <td className="changelog-cell-data">{formatData(entry.data)}</td>
-                  <td>
+                  <td data-label="Data" className="changelog-cell-data">{formatData(entry.data)}</td>
+                  <td data-label="Categoria">
                     <span className="changelog-badge" style={{ '--c': CATEGORIA_COLORS[entry.categoria] }}>
                       {entry.categoria}
                     </span>
                   </td>
-                  <td>{entry.titulo}</td>
-                  <td>
+                  <td data-label="Título" className="changelog-cell-titulo">{entry.titulo}</td>
+                  <td data-label="Status">
                     <button
                       className={`changelog-status-btn ${entry.publicado ? 'publicado' : 'rascunho'}`}
                       onClick={() => handleTogglePublicado(entry)}
@@ -289,7 +289,7 @@ const ChangelogPageConteudo = () => {
                       {entry.publicado ? 'Publicado' : 'Rascunho'}
                     </button>
                   </td>
-                  <td className="text-right">
+                  <td className="text-right changelog-cell-acoes">
                     <button className="btn-table action-btn" aria-label={`Editar ${entry.titulo}`} onClick={() => handleOpenEdit(entry)} disabled={readOnly} aria-describedby={readOnly ? 'aviso-changelog' : undefined} title={readOnly ? MOTIVO_DEMO : undefined}>
                       <Edit2 size={16} />
                     </button>

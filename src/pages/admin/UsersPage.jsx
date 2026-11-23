@@ -279,7 +279,7 @@ const UsersPage = () => {
           <tbody>
             {filteredUsers.map(user => (
               <tr key={user.id} className="user-row">
-                <td>
+                <td data-label="Nome" className="user-cell-nome">
                   <div className="user-cell-name">
                     <div className={`avatar-mini ${user.role}`}>
                       {user.role === 'admin' ? <Shield size={16}/> : user.role === 'operador' ? <User size={16}/> : <Eye size={16}/>}
@@ -287,14 +287,14 @@ const UsersPage = () => {
                     <span className="font-medium">{user.name}</span>
                   </div>
                 </td>
-                {verCredenciais && <td className="monospace">{user.username}</td>}
-                <td>
+                {verCredenciais && <td data-label="Credencial" className="monospace">{user.username}</td>}
+                <td data-label="Papel">
                   <span className={`role-badge ${user.role}`}>
                     {user.role.toUpperCase()}
                   </span>
                 </td>
                 {verCredenciais && (
-                  <td>
+                  <td data-label="Senha">
                     {user.must_change_password ? (
                       <span className="alert-badge warning"><KeyRound size={14}/> Troca pendente</span>
                     ) : (
@@ -302,7 +302,7 @@ const UsersPage = () => {
                     )}
                   </td>
                 )}
-                <td className="actions-cell">
+                <td className="actions-cell" data-label="Ações">
                   <button
                     className="btn-table action-btn"
                     onClick={() => handleOpenEdit(user)}
