@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { logAcao, AUDIT } from './auditLog';
+import { validarObservacaoCalibracao } from '../utils/boiasView';
 
 // Manutenção (3.1) e calibração (3.2).
 //
@@ -55,35 +56,59 @@ export async function iniciarManutencao(boiaId, motivo) {
   return data;
 }
 
-/** Fecha a manutenção aberta da bóia (preenche timestamp_fim). */
-export async function finalizarManutencao(boiaId, observacao) {
-  const { data: aberta, error: errBusca } = await supabase
+/** Registro aberto (id, motivo) da bóia; lança se a leitura falhar ou não houver. */
+async function buscarAberta(boiaId) {
+  const { data: aberta, error } = await supabase
     .from('maintenance_logs')
     .select('id, motivo')
     .eq('boia_id', boiaId)
     .is('timestamp_fim', null)
     .maybeSingle();
-
-  if (errBusca) throw new Error(errBusca.message);
+  if (error) throw new Error(error.message);
   if (!aberta) throw new Error('Não há manutenção aberta para esta bóia.');
+  return aberta;
+}
 
-  const fim = new Date().toISOString();
+async function fecharRegistro(id, campos) {
   const { data, error } = await supabase
     .from('maintenance_logs')
-    .update({
-      timestamp_fim: fim,
-      // observação do fechamento é anexada ao motivo: a tabela guarda um
-      // registro por manutenção, não um por evento
-      motivo: observacao?.trim()
-        ? `${aberta.motivo}\n— Conclusão: ${observacao.trim()}`
-        : aberta.motivo,
-    })
-    .eq('id', aberta.id)
+    .update(campos)
+    .eq('id', id)
     .select()
     .single();
-
   if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Fecha a manutenção aberta da bóia (preenche timestamp_fim). */
+export async function finalizarManutencao(boiaId, observacao) {
+  const aberta = await buscarAberta(boiaId);
+  const data = await fecharRegistro(aberta.id, {
+    timestamp_fim: new Date().toISOString(),
+    // observação do fechamento é anexada ao motivo: a tabela guarda um
+    // registro por manutenção, não um por evento
+    motivo: observacao?.trim()
+      ? `${aberta.motivo}\n— Conclusão: ${observacao.trim()}`
+      : aberta.motivo,
+  });
   logAcao(AUDIT.MANUTENCAO_FIM, boiaId, { observacao: observacao?.trim() || null });
+  return data;
+}
+
+/** Campos do UPDATE que cancela: fecha o registro (timestamp_fim) e anota "cancelada". */
+export function montarCancelamento(aberta, fimIso) {
+  return { timestamp_fim: fimIso, motivo: `${aberta.motivo}\n— Manutenção cancelada` };
+}
+
+/**
+ * Cancela a manutenção aberta de verdade: fecha o registro (timestamp_fim = agora)
+ * com a nota "cancelada", sem exigir observação. A bóia sai de "em manutenção" no
+ * painel e no worker; o registro continua no histórico.
+ */
+export async function cancelarManutencao(boiaId) {
+  const aberta = await buscarAberta(boiaId);
+  const data = await fecharRegistro(aberta.id, montarCancelamento(aberta, new Date().toISOString()));
+  logAcao(AUDIT.MANUTENCAO_FIM, boiaId, { cancelada: true });
   return data;
 }
 
@@ -117,8 +142,13 @@ export async function manutencaoAberta(boiaId) {
 
 // ── 3.2 Calibração ────────────────────────────────────────────
 
-/** Registra uma calibração de sensor. */
+/**
+ * Registra que uma calibração foi realizada (não calibra nada: o protocolo é
+ * feito na bancada). A observação (padrão/solução usada, >= 10 caracteres) é obrigatória.
+ */
 export async function registrarCalibracao(boiaId, sensorKey, observacao) {
+  const valida = validarObservacaoCalibracao(observacao);
+  if (!valida.ok) throw new Error(valida.erro);
   const op = await operadorAtual();
   const { data, error } = await supabase
     .from('sensor_calibrations')
@@ -127,13 +157,13 @@ export async function registrarCalibracao(boiaId, sensorKey, observacao) {
       sensor_key: sensorKey,
       operador_id: op.id,
       operador_nome: op.nome,
-      observacao: observacao?.trim() || null,
+      observacao: valida.texto,
     })
     .select()
     .single();
   if (error) throw new Error(error.message);
 
-  logAcao(AUDIT.SENSOR_CALIBRAR, boiaId, { sensor: sensorKey });
+  logAcao(AUDIT.SENSOR_CALIBRAR, boiaId, { sensor: sensorKey, observacao: valida.texto });
   return data;
 }
 

@@ -1,30 +1,7 @@
 import { formatIdade } from './format';
 
-// Estado de uma bóia no painel derivado só do que é real: registro (map_buoys)
-// e o que chega do firmware pelo MQTT. Nada de valor default "online" / 100%.
-
-/**
- * @deprecated Regra de conexão própria (só LWT): substituída por estadoConexao
- * (utils/buoyConnection.js). Sai das telas nas Tasks 3-5 do plano admin-ondas.
- * @param {string|null} deviceId
- * @param {string|undefined} availability  payload do LWT (<deviceId>/availability)
- * @returns {'planejada'|'online'|'offline'|'sem-sinal'}
- *   sem-sinal = tem hardware cadastrado, mas o broker nunca recebeu o LWT dele
- *   (placa nunca conectou com esse deviceId, ou deviceId digitado errado).
- */
-export function buoyStatus(deviceId, availability) {
-  if (!deviceId) return 'planejada';
-  if (availability === 'online') return 'online';
-  if (availability === 'offline') return 'offline';
-  return 'sem-sinal';
-}
-
-export const STATUS_LABEL = {
-  online: 'ONLINE',
-  offline: 'OFFLINE',
-  planejada: 'PLANEJADA',
-  'sem-sinal': 'SEM SINAL',
-};
+// Formatos e diagnóstico de sensor da página Bóias. O estado de conexão vive em
+// buoyConnection.js (única definição); nada de valor default "online" / 100%.
 
 /** Coordenadas decimais do registro para exibição. */
 export function formatCoords(lat, lng) {
@@ -61,12 +38,4 @@ export const LEITURA_RECENTE_MS = 30_000;
 export function sensorDiagnosis(reading, key, ageMs) {
   if (!reading || !Number.isFinite(ageMs) || ageMs > LEITURA_RECENTE_MS) return 'sem-leitura';
   return Number.isFinite(reading[key]) ? 'ok' : 'sem-valor';
-}
-
-/** Linhas {time: Date, ph, temperatura, turbidez} → CSV (separador ;, pt-BR). */
-export function readingsToCsv(rows) {
-  const num = (v) => (Number.isFinite(v) ? String(v).replace('.', ',') : '');
-  const linhas = rows.map(r =>
-    [r.time.toISOString(), num(r.temperatura), num(r.ph), num(r.turbidez)].join(';'));
-  return ['data_hora_utc;temperatura_c;ph;turbidez_ntu', ...linhas].join('\n');
 }

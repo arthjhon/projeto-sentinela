@@ -1,21 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buoyStatus, formatCoords, formatAge, formatInterval, sensorDiagnosis, readingsToCsv,
+  formatCoords, formatAge, formatInterval, sensorDiagnosis,
   LEITURA_RECENTE_MS,
 } from './buoyRuntime';
-
-describe('buoyStatus', () => {
-  it('sem deviceId é planejada, mesmo com availability', () => {
-    expect(buoyStatus(null, 'online')).toBe('planejada');
-    expect(buoyStatus('', undefined)).toBe('planejada');
-  });
-  it('segue o LWT e não inventa online sem ele', () => {
-    expect(buoyStatus('esp', 'online')).toBe('online');
-    expect(buoyStatus('esp', 'offline')).toBe('offline');
-    expect(buoyStatus('esp', undefined)).toBe('sem-sinal');
-    expect(buoyStatus('esp', { status: 'x' })).toBe('sem-sinal');
-  });
-});
 
 describe('formatos', () => {
   it('coordenadas', () => {
@@ -48,14 +35,5 @@ describe('sensorDiagnosis', () => {
     expect(sensorDiagnosis(r, 'ph', LEITURA_RECENTE_MS + 1)).toBe('sem-leitura');
     expect(sensorDiagnosis(undefined, 'ph', 1_000)).toBe('sem-leitura');
     expect(sensorDiagnosis(r, 'ph', null)).toBe('sem-leitura');
-  });
-});
-
-describe('readingsToCsv', () => {
-  it('cabeçalho, vírgula decimal e célula vazia para valor ausente', () => {
-    const csv = readingsToCsv([
-      { time: new Date('2026-09-29T10:00:00Z'), temperatura: 27.5, ph: 7.21, turbidez: undefined },
-    ]);
-    expect(csv).toBe('data_hora_utc;temperatura_c;ph;turbidez_ntu\n2026-09-29T10:00:00.000Z;27,5;7,21;');
   });
 });
