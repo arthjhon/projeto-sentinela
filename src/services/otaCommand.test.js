@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildDeployRow, requestOtaCommand, otaErrorMessage, ultimoDeploy } from './otaCommand';
+import {
+  buildDeployRow, requestOtaCommand, otaErrorMessage, ultimoDeploy,
+  removeFirmwareFile, listarDeploys, deveRemoverBin,
+} from './otaCommand';
 
 const httpError = (status, body) => ({
   name: 'FunctionsHttpError',
@@ -110,5 +113,66 @@ describe('ultimoDeploy', () => {
   it('throws on query error', async () => {
     const r = makeReader({ data: null, error: { message: 'boom' } });
     await expect(ultimoDeploy(r.client, 'SM-01')).rejects.toThrow('boom');
+  });
+});
+
+describe('buildDeployRow operator', () => {
+  it('records who requested the deploy when given', () => {
+    const row = buildDeployRow({
+      boiaId: 'SM-01', version: 'v1', sha256: 'ab', notes: '', path: 'v1_1.bin',
+      operatorId: 'u1', operatorName: 'Ana',
+    });
+    expect(row.operador_id).toBe('u1');
+    expect(row.operador_nome).toBe('Ana');
+  });
+});
+
+describe('removeFirmwareFile (M6)', () => {
+  it('removes the object from the firmware bucket and returns true', async () => {
+    const remove = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn(() => ({ remove }));
+    const client = { storage: { from } };
+    expect(await removeFirmwareFile(client, 'v1_1.bin')).toBe(true);
+    expect(from).toHaveBeenCalledWith('firmware');
+    expect(remove).toHaveBeenCalledWith(['v1_1.bin']);
+  });
+  it('never throws: returns false on error or exception, no-op without a path', async () => {
+    const bad = { storage: { from: () => ({ remove: vi.fn().mockResolvedValue({ error: { message: 'x' } }) }) } };
+    expect(await removeFirmwareFile(bad, 'a.bin')).toBe(false);
+    const boom = { storage: { from: () => ({ remove: vi.fn().mockRejectedValue(new Error('net')) }) } };
+    expect(await removeFirmwareFile(boom, 'a.bin')).toBe(false);
+    expect(await removeFirmwareFile(bad, '')).toBe(false);
+  });
+});
+
+describe('deveRemoverBin', () => {
+  it('removes after a definite refusal, keeps it when the outcome is unknown', () => {
+    expect(deveRemoverBin({ ok: false, status: 422 })).toBe(true);
+    expect(deveRemoverBin({ ok: false, status: 502 })).toBe(true);
+    // network error: the function may have published the command and the
+    // device may still download the file.
+    expect(deveRemoverBin({ ok: false, status: null })).toBe(false);
+    expect(deveRemoverBin({ ok: true })).toBe(false);
+  });
+});
+
+describe('listarDeploys', () => {
+  const chain = (result) => {
+    const limit = vi.fn().mockResolvedValue(result);
+    const order = vi.fn(() => ({ limit }));
+    const select = vi.fn(() => ({ order }));
+    return { client: { from: vi.fn(() => ({ select })) }, select, order, limit };
+  };
+  it('reads the latest deploys, newest first', async () => {
+    const rows = [{ id: '1' }];
+    const { client, select, order, limit } = chain({ data: rows, error: null });
+    expect(await listarDeploys(client, 10)).toEqual(rows);
+    expect(select.mock.calls[0][0]).toMatch(/versao.*boia_id|boia_id.*versao/);
+    expect(order).toHaveBeenCalledWith('data_deploy', { ascending: false });
+    expect(limit).toHaveBeenCalledWith(10);
+  });
+  it('throws on error instead of returning an empty list', async () => {
+    const { client } = chain({ data: null, error: { message: 'rls' } });
+    await expect(listarDeploys(client)).rejects.toThrow('rls');
   });
 });

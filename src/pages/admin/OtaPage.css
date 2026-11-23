@@ -353,3 +353,9 @@
   word-break: break-all;
   max-width: 100%;
 }
+
+/* ── Últimos deploys ─────────────────────────────────── */
+.ota-history-wrap { padding: 0.5rem 1rem; border-radius: 10px; overflow-x: auto; }
+.ota-history-table { width: 100%; }
+.ota-history-note { color: #94a3b8; font-size: 0.9rem; margin: 0; }
+.ota-field-hint { display: block; margin-top: 0.35rem; font-size: 0.8rem; color: #94a3b8; }

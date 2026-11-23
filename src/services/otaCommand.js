@@ -22,7 +22,7 @@ export function otaErrorMessage(code) {
 }
 
 /** Row inserted in firmware_deploys; arquivo_path is the object path in bucket `firmware`. */
-export function buildDeployRow({ boiaId, version, sha256, notes, path }) {
+export function buildDeployRow({ boiaId, version, sha256, notes, path, operatorId, operatorName }) {
   return {
     boia_id: boiaId,
     versao: version,
@@ -30,6 +30,8 @@ export function buildDeployRow({ boiaId, version, sha256, notes, path }) {
     notas_release: notes || null,
     status: 'pendente',
     arquivo_path: path,
+    ...(operatorId ? { operador_id: operatorId } : {}),
+    ...(operatorName ? { operador_nome: operatorName } : {}),
   };
 }
 
@@ -89,4 +91,38 @@ export async function ultimoDeploy(supabaseClient, boiaId) {
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data ?? null;
+}
+
+/**
+ * Apaga o .bin do bucket `firmware` (M6: upload feito, mas o insert do deploy
+ * ou a Edge Function falhou). Nunca lança; false se não removeu.
+ */
+export async function removeFirmwareFile(supabaseClient, path) {
+  if (!path) return false;
+  try {
+    const { error } = await supabaseClient.storage.from('firmware').remove([path]);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * O .bin só é apagado quando a recusa é definitiva (houve resposta HTTP). Em
+ * erro de rede (status null) a função pode ter publicado o comando e a bóia
+ * ainda baixar o arquivo: apagar quebraria um OTA possivelmente em curso.
+ */
+export function deveRemoverBin(result) {
+  return result?.ok === false && result.status != null;
+}
+
+/** Últimos deploys (mais recentes primeiro). Lança em erro de leitura. */
+export async function listarDeploys(supabaseClient, limit = 20) {
+  const { data, error } = await supabaseClient
+    .from('firmware_deploys')
+    .select('id, boia_id, versao, status, operador_nome, data_deploy, confirmado_em')
+    .order('data_deploy', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }
