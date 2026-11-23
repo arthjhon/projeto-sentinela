@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMqtt } from '../../../hooks/useMqtt';
 import { useUltimasLeituras } from '../../../hooks/useUltimasLeituras';
-import { getMqttTopics } from '../../../config/fleet';
 import { CLOCK_TICK_MS } from '../../../config/adminTimings';
 import { topicsForRegistry, deviceIdsOf } from '../../../services/buoyRegistry';
 import { conexaoDoRegistro } from '../../../utils/conexaoFrota';
@@ -10,6 +9,8 @@ import { formatIdade } from '../../../utils/format';
 import { serialValido } from '../../../utils/deviceIds';
 
 const SEM_BOIAS = [];
+// Nada é assinado de partida: só o serial válido desta bóia (addTopics abaixo).
+const SEM_TOPICOS = [];
 
 /**
  * Dados ao vivo de uma bóia (MQTT desta sessão + última leitura gravada), com a mesma
@@ -23,7 +24,7 @@ const SEM_BOIAS = [];
  * }}
  */
 export function useFichaAoVivo(buoy) {
-  const { messages, receivedAt, connected, addTopics } = useMqtt(getMqttTopics());
+  const { messages, receivedAt, connected, addTopics } = useMqtt(SEM_TOPICOS);
   const serial = serialValido(buoy);
   const temSerial = deviceIdsOf(buoy).length > 0;
   const { ultimas } = useUltimasLeituras(temSerial ? [buoy] : SEM_BOIAS);

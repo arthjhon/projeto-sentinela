@@ -74,22 +74,6 @@
    modal largo o bastante para dois pares lado a lado (>= 600 px, contêiner),
    os pares correm em duas colunas. */
 .bdm-sec dl { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
-.bdm-row {
-  display: grid;
-  grid-template-columns: minmax(6.5rem, 40%) minmax(0, 1fr);
-  align-items: baseline;
-  gap: var(--sp-2);
-  min-height: 32px;
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  font-size: var(--fs-sm);
-  line-height: 1.4;
-}
-.bdm-row dt { color: var(--text-muted); }
-.bdm-row dd { margin: 0; overflow-wrap: anywhere; }
-.bdm-muted { color: var(--text-muted); font-size: var(--fs-xs); }
-.bdm-chip { margin-right: var(--sp-1); }
-
 .bdm-map {
   height: 200px;
   border-radius: var(--radius-ctl);

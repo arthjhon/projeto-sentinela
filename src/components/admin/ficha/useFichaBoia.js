@@ -5,7 +5,9 @@ import { listarDeploysDaBoia } from '../../../services/otaCommand';
 import { fetchHealthEventsDosSeriais, fetchSensorHealth } from '../../../services/sensorHealth';
 import { listarAuditoriaDaEntidade } from '../../../services/auditLog';
 import { deviceIdsOf } from '../../../services/buoyRegistry';
-import { LIMITE_POR_FONTE, TIPOS, ACOES_CADASTRO, paraFonte, fonteInicial } from '../../../utils/fichaBoia';
+import {
+  LIMITE_POR_FONTE, TIPOS, ACOES_CADASTRO, paraFonte, fonteInicial, manutencaoAbertaDaFonte, ultimoDeploySucessoDaFonte,
+} from '../../../utils/fichaBoia';
 
 const CHAVES = [...TIPOS, 'saudeAtual'];
 const CARREGANDO = { estado: 'carregando' };
@@ -57,9 +59,13 @@ export function useFichaBoia(buoy, role) {
     setEstado((e) => ({ ...e, [chave]: fonte }));
   }, [leitor, role]);
 
+  const primeira = useRef(true);
   useEffect(() => {
     const atuais = pedidos.current;
-    CHAVES.forEach((chave) => { carregar(chave, { marcar: false }); });
+    // Primeira montagem: o estado inicial já é "carregando". Depois, uma troca de código/seriais marca de novo.
+    const marcar = !primeira.current;
+    primeira.current = false;
+    CHAVES.forEach((chave) => { carregar(chave, { marcar }); });
     return () => { CHAVES.forEach((chave) => { atuais[chave] = (atuais[chave] ?? 0) + 1; }); };
   }, [carregar]);
 
@@ -68,13 +74,8 @@ export function useFichaBoia(buoy, role) {
   }, [carregar]);
 
   const { saudeAtual, ...fontes } = estado;
-  const manut = fontes.manutencao;
-  const aberta = manut.estado === 'ok' ? (manut.linhas.find((r) => !r.timestamp_fim) ?? null)
-    : manut.estado === 'erro' ? 'erro' : undefined;
-  const fw = fontes.firmware;
-  const ultimoDeploySucesso = fw.estado === 'ok'
-    ? { ok: true, valor: fw.linhas.find((r) => r.status === 'sucesso') ?? null }
-    : fw.estado === 'erro' ? { ok: false, erro: fw.erro } : undefined;
+  const aberta = manutencaoAbertaDaFonte(fontes.manutencao);
+  const ultimoDeploySucesso = ultimoDeploySucessoDaFonte(fontes.firmware);
 
   return { fontes, saudeAtual, aberta, ultimoDeploySucesso, recarregar };
 }

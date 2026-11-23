@@ -7,4 +7,3 @@
 .ficha-bloco dl { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
 .ficha-conexao { display: flex; align-items: center; gap: var(--sp-2); }
 .ficha-titulo { font-weight: 600; overflow-wrap: anywhere; }
-@media (max-width: 479px) { .ficha-bloco .bdm-row { grid-template-columns: minmax(0, 1fr); gap: 0; } }

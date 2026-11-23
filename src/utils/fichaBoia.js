@@ -234,3 +234,17 @@ export function resolverFicha({ codigo, buoys, loading, isFallback }) {
 }
 
 export const hrefFicha = (codigo) => `/admin/boias/${encodeURIComponent(codigo)}`;
+
+// ---------- derivações das fontes ----------
+
+/** Manutenção aberta (primeira sem timestamp_fim) da fonte: undefined (carregando) | 'erro' | registro | null. */
+export function manutencaoAbertaDaFonte(fonte) {
+  if (fonte?.estado === 'ok') return fonte.linhas.find((r) => !r.timestamp_fim) ?? null;
+  return fonte?.estado === 'erro' ? 'erro' : undefined;
+}
+
+/** Último deploy com sucesso da fonte, no formato de estadoFirmware: undefined | {ok:false,erro} | {ok:true,valor}. */
+export function ultimoDeploySucessoDaFonte(fonte) {
+  if (fonte?.estado === 'ok') return { ok: true, valor: fonte.linhas.find((r) => r.status === 'sucesso') ?? null };
+  return fonte?.estado === 'erro' ? { ok: false, erro: fonte.erro } : undefined;
+}

@@ -4,6 +4,7 @@ import {
   paraFonte, fonteInicial, nomeDoSensor,
   itensManutencao, itensCalibracao, itensFirmware, itensSaude, itensCadastro,
   montarLinhaDoTempo, linhasSensores, resolverFicha, hrefFicha,
+  manutencaoAbertaDaFonte, ultimoDeploySucessoDaFonte,
 } from './fichaBoia';
 import { formatDataHora } from './format';
 import { AUDIT } from '../services/auditLog';
@@ -240,5 +241,25 @@ describe('resolverFicha', () => {
 describe('hrefFicha', () => {
   it('codifica o código', () => {
     expect(hrefFicha('SM 01#á?')).toBe('/admin/boias/SM%2001%23%C3%A1%3F');
+  });
+});
+
+describe('manutencaoAbertaDaFonte', () => {
+  const aberta = { id: 2, timestamp_fim: null };
+  it('quatro estados', () => {
+    expect(manutencaoAbertaDaFonte({ estado: 'carregando' })).toBeUndefined();
+    expect(manutencaoAbertaDaFonte({ estado: 'erro', erro: 'x' })).toBe('erro');
+    expect(manutencaoAbertaDaFonte({ estado: 'ok', linhas: [{ id: 1, timestamp_fim: 'f' }] })).toBeNull();
+    expect(manutencaoAbertaDaFonte({ estado: 'ok', linhas: [{ id: 3, timestamp_fim: 'f' }, aberta] })).toBe(aberta);
+  });
+});
+
+describe('ultimoDeploySucessoDaFonte', () => {
+  it('estados', () => {
+    expect(ultimoDeploySucessoDaFonte({ estado: 'carregando' })).toBeUndefined();
+    expect(ultimoDeploySucessoDaFonte({ estado: 'erro', erro: 'x' })).toEqual({ ok: false, erro: 'x' });
+    expect(ultimoDeploySucessoDaFonte({ estado: 'ok', linhas: [{ status: 'erro' }] })).toEqual({ ok: true, valor: null });
+    const ok = { id: 2, status: 'sucesso' };
+    expect(ultimoDeploySucessoDaFonte({ estado: 'ok', linhas: [{ status: 'pendente' }, ok, { status: 'sucesso', id: 1 }] })).toEqual({ ok: true, valor: ok });
   });
 });

@@ -9,9 +9,8 @@ import { listarManutencoes, ultimasCalibracoes, manutencaoAberta } from '../../.
 import { ultimoDeploy } from '../../../services/otaCommand';
 import { normalizeModo } from '../../../services/buoyRegistry';
 import { blocosDetalhes, estadoManutencao } from '../../../utils/buoyDetails';
-import DeviceInfoList, { Row, Muted } from './DeviceInfoList';
+import DeviceInfoList, { Row, Muted, SerialRows } from './DeviceInfoList';
 import { formatDataHora } from '../../../utils/format';
-import { serialValido } from '../../../utils/deviceIds';
 import { destinoTab } from '../../../utils/focusTrap';
 import './BuoyDetailsModal.css';
 
@@ -73,8 +72,6 @@ export default function BuoyDetailsModal({ buoy, statusMsg, agoraMs, onClose }) 
 
   const temCoord = Number.isFinite(buoy.lat) && Number.isFinite(buoy.lng);
   const manut = estadoManutencao(blocos.aberta);
-  const serial = serialValido(buoy);
-  const anteriores = buoy.deviceIdsAnteriores ?? [];
 
   const { fallback, ...tile } = TILES; // `fallback` é só da config; não vai ao TileLayer
 
@@ -109,12 +106,7 @@ export default function BuoyDetailsModal({ buoy, statusMsg, agoraMs, onClose }) 
           <section className="bdm-sec">
             <h3>Identificação</h3>
             <dl>
-              <Row label="Serial atual">
-                {serial ? <code>{serial}</code>
-                  : buoy.deviceId ? <><code>{String(buoy.deviceId)}</code> <Muted>formato inválido: tratado como sem serial</Muted></>
-                    : <Muted>sem serial cadastrado</Muted>}
-              </Row>
-              <Row label="Seriais anteriores">{anteriores.length ? anteriores.map((s) => <code key={s} className="bdm-chip">{s}</code>) : <Muted>nenhum</Muted>}</Row>
+              <SerialRows buoy={buoy} />
               {/* mesmo vocabulário do card (normalizeModo: ausente/inválido = bancada) */}
               <Row label="Modo">{normalizeModo(buoy.modo)}</Row>
               <Row label="Manutenção aberta">

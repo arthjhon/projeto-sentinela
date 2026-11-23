@@ -69,7 +69,7 @@ function FichaConteudo({ buoy, registry }) {
       <div className="ficha-grade">
         <section className="ficha-bloco glass" aria-labelledby="ficha-ident">
           <h2 id="ficha-ident">Identificação</h2>
-          <FichaIdentificacao buoy={buoy} aberta={ficha.aberta} agoraMs={vivo.agoraMs} />
+          <FichaIdentificacao buoy={buoy} aberta={ficha.aberta} agoraMs={vivo.agoraMs} onRecarregarManutencao={() => ficha.recarregar('manutencao')} />
         </section>
 
         <section className="ficha-bloco glass" aria-labelledby="ficha-disp">
@@ -92,7 +92,7 @@ export default function BuoyFichaPage() {
   });
 
   if (resolvido.tipo === 'carregando') {
-    return <div className="dashboard-content-area"><p className="text-muted">Carregando bóia…</p></div>;
+    return <div className="dashboard-content-area"><p className="text-muted" role="status">Carregando bóia…</p></div>;
   }
   if (resolvido.tipo === 'nao-encontrada') {
     return (
