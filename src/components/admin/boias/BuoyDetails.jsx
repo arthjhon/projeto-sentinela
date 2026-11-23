@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Wrench, History, Edit2, Trash2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -43,6 +43,15 @@ export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover
   const [pedindoMotivo, setPedindoMotivo] = useState(false);
   const [calibrando, setCalibrando] = useState(null); // sensor com o formulário aberto
   const gatilhoManutencao = useRef(null);
+  // "Fechar painel" troca o painel pelo botão "Continuar Manutenção": o foco volta a ele
+  // (efeito depois do commit, quando o botão já existe).
+  const focarGatilhoAoFechar = useRef(false);
+  useEffect(() => {
+    if (!painelAberto && focarGatilhoAoFechar.current) {
+      focarGatilhoAoFechar.current = false;
+      gatilhoManutencao.current?.focus();
+    }
+  }, [painelAberto]);
 
   const cadastro = permissaoAcao(role, 'cadastro');
   const manutencao = permissaoAcao(role, 'manutencao');
@@ -160,7 +169,7 @@ export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover
           notas={notas}
           onNotas={onNotas}
           onDesatualizado={aposMudanca}
-          onFecharPainel={() => setPainelAberto(false)}
+          onFecharPainel={() => { focarGatilhoAoFechar.current = true; setPainelAberto(false); }}
           onEncerrada={async () => {
             setPainelAberto(false);
             onNotas('');

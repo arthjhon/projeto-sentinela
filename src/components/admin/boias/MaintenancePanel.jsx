@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Wrench, FileText, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 import Modal from '../Modal';
 import { useToast } from '../../../contexts/ToastContext';
@@ -74,6 +74,10 @@ export function MaintenancePanel({ linha, notas, onNotas, onFecharPainel, onEnce
   const { addToast } = useToast();
   const [salvando, setSalvando] = useState(false);
   const [confirmarCancelar, setConfirmarCancelar] = useState(false);
+  // O botão que abriu o painel ("Entrar em Modo"/"Continuar Manutenção") sai da tela
+  // quando o painel aparece: o foco vai para o título do painel, não para o body.
+  const tituloRef = useRef(null);
+  useEffect(() => { tituloRef.current?.focus(); }, []);
 
   const concluir = async () => {
     if (salvando || !notas.trim()) return;
@@ -107,7 +111,7 @@ export function MaintenancePanel({ linha, notas, onNotas, onFecharPainel, onEnce
   return (
     <div className="maintenance-panel animate-fade-in">
       <div className="maintenance-header">
-        <h4><Wrench size={18} className="text-warning" /> Painel de Diagnóstico Técnico: {linha.id}</h4>
+        <h4 tabIndex={-1} ref={tituloRef} className="maintenance-title"><Wrench size={18} className="text-warning" /> Painel de Diagnóstico Técnico: {linha.id}</h4>
         <div className="maintenance-header-actions">
           <button type="button" className="btn-table action-btn btn-sm" onClick={onFecharPainel} disabled={salvando}
             title="Esconde o painel; a manutenção continua aberta">
