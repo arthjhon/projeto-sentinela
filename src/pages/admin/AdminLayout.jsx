@@ -6,6 +6,8 @@ import { navParaPerfil } from '../../config/adminNav';
 import { SystemStatusProvider } from '../../contexts/SystemStatusContext';
 import { menuInerte, focoDoMenu } from '../../utils/menuMobile';
 import StatusBadge from '../../components/admin/StatusBadge';
+import '../../styles/admin-shared.css';
+import '../../components/admin/Modal.css';
 import './AdminLayout.css';
 
 const MQ_MOBILE = '(max-width: 768px)';

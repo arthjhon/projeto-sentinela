@@ -285,14 +285,7 @@
 .ota-log-line.log-success { color: #22c55e; }
 .ota-log-line.log-error   { color: #ef4444; }
 
-/* ── Spin animation ──────────────────────────────────── */
-.spin {
-  animation: spin 1s linear infinite;
-}
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
+/* .spin vive em styles/admin-shared.css. */
 
 /* ── Modal de confirmação ────────────────────────────── */
 .ota-confirm-overlay {

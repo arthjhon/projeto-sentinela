@@ -26,6 +26,7 @@ const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
 const ChangelogPage = lazy(() => import('./pages/admin/ChangelogPage'));
 const AuditoriaPage = lazy(() => import('./pages/admin/AuditoriaPage'));
 const AdminSection = lazy(() => import('./components/admin/AdminSection'));
+const RequireGestao = lazy(() => import('./components/admin/RequireGestao'));
 
 const RouteLoader = () => (
   <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
@@ -69,16 +70,21 @@ function App() {
               <Route path="boias" element={lazyElement(AdminSection, { secao: 'boias', rotulo: 'Seções de Bóias' })}>
                 <Route index element={<Navigate to="frota" replace />} />
                 <Route path="frota" element={lazyElement(SensorsPage)} />
-                <Route path="firmware" element={lazyElement(OtaPage)} />
+                <Route element={lazyElement(RequireGestao)}>
+                  <Route path="firmware" element={lazyElement(OtaPage)} />
+                </Route>
               </Route>
               <Route path="status" element={lazyElement(StatusPage)} />
               <Route path="contexto" element={lazyElement(ContextoPage)} />
               <Route path="config" element={lazyElement(AdminSection, { secao: 'config', rotulo: 'Seções de Configurações' })}>
                 <Route index element={<Navigate to="site" replace />} />
-                <Route path="site" element={lazyElement(SettingsPage)} />
-                <Route path="changelog" element={lazyElement(ChangelogPage)} />
-                <Route path="operadores" element={lazyElement(UsersPage)} />
-                <Route path="auditoria" element={lazyElement(AuditoriaPage)} />
+                {/* Telas de gestão: o guarda único mora aqui (páginas ainda têm o próprio, redundante) */}
+                <Route element={lazyElement(RequireGestao)}>
+                  <Route path="site" element={lazyElement(SettingsPage)} />
+                  <Route path="changelog" element={lazyElement(ChangelogPage)} />
+                  <Route path="operadores" element={lazyElement(UsersPage)} />
+                  <Route path="auditoria" element={lazyElement(AuditoriaPage)} />
+                </Route>
               </Route>
               {/* Endereços antigos (antes de 2026-11-22) */}
               {Object.keys(REDIRECTS_LEGADOS).map((antigo) => (

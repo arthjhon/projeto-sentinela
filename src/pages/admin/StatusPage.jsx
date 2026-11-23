@@ -12,7 +12,6 @@ import {
   fetchSensorHealth, healthForDevice, estadoMeta, eventTone, fmtDate,
 } from '../../services/sensorHealth';
 import { formatAge } from '../../utils/buoyRuntime';
-import './SensorsPage.css';
 import './StatusPage.css';
 
 const STATE_LABEL = {

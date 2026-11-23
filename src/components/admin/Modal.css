@@ -1,0 +1,114 @@
+/* Modal compartilhado do painel admin (Modal.jsx) e as classes `crud-modal*`
+   que as telas ainda usam direto. Carregado pelo AdminLayout (via Modal.jsx),
+   então vale em qualquer rota admin independente do chunk visitado. */
+
+.crud-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.crud-modal {
+  width: 100%;
+  max-width: 600px;
+  max-height: calc(100vh - 2rem);
+  background: #0d1624;
+  border: 1px solid rgba(0, 240, 255, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.crud-modal-sm { max-width: 460px; }
+.crud-modal-lg { max-width: 760px; }
+
+.crud-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.crud-modal-header h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+.crud-modal-header h3:focus { outline: none; }
+.crud-modal-header h3:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; border-radius: 4px; }
+
+/* <form>/<div> que agrupa corpo e rodapé do Modal.jsx */
+.crud-modal-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.crud-modal-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Rodapé: dentro do corpo (markup antigo das telas) ou irmão dele (Modal.jsx). */
+.crud-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.crud-modal-form > .crud-modal-footer {
+  margin-top: 0;
+  padding: 1rem 1.5rem;
+}
+
+.btn-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.btn-close:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--danger);
+}
+
+.btn-close:disabled { opacity: 0.4; cursor: not-allowed; }
+
+@media (max-width: 480px) {
+  .crud-modal-overlay { padding: 0.5rem; }
+  .crud-modal-header, .crud-modal-body { padding: 1rem; }
+  .crud-modal-form > .crud-modal-footer { padding: 0.75rem 1rem; }
+}

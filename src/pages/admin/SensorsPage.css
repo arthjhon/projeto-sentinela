@@ -1,68 +1,7 @@
-.d-flex-between {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-}
-
-.search-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  width: 300px;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
 /* .btn-primary vive em styles/shared.css (usado por login, users e ota). */
-
-.search-bar input {
-  background: transparent;
-  border: none;
-  outline: none;
-  color: #fff;
-  font-family: inherit;
-  width: 100%;
-}
-
-.search-bar input::placeholder {
-  color: var(--text-muted);
-}
-
-.sensors-list {
-  padding: 1.5rem;
-  overflow-x: auto;
-}
-
-.sensors-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0 0.5rem;
-}
-
-.sensors-table th {
-  text-align: left;
-  padding: 0 1rem 1rem;
-  color: var(--text-muted);
-  font-weight: 500;
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
 
 .expand-column {
   width: 40px;
-}
-
-.sensors-table td {
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.2);
-  transition: background 0.2s;
 }
 
 .buoy-row {
@@ -104,25 +43,6 @@
   align-items: center;
   gap: 1rem;
 }
-
-.status-indicator {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  box-shadow: 0 0 10px currentColor;
-  flex-shrink: 0;
-}
-
-.status-indicator.mini {
-  width: 8px;
-  height: 8px;
-  box-shadow: none;
-}
-
-.status-indicator.online { color: var(--success); background: var(--success); }
-.status-indicator.warning { color: var(--warning); background: var(--warning); }
-.status-indicator.offline { color: var(--danger); background: var(--danger); box-shadow: none; }
-.status-indicator.planejada { color: #94a3b8; background: #64748b; box-shadow: none; }
 
 .sc-id {
   font-family: monospace;
@@ -411,10 +331,6 @@
   font-size: 0.85rem;
 }
 
-.spin {
-  animation: rotate 1s linear infinite;
-}
-
 .status-success {
   color: var(--success);
   display: inline-flex;
@@ -545,131 +461,13 @@
 
 /* .text-danger/.text-right vivem em shared.css; .mt-3 ja existe em index.css. */
 
-@keyframes rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* CRUD MODAL */
-.crud-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  z-index: 100;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 3rem 1rem;
-  overflow-y: auto;
-}
-
-.crud-modal {
-  width: 100%;
-  max-width: 600px;
-  background: rgba(10, 25, 47, 0.95);
-  border: 1px solid rgba(0, 240, 255, 0.3);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-}
-
-.crud-modal-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: rgba(0, 240, 255, 0.05);
-}
-
-.crud-modal-header h3 {
-  margin: 0;
-  color: #fff;
-  font-weight: 600;
-}
-
-.btn-close {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0.25rem;
-}
-
-.btn-close:hover {
-  color: #fff;
-}
-
-.crud-modal-body {
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.form-group label {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.form-group input, .form-group select {
-  width: 100%;
-  padding: 0.75rem;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #fff;
-  border-radius: 6px;
-  outline: none;
-  font-family: inherit;
-}
-
-.form-group select option {
-  background: var(--background);
-  color: #fff;
-}
-
-.form-group input:focus, .form-group select:focus {
-  border-color: var(--primary);
-}
-
-.crud-modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
+/* Modal (crud-modal*), .form-group, .search-bar, .header-actions, .status-indicator,
+   .spin, .sensors-table e afins vivem em styles/admin-shared.css e components/admin/Modal.css. */
 .details-control-row {
   display: flex;
   justify-content: flex-end;
   gap: 1rem;
   margin-bottom: 0.5rem;
-}
-
-.input-error {
-  border: 1px solid var(--danger) !important;
-  background: rgba(239, 68, 68, 0.05) !important;
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
-  outline: none !important;
 }
 
 /* ── 3.1 Timeline de manutenções ───────────────────────────── */
