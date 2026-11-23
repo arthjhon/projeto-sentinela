@@ -42,18 +42,32 @@ export function normalizeMockMode(value) {
   return value?.ativo === true;
 }
 
+/**
+ * Resultado de uma leitura da flag -> { estado, on }. Falha de leitura é
+ * 'desconhecido' (o admin não pode ver "Desligado" quando não sabe); para o
+ * visitante `on` continua false (nunca mostra dado inventado sem confirmação).
+ * @param {{ok: true, value: *} | {ok: false}} leitura
+ */
+export function estadoMockMode(leitura) {
+  if (!leitura?.ok) return { estado: 'desconhecido', on: false };
+  const on = normalizeMockMode(leitura.value);
+  return { estado: on ? 'ligado' : 'desligado', on };
+}
+
 // Uma leitura por carregamento da página, compartilhada por todos os hooks
 // (a página de monitoramento e o contador de dias usam a flag ao mesmo tempo).
-let cached = null;   // último valor conhecido (null = ainda não leu)
+// Falha não é memorizada: o próximo `recarregar` tenta de novo.
+let cached = null;   // último resultado de estadoMockMode (null = ainda não leu)
 let pending = null;
 
 function loadMockMode() {
   if (!pending) {
     pending = getSetting(MOCK_MODE_KEY, { ativo: false })
-      .then(v => { cached = normalizeMockMode(v); return cached; })
+      .then(value => { cached = estadoMockMode({ ok: true, value }); return cached; })
       .catch(err => {
-        console.warn('mockData: falha ao ler a flag de dados simulados, usando desligado', err);
-        cached = false;
+        console.warn('mockData: falha ao ler a flag de dados simulados', err);
+        pending = null;
+        cached = estadoMockMode({ ok: false });
         return cached;
       });
   }
@@ -61,17 +75,23 @@ function loadMockMode() {
 }
 
 /**
- * Hook da flag: `[ligado, salvar]`. Começa desligado até a leitura voltar
- * (primeiro paint nunca mostra dado inventado). `salvar(on)` grava no banco
- * (RLS: só admin) e lança erro se a gravação falhar — a UI volta ao estado
- * anterior e avisa.
+ * Hook da flag: `[ligado, salvar, estado, recarregar]`. `estado` é 'carregando' |
+ * 'ligado' | 'desligado' | 'desconhecido' (leitura falhou: o painel mostra
+ * "estado desconhecido" e bloqueia o switch; o site público trata como desligado).
+ * Começa desligado até a leitura voltar (primeiro paint nunca mostra dado
+ * inventado). `salvar(on)` grava no banco (RLS: só admin) e lança erro se a
+ * gravação falhar — a UI volta ao estado anterior e avisa.
  */
 export function useMockMode() {
-  const [on, setOn] = useState(() => cached ?? false);
+  const [leitura, setLeitura] = useState(() => cached ?? { estado: 'carregando', on: false });
+  const carregar = () => loadMockMode().then(setLeitura);
   useEffect(() => {
     let ativo = true;
-    loadMockMode().then(v => { if (ativo) setOn(v); });
-    const handler = (e) => setOn(e.detail === true);
+    loadMockMode().then(v => { if (ativo) setLeitura(v); });
+    const handler = (e) => {
+      const on = e.detail === true;
+      setLeitura({ estado: on ? 'ligado' : 'desligado', on });
+    };
     window.addEventListener(EVENT, handler);
     return () => {
       ativo = false;
@@ -81,9 +101,15 @@ export function useMockMode() {
   const update = async (value) => {
     const next = value === true;
     await saveSetting(MOCK_MODE_KEY, { ativo: next });
-    cached = next;
-    pending = Promise.resolve(next);
+    cached = estadoMockMode({ ok: true, value: { ativo: next } });
+    pending = Promise.resolve(cached);
     window.dispatchEvent(new CustomEvent(EVENT, { detail: next }));
   };
-  return [on, update];
+  const recarregar = () => {
+    setLeitura({ estado: 'carregando', on: false });
+    pending = null;
+    cached = null;
+    carregar();
+  };
+  return [leitura.on, update, leitura.estado, recarregar];
 }

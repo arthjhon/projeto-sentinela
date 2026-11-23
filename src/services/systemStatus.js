@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { jobStaleness, jobTitle } from './sensorHealth';
 import { createPollGuard } from '../utils/pollGuard';
+import { BROKER_CONNECTING_MS, BROKER_FAIL_MS } from '../config/adminTimings';
 
 // Modelo de estado da página/selo de status. Funções puras no topo; fetchers no fim.
 // `nao_monitorado` é só de frontend (itens sem sonda) e nunca entra no pior estado.
@@ -54,36 +55,12 @@ export function jobsToStatus(jobs, now = new Date()) {
   });
 }
 
-const MIN = 60_000;
-
-/**
- * Estado de uma bóia (só na página, depende de MQTT). Bancada nunca é falha.
- * @deprecated Regra de conexão própria (limiares 1/5 min): substituída por estadoConexao
- * (utils/buoyConnection.js). Sai do StatusPage na Task 4/5 do plano admin-ondas.
- */
-export function buoyStatus({ modo, deviceId, availability, lastMessageAt, now = new Date() }) {
-  if (!deviceId) return { estado: 'desconhecido', detalhe: 'sem hardware' };
-  const t = lastMessageAt ? toMs(lastMessageAt) : NaN;
-  const age = Number.isFinite(t) ? toMs(now) - t : Infinity;
-  const offline = availability === 'offline' || age > 5 * MIN;
-  if (modo === 'bancada') {
-    return offline
-      ? { estado: 'desconhecido', detalhe: 'bancada — offline é normal' }
-      : { estado: 'ok', detalhe: 'bancada — online' };
-  }
-  if (availability === 'offline') return { estado: 'falha', detalhe: 'Offline (LWT)' };
-  if (!Number.isFinite(age)) return { estado: 'falha', detalhe: 'Sem mensagens recebidas' };
-  if (age > 5 * MIN) return { estado: 'falha', detalhe: 'Sem mensagens há mais de 5 min' };
-  if (age > MIN) return { estado: 'degradado', detalhe: `Última mensagem há ${Math.round(age / MIN)} min` };
-  return { estado: 'ok', detalhe: null };
-}
-
-/** Broker MQTT (só na página): conectado ok; caído ≤ 10 s desconhecido (conectando); 10–30 s degradado; > 30 s falha. */
+/** Broker MQTT (só na página): conectado ok; caído até BROKER_CONNECTING_MS (10 s) desconhecido; até BROKER_FAIL_MS (30 s) degradado; depois falha. */
 export function mqttBrokerStatus(connected, disconnectedSinceMs, now = Date.now()) {
   if (connected) return { estado: 'ok', detalhe: 'Conectado' };
   const down = Number.isFinite(disconnectedSinceMs) ? toMs(now) - disconnectedSinceMs : 0;
-  if (down > 30_000) return { estado: 'falha', detalhe: `Desconectado há ${Math.round(down / 1000)} s` };
-  if (down > 10_000) return { estado: 'degradado', detalhe: 'Reconectando…' };
+  if (down > BROKER_FAIL_MS) return { estado: 'falha', detalhe: `Desconectado há ${Math.round(down / 1000)} s` };
+  if (down > BROKER_CONNECTING_MS) return { estado: 'degradado', detalhe: 'Reconectando…' };
   return { estado: 'desconhecido', detalhe: 'Conectando…' };
 }
 
@@ -184,14 +161,6 @@ export function buildErrorSnapshot(e, checkedAt = Date.now()) {
   const detalhe = String(e?.message ?? e).slice(0, 200);
   const falha = { estado: 'falha', detalhe };
   return { loading: false, supabase: { auth: falha, rest: falha, ...falha }, rows: null, jobs: null, checkedAt };
-}
-
-export const MQTT_GRACE_MS = 15_000;
-
-/** Bóia de campo não é julgada enquanto o broker não conectou há ≥ 15 s (evita flash vermelho). */
-export function inMqttGrace(connected, connectedSinceMs, now = Date.now()) {
-  if (!connected || !Number.isFinite(connectedSinceMs)) return true;
-  return toMs(now) - connectedSinceMs < MQTT_GRACE_MS;
 }
 
 // createPollGuard vive em utils/pollGuard.js (compartilhada com usePolling); reexportada aqui.

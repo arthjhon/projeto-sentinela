@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { memo, useMemo, useSyncExternalStore } from 'react';
 import { comLacunas, indiceMaisProximo, intervalosSemLeitura } from '../../services/contextoAmbiental';
+import { CONTEXTO_TICKS } from '../../config/adminTimings';
 import {
   ResponsiveContainer, LineChart, BarChart, Line, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceArea,
@@ -42,9 +43,15 @@ function CursorSincronizado({ payloadIndex, points, x, y, width, height, classNa
  * O cursor sincroniza por tempo (syncMethod), não por índice: cada gráfico tem
  * suas próprias linhas, então o índice do vizinho é outra data.
  */
-export default function ContextoChart({
-  id, title, state, passoMs, kind = 'line', color, unit, domain, zoom, drag, onDragStart, onDragMove, onDragEnd, onDragCancel,
+function ContextoChart({
+  id, title, state, passoMs, kind = 'line', color, unit, domain, zoom, dragStore, onDragEnd,
 }) {
+  // Só o gráfico arrastado assina mudanças: o recorte devolve null (mesma referência)
+  // para os outros, que não re-renderizam enquanto o mouse se move.
+  const drag = useSyncExternalStore(
+    dragStore.subscribe,
+    () => { const d = dragStore.getSnapshot(); return d && d.id === id ? d : null; },
+  );
   const rows = useMemo(() => {
     const all = (kind === 'bar' ? state.data : comLacunas(state.data, passoMs)).map(p => ({ t: p.time.getTime(), v: p.value }));
     return zoom ? all.filter(r => r.t >= zoom[0] && r.t <= zoom[1]) : all;
@@ -56,7 +63,7 @@ export default function ContextoChart({
   const xDomain = validDomain ? domain : ['dataMin', 'dataMax'];
   // ticks fixos e iguais em todos os gráficos (com poucos pontos o Recharts usa os próprios dados)
   const ticks = validDomain
-    ? Array.from({ length: 7 }, (_, i) => Math.round(domain[0] + ((domain[1] - domain[0]) * i) / 6))
+    ? Array.from({ length: CONTEXTO_TICKS }, (_, i) => Math.round(domain[0] + ((domain[1] - domain[0]) * i) / (CONTEXTO_TICKS - 1)))
     : undefined;
 
   const common = {
@@ -64,10 +71,10 @@ export default function ContextoChart({
     syncId: 'contexto',
     syncMethod: (_ticks, e) => indiceMaisProximo(rows, e.activeLabel, passoMs),
     margin: { top: 8, right: 12, left: 0, bottom: 0 },
-    onMouseDown: e => e && e.activeLabel != null && onDragStart(id, e.activeLabel),
-    onMouseMove: e => e && e.activeLabel != null && onDragMove(id, e.activeLabel),
+    onMouseDown: e => e && e.activeLabel != null && dragStore.start(id, e.activeLabel),
+    onMouseMove: e => e && e.activeLabel != null && dragStore.move(id, e.activeLabel),
     onMouseUp: onDragEnd,
-    onMouseLeave: onDragCancel,
+    onMouseLeave: dragStore.cancel,
   };
   const axes = [
     <CartesianGrid key="g" strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />,
@@ -84,7 +91,7 @@ export default function ContextoChart({
     ...semLeitura.map(([x1, x2]) => (
       <ReferenceArea key={`s${x1}`} x1={x1} x2={x2} fill="#94a3b8" fillOpacity={0.2} ifOverflow="hidden" />
     )),
-    drag && drag.id === id && drag.a != null && drag.b != null
+    drag && drag.a != null && drag.b != null
       ? <ReferenceArea key="r" x1={drag.a} x2={drag.b} fill={color} fillOpacity={0.15} />
       : null,
   ];
@@ -124,3 +131,5 @@ export default function ContextoChart({
     </section>
   );
 }
+
+export default memo(ContextoChart);

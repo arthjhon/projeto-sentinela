@@ -1,17 +1,21 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useSystemStatus } from '../../contexts/SystemStatusContext';
 import { useMqtt } from '../../hooks/useMqtt';
+import { usePolling } from '../../hooks/usePolling';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { getMqttTopics } from '../../config/fleet';
+import { CLOCK_TICK_MS, STATUS_HEALTH_POLL_MS } from '../../config/adminTimings';
 import { topicsForRegistry, normalizeModo } from '../../services/buoyRegistry';
-import {
-  buoyStatus, mqttBrokerStatus, inMqttGrace, BADGE_META,
-} from '../../services/systemStatus';
+import { mqttBrokerStatus, BADGE_META } from '../../services/systemStatus';
 import {
   fetchSensorHealth, healthForDevice, estadoMeta, eventTone, fmtDate,
 } from '../../services/sensorHealth';
-import { formatAge } from '../../utils/buoyRuntime';
+import { estadoConexao, leituraMsDaChegada } from '../../utils/buoyConnection';
+import { formatIdade, formatUptime, formatRssi } from '../../utils/format';
+import { rotuloConexao, TOM_CLASSE } from '../../utils/dashboardView';
+import { serialValido } from '../../utils/deviceIds';
+import RegistryErrorBanner from '../../components/admin/RegistryErrorBanner';
 import './StatusPage.css';
 
 const STATE_LABEL = {
@@ -23,19 +27,16 @@ const STATE_CLASS = {
   ok: 'badge-online', degradado: 'badge-warning', falha: 'badge-offline',
   desconhecido: 'badge-planejada', nao_monitorado: 'badge-planejada',
 };
-const TONE_CLASS = {
-  ok: 'badge-online', warn: 'badge-warning', bad: 'badge-offline',
-  info: 'badge-planejada', neutral: 'badge-planejada',
-};
 const BADGE_CLASS = { green: 'badge-online', amber: 'badge-warning', red: 'badge-offline', neutral: 'badge-planejada' };
 
 const JOB_LABEL = { openmeteo: 'Open-Meteo', ana: 'ANA', detector: 'Detector de saúde dos sensores', status: 'Status (worker)' };
 const WORKER_JOB = 'job_status';
-const INFRA = ['Disco', 'Backup', 'Túnel cloudflared', 'Deploy implantado'];
+// Itens que ainda não têm sonda: ficam num bloco recolhido, não como linhas fixas.
+const SEM_SONDA = ['Disco', 'Backup', 'Túnel cloudflared', 'Deploy implantado'];
 
 const ageOf = (iso, now) => {
   const t = iso ? new Date(iso).getTime() : NaN;
-  return Number.isFinite(t) ? formatAge(now - t) : '—';
+  return Number.isFinite(t) ? (formatIdade(now - t) ?? '—') : '—';
 };
 
 function StatePill({ estado }) {
@@ -58,23 +59,25 @@ function StatusItem({ name, estado, detalhe, checked }) {
 const StatusPage = () => {
   const sys = useSystemStatus();
   const { messages, receivedAt, connected, addTopics } = useMqtt(getMqttTopics());
-  const { buoys: registry } = useBuoyRegistry();
+  const { buoys: registry, error: registryError, isFallback, reload: reloadRegistry } = useBuoyRegistry();
   const [now, setNow] = useState(() => Date.now());
   const [healthRows, setHealthRows] = useState([]);
   const [healthError, setHealthError] = useState(false);
   const [downSince, setDownSince] = useState(() => Date.now());
-  const [connectedSince, setConnectedSince] = useState(null);
+  // Hora real da última checagem do broker (o estado vem do hook, reavaliado a cada tick).
+  const [brokerCheckedAt, setBrokerCheckedAt] = useState(() => Date.now());
 
   const connectedRef = useRef(connected);
   useEffect(() => { connectedRef.current = connected; }, [connected]);
 
   useEffect(() => {
     const id = setInterval(() => {
-      setNow(Date.now());
+      const t = Date.now();
+      setNow(t);
+      setBrokerCheckedAt(t);
       // Desde quando o broker está fora (referência: montagem, se nunca conectou).
-      setConnectedSince((prev) => (connectedRef.current ? (prev ?? Date.now()) : null));
-      setDownSince((prev) => (connectedRef.current ? null : (prev ?? Date.now())));
-    }, 5000);
+      setDownSince((prev) => (connectedRef.current ? null : (prev ?? t)));
+    }, CLOCK_TICK_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -82,21 +85,16 @@ const StatusPage = () => {
     if (registry.length) addTopics(topicsForRegistry(registry));
   }, [registry, addTopics]);
 
-  const healthAliveRef = useRef(true);
-  const loadHealth = useCallback(() => fetchSensorHealth().then(
-    (rows) => { if (healthAliveRef.current) { setHealthRows(rows); setHealthError(false); } },
-    () => { if (healthAliveRef.current) setHealthError(true); },
-  ), []);
-  useEffect(() => {
-    healthAliveRef.current = true;
-    loadHealth();
-    const id = setInterval(() => {
-      if (document.visibilityState !== 'hidden') loadHealth();
-    }, 30_000);
-    return () => { healthAliveRef.current = false; clearInterval(id); };
-  }, [loadHealth]);
+  const { runNow: reloadHealth } = usePolling(async ({ isCurrent }) => {
+    try {
+      const rows = await fetchSensorHealth();
+      if (isCurrent()) { setHealthRows(rows); setHealthError(false); }
+    } catch {
+      if (isCurrent()) setHealthError(true);
+    }
+  }, STATUS_HEALTH_POLL_MS);
 
-  const handleRefresh = () => { sys.refresh(); loadHealth(); };
+  const handleRefresh = () => { sys.refresh(); reloadHealth(); };
 
   const rowByName = useMemo(
     () => Object.fromEntries((sys.rows ?? []).map((r) => [r.componente, r])),
@@ -117,39 +115,32 @@ const StatusPage = () => {
   const statusJob = sys.jobs?.find((j) => j.componente === WORKER_JOB) ?? null;
   const collectionJobs = sys.jobs?.filter((j) => j.componente !== WORKER_JOB) ?? null;
   const sb = sys.supabase;
-  const sbChecked = sys.checkedAt ? formatAge(now - sys.checkedAt) : null;
+  const sbChecked = sys.checkedAt ? formatIdade(now - sys.checkedAt) : null;
   const broker = mqttBrokerStatus(connected, downSince, now);
   const ingestao = rowByName.telegraf_ingestao;
   const writes = ingestao?.dados ?? {};
 
   const buoyRows = useMemo(() => registry.map((r) => {
-    const d = r.deviceId || null;
+    const d = serialValido(r) || null;
     const modo = normalizeModo(r.modo);
-    // Mensagens retidas (LWT entregue no subscribe) não provam que a bóia está falando agora.
-    const live = d
-      ? ['sensores', 'status'].map((s) => receivedAt[`${d}/${s}`]).filter((x) => x && !x.retained).map((x) => x.at)
-      : [];
-    const lastAt = live.length ? Math.max(...live) : null;
-    const availability = d ? messages[`${d}/availability`] : undefined;
+    // Uma única regra de conexão (buoyConnection). Mensagem retida não conta como leitura.
+    const chegadas = d ? ['sensores', 'status'].map((x) => leituraMsDaChegada(receivedAt[`${d}/${x}`])) : [];
+    const vivas = chegadas.filter((x) => x !== null);
+    const lastAt = vivas.length ? Math.max(...vivas) : null;
+    const lwt = d ? messages[`${d}/availability`] : undefined;
     const st = d ? messages[`${d}/status`] : undefined;
     const health = st && typeof st === 'object' ? st : {};
-    const grace = d && modo === 'campo' && inMqttGrace(connected, connectedSince, now);
-    const estado = grace
-      ? { estado: 'desconhecido', detalhe: 'aguardando conexão MQTT' }
-      : buoyStatus({ modo, deviceId: d, availability, lastMessageAt: lastAt, now });
+    const statusChegada = d ? receivedAt[`${d}/status`] : undefined;
+    const estado = estadoConexao({
+      modo, lwt, ultimaLeituraMs: lastAt ?? undefined, agoraMs: now, brokerConectado: connected, temHardware: Boolean(d),
+    });
     const sh = d ? healthForDevice(healthRows, d, modo) : { sensores: [], pior: 'ok' };
-    return { r, d, modo, availability, lastAt, health, estado, sh };
-  }), [registry, messages, receivedAt, healthRows, now, connected, connectedSince]);
+    return { r, d, modo, lwt, lastAt, health, statusChegada, estado, sh };
+  }), [registry, messages, receivedAt, healthRows, now, connected]);
 
   const badgeMeta = BADGE_META[sys.badge] ?? BADGE_META.verificando;
 
-  // Detalhe de conexão mostrado uma vez: o do estado, ou (sem detalhe) o rótulo do LWT.
-  const connDetail = (b) => {
-    if (b.estado.detalhe) return b.estado.detalhe;
-    if (b.availability === 'online') return 'online';
-    if (b.availability === 'offline') return 'offline';
-    return 'sem LWT';
-  };
+  const lwtTexto = (b) => (b.lwt === 'online' || b.lwt === 'offline' ? `LWT: ${b.lwt}` : 'sem LWT');
 
   return (
     <div className="dashboard-content-area">
@@ -168,13 +159,15 @@ const StatusPage = () => {
         </div>
       </div>
 
+      <RegistryErrorBanner error={isFallback ? registryError : null} onRetry={reloadRegistry} />
+
       <section className="status-section glass">
         <h2>Plataforma</h2>
         <StatusItem name="Supabase — autenticação"
           estado={sb?.auth?.estado ?? 'desconhecido'} detalhe={sb ? (sb.auth?.detalhe ?? sb.detalhe) : 'Verificando…'} checked={sbChecked} />
         <StatusItem name="Supabase — REST"
           estado={sb?.rest?.estado ?? 'desconhecido'} detalhe={sb ? (sb.rest?.detalhe ?? sb.detalhe) : 'Verificando…'} checked={sbChecked} />
-        <StatusItem name="Broker MQTT" estado={broker.estado} detalhe={broker.detalhe} checked="agora" />
+        <StatusItem name="Broker MQTT" estado={broker.estado} detalhe={broker.detalhe} checked={formatIdade(now - brokerCheckedAt)} />
         <StatusItem {...workerRow('influxdb', 'InfluxDB')} />
         <StatusItem {...workerRow('telegraf_ingestao', 'Ingestão Telegraf')} />
         <StatusItem {...workerRow('worker', 'Worker')} />
@@ -204,34 +197,40 @@ const StatusPage = () => {
             <thead>
               <tr>
                 <th>Código</th><th>Nome</th><th>Modo</th><th>Conexão</th><th>Última mensagem</th>
-                <th>Última gravação Influx</th><th>RSSI</th><th>Uptime</th><th>Firmware</th><th>Calibrado</th><th>Sensores</th>
+                <th>Última gravação Influx</th><th>Status recebido</th><th>RSSI</th><th>Uptime</th><th>Firmware</th><th>Calibrado</th><th>Sensores</th>
               </tr>
             </thead>
             <tbody>
               {buoyRows.length === 0 && (
-                <tr><td colSpan={11} className="text-muted">Nenhuma bóia cadastrada.</td></tr>
+                <tr><td colSpan={12} className="text-muted">Nenhuma bóia cadastrada.</td></tr>
               )}
               {buoyRows.map((b) => {
                 const tone = eventTone(b.sh.pior, b.modo);
                 const writeIso = b.d ? writes[b.d] : null;
                 const { health } = b;
+                const conexao = rotuloConexao(b.estado, b.lastAt ? formatIdade(now - b.lastAt) : null);
+                const stAt = b.statusChegada?.at;
+                const stIdade = Number.isFinite(stAt) ? formatIdade(now - stAt) : null;
                 return (
                   <tr key={b.r.codigo}>
                     <td>{b.r.codigo}</td>
                     <td>{b.r.nome}</td>
                     <td><span className={`badge ${b.modo === 'campo' ? 'badge-online' : 'badge-planejada'}`}>{b.modo === 'campo' ? 'Campo' : 'Bancada'}</span></td>
                     <td>
-                      <StatePill estado={b.estado.estado} />
-                      <div className="status-item-detail text-muted">{connDetail(b)}</div>
+                      <span className={`badge ${TOM_CLASSE[conexao.tom]}`}>{conexao.texto}</span>
+                      <div className="status-item-detail text-muted">{b.d ? lwtTexto(b) : 'sem serial cadastrado'}</div>
                     </td>
-                    <td>{b.lastAt ? formatAge(now - b.lastAt) : '—'}</td>
+                    <td>{b.lastAt ? formatIdade(now - b.lastAt) : '—'}</td>
                     <td title={writeIso ? fmtDate(writeIso) : undefined}>{writeIso ? ageOf(writeIso, now) : '—'}</td>
-                    <td>{Number.isFinite(health.rssi) ? `${health.rssi} dBm` : '—'}</td>
-                    <td>{Number.isFinite(health.uptime) ? `${Math.floor(health.uptime / 60)} min` : '—'}</td>
+                    <td title="Idade da última mensagem /status; RSSI, uptime e firmware abaixo são dela">
+                      {stIdade ? `${stIdade}${b.statusChegada.retained ? ' (retida)' : ''}` : '—'}
+                    </td>
+                    <td>{formatRssi(health.rssi) ?? '—'}</td>
+                    <td>{formatUptime(health.uptime) ?? '—'}</td>
                     <td>{health.firmware ?? '—'}</td>
                     <td>{typeof health.calibrated === 'boolean' ? (health.calibrated ? 'Sim' : 'Não') : '—'}</td>
                     <td>{b.d
-                      ? <span className={`badge ${TONE_CLASS[tone]}`}>{estadoMeta(b.sh.pior).label}</span>
+                      ? <span className={`badge ${TOM_CLASSE[tone]}`}>{estadoMeta(b.sh.pior).label}</span>
                       : '—'}</td>
                   </tr>
                 );
@@ -241,12 +240,15 @@ const StatusPage = () => {
         </div>
       </section>
 
-      <section className="status-section glass">
-        <h2>Infraestrutura</h2>
-        {INFRA.map((name) => (
-          <StatusItem key={name} name={name} estado="nao_monitorado" detalhe="Fase 2 — não monitorado" checked={null} />
-        ))}
-      </section>
+      <details className="status-section glass status-sem-sonda">
+        <summary>Ainda sem sonda ({SEM_SONDA.length})</summary>
+        <p className="text-muted status-empty">
+          Não monitorados hoje (Fase 2); não entram no selo de saúde.
+        </p>
+        <ul>
+          {SEM_SONDA.map((name) => <li key={name}>{name}</li>)}
+        </ul>
+      </details>
     </div>
   );
 };

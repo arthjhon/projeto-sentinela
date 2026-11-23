@@ -21,3 +21,5 @@
   .status-item { grid-template-columns: 1fr auto; }
   .status-item-checked { grid-column: 1 / -1; order: 3; }
 }
+.status-sem-sonda summary { cursor: pointer; font-weight: 600; font-size: 1rem; }
+.status-sem-sonda ul { margin: 0.25rem 0 0; padding-left: 1.25rem; font-size: 0.9rem; }

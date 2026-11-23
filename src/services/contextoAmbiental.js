@@ -2,6 +2,7 @@
 // sobre chuva/vazão/nível das estações da ANA, no mesmo eixo de tempo.
 import { DURACOES, INICIO_RE, T0_UTC } from './influxQueries';
 import { fetchNamed, fetchNamedPerDevice, rowsOf } from './influxql';
+import { hojeMaceio } from '../utils/dataMaceio';
 import { mapHistorySeries, mergeHistorySeries } from '../hooks/useInfluxHistory';
 
 export const ESTACOES_LABEL = {
@@ -16,13 +17,30 @@ export const ESTACOES_COM_DADOS = ['39770000', '39760000', '39740000', '39700000
 export const ESTACAO_PADRAO = '39770000';
 
 const DIA_MS = 24 * 60 * 60 * 1000;
-const dataMaceio = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/Maceio', year: 'numeric', month: '2-digit', day: '2-digit',
+const horaFmt = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: 'America/Maceio', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 });
 
-/** Data local de Maceió (YYYY-MM-DD) do instante `agora`. */
-export function hojeMaceio(agora) {
-  return dataMaceio.format(agora);
+// Data local de Maceió (YYYY-MM-DD): utils/dataMaceio.js (compartilhada com o changelog).
+export { hojeMaceio };
+
+/** "HH:MM" do instante em Maceió (rótulo "atualizado às"). */
+export function horaMaceio(agora) {
+  return horaFmt.format(agora);
+}
+
+/**
+ * Faz o "agora" da janela avançar: devolve a mesma janela (mesma referência, sem
+ * nova busca) enquanto o corte tem menos de `minMs`; senão uma janela nova com o
+ * `agora` dado. Nunca anda para trás.
+ */
+export function janelaAtualizada(janela, agora, minMs) {
+  return agora.getTime() - janela.agora.getTime() >= minMs ? { ...janela, agora } : janela;
+}
+
+/** A busca só começa com o cadastro de bóias carregado (senão sairia com deviceIds vazio) e janela completa. */
+export function podeBuscar({ registroCarregado, estacao, inicio, duracao }) {
+  return Boolean(registroCarregado && estacao && inicio && duracao);
 }
 
 /**
@@ -161,8 +179,8 @@ export async function fetchTurbidezJanela(deviceIds, inicio, duracao, { signal }
 export const ANA_VAZIO = { chuva: [], vazao: [], nivel: [] };
 
 /**
- * Executa as duas buscas em sequência (o proxy aceita 3 conexões por IP),
- * cada uma com seu próprio estado: a falha de uma não apaga a outra.
+ * Executa as duas buscas em paralelo (2 conexões; o proxy aceita 3 por IP), cada
+ * uma com seu próprio estado: a falha de uma não apaga a outra.
  * `emit(chave, patch)` recebe mudanças parciais de `turbidez` | `ana`.
  * Abort não é erro: retorna sem emitir.
  */
@@ -175,12 +193,13 @@ export async function carregarContexto({ deviceIds, estacao, inicio, duracao }, 
   // estação ou bóia anterior pode ficar ao lado de um erro ou do novo eixo X
   emit('turbidez', { data: [], loading: true, error: null });
   emit('ana', { data: ANA_VAZIO, loading: true, error: null });
-  for (const [chave, buscar] of passos) {
+  await Promise.all(passos.map(async ([chave, buscar]) => {
     try {
-      emit(chave, { data: await buscar(), loading: false, error: null });
+      const data = await buscar();
+      if (!signal?.aborted) emit(chave, { data, loading: false, error: null });
     } catch (err) {
       if (err.name === 'AbortError' || signal?.aborted) return;
       emit(chave, { loading: false, error: err.message });
     }
-  }
+  }));
 }

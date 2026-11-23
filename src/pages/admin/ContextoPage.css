@@ -16,3 +16,4 @@
 .ctx-error { color: var(--danger); overflow-wrap: anywhere; }
 .ctx-hint { font-size: 0.8rem; }
 .ctx-legenda { font-size: 0.75rem; margin: 0.25rem 0 0; }
+.ctx-atualizado { font-size: 0.8rem; margin: 0.25rem 0 0; }

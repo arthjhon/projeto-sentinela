@@ -25,17 +25,23 @@ describe('carregarContexto', () => {
     expect(estado.ana.loading).toBe(false);
   });
 
-  it('keeps ana when turbidity fails; runs sequentially', async () => {
+  it('keeps ana when turbidity fails; both requests start in parallel', async () => {
     const ordem = [];
+    let liberar;
+    const portao = new Promise((r) => { liberar = r; });
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       ordem.push(url.includes('/q/ana') ? 'ana' : 'turbidez');
+      await portao;
       return url.includes('/q/ana')
         ? ok([{ columns: ['time', 'chuva', 'vazao', 'nivel'], values: [[1000, 0, 1, 2]] }])
         : { ok: false, status: 500, json: async () => ({}) };
     }));
     const { estado, emit } = coletor();
-    await carregarContexto(entrada, new AbortController().signal, emit);
-    expect(ordem).toEqual(['turbidez', 'ana']);
+    const p = carregarContexto(entrada, new AbortController().signal, emit);
+    // as duas já saíram antes de qualquer resposta
+    await vi.waitFor(() => expect(ordem).toEqual(['turbidez', 'ana']));
+    liberar();
+    await p;
     expect(estado.turbidez.error).toBe('Influx 500');
     expect(estado.ana.data.chuva).toEqual([{ time: new Date(1000), value: 0 }]);
   });
@@ -57,7 +63,7 @@ describe('carregarContexto', () => {
     expect(sinal.aborted).toBe(true);
     expect(estado.turbidez.error).toBeNull();
     expect(estado.ana.error).toBeNull();
-    expect(fetch).toHaveBeenCalledTimes(1); // ANA nem começa
+    expect(fetch).toHaveBeenCalledTimes(2); // as duas partem juntas; ambas abortadas
   });
 
   it('starts both series loading with empty data; failure after a previous load leaves empty data + error', async () => {

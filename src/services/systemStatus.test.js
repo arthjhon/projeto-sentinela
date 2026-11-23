@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, buoyStatus, badgeState, mqttBrokerStatus, buildErrorSnapshot, inMqttGrace, fetchRest,
+  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, badgeState, mqttBrokerStatus, buildErrorSnapshot, fetchRest,
 } from './systemStatus';
 import { supabase } from '../lib/supabase';
 
@@ -74,31 +74,6 @@ describe('jobsToStatus', () => {
   it('ok=false is falha', () => {
     const out = jobsToStatus([{ job: 'ana', ok: false, erro: 'boom', ultimo_sucesso: ago(1000) }], NOW);
     expect(out[0].estado).toBe('falha');
-  });
-});
-
-describe('buoyStatus', () => {
-  it('bancada offline is desconhecido, never falha', () => {
-    for (const args of [
-      { availability: 'offline', lastMessageAt: ago(1000) },
-      { availability: 'online', lastMessageAt: ago(3600_000) },
-      { availability: undefined, lastMessageAt: null },
-    ]) {
-      const r = buoyStatus({ modo: 'bancada', deviceId: 'esp_a', now: NOW, ...args });
-      expect(r.estado).toBe('desconhecido');
-      expect(r.detalhe).toMatch(/bancada/);
-    }
-  });
-  it('campo: offline falha; 3 min degradado; 30 s ok; no deviceId desconhecido "sem hardware"', () => {
-    const base = { modo: 'campo', deviceId: 'esp_a', now: NOW };
-    expect(buoyStatus({ ...base, availability: 'offline', lastMessageAt: ago(1000) }).estado).toBe('falha');
-    expect(buoyStatus({ ...base, availability: 'online', lastMessageAt: ago(6 * 60_000) }).estado).toBe('falha');
-    expect(buoyStatus({ ...base, availability: 'online', lastMessageAt: null }).estado).toBe('falha');
-    expect(buoyStatus({ ...base, availability: 'online', lastMessageAt: ago(3 * 60_000) }).estado).toBe('degradado');
-    expect(buoyStatus({ ...base, availability: 'online', lastMessageAt: ago(30_000) }).estado).toBe('ok');
-    const nohw = buoyStatus({ modo: 'campo', deviceId: null, now: NOW });
-    expect(nohw.estado).toBe('desconhecido');
-    expect(nohw.detalhe).toBe('sem hardware');
   });
 });
 
@@ -257,14 +232,3 @@ describe('jobsToStatus verificado_em', () => {
   });
 });
 
-describe('inMqttGrace', () => {
-  const now = NOW.getTime();
-  it('true while disconnected or never connected', () => {
-    expect(inMqttGrace(false, null, now)).toBe(true);
-    expect(inMqttGrace(true, null, now)).toBe(true);
-  });
-  it('true for first 15 s after connect, false after', () => {
-    expect(inMqttGrace(true, now - 14_000, now)).toBe(true);
-    expect(inMqttGrace(true, now - 15_000, now)).toBe(false);
-  });
-});

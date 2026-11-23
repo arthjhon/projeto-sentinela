@@ -3,6 +3,7 @@ import {
   ESTACOES_LABEL, ESTACOES_COM_DADOS, ESTACAO_PADRAO,
   janelaAtalho, janelaIntervalo, dominio, mapAnaSeries, comLacunas, PASSO_MS, fetchAna, fetchTurbidezJanela,
   hojeMaceio, inicioValido, rotuloPasso, indiceMaisProximo, intervalosSemLeitura,
+  janelaAtualizada, horaMaceio, podeBuscar,
 } from './contextoAmbiental';
 import { ESTACOES_ANA, T0_UTC } from './influxQueries';
 
@@ -219,5 +220,39 @@ describe('intervalosSemLeitura (faixas cinza da chuva)', () => {
     expect(intervalosSemLeitura([], H, [0, H])).toEqual([[0, H]]);
     expect(intervalosSemLeitura([pt(0)], H, [H, H])).toEqual([]);
     expect(intervalosSemLeitura([pt(0)], H, [NaN, H])).toEqual([]);
+  });
+});
+
+describe('janelaAtualizada (M11: "agora" nao fica congelado)', () => {
+  const j = { inicio: '2026-11-01', duracao: '30d', agora: new Date('2026-11-20T12:00:00Z') };
+  it('returns the same object (no refetch) while the cut is younger than minMs', () => {
+    expect(janelaAtualizada(j, new Date('2026-11-20T12:04:59Z'), 300000)).toBe(j);
+  });
+  it('moves agora (new object) once minMs has passed, keeping inicio/duracao', () => {
+    const novo = new Date('2026-11-20T12:05:00Z');
+    const out = janelaAtualizada(j, novo, 300000);
+    expect(out).not.toBe(j);
+    expect(out).toEqual({ ...j, agora: novo });
+  });
+  it('never moves backwards', () => {
+    expect(janelaAtualizada(j, new Date('2026-11-20T11:00:00Z'), 300000)).toBe(j);
+  });
+});
+
+describe('horaMaceio', () => {
+  it('formats HH:MM in Maceió', () => {
+    expect(horaMaceio(new Date('2026-11-20T15:07:00Z'))).toBe('12:07');
+    expect(horaMaceio(new Date('2026-11-20T02:30:00Z'))).toBe('23:30');
+  });
+});
+
+describe('podeBuscar', () => {
+  const base = { registroCarregado: true, estacao: '39770000', inicio: '2026-11-13', duracao: '7d' };
+  it('waits for the registry to load (no first fetch with empty deviceIds)', () => {
+    expect(podeBuscar({ ...base, registroCarregado: false })).toBe(false);
+    expect(podeBuscar(base)).toBe(true);
+  });
+  it('needs station, start and duration', () => {
+    for (const k of ['estacao', 'inicio', 'duracao']) expect(podeBuscar({ ...base, [k]: '' })).toBe(false);
   });
 });

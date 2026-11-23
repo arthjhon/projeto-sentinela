@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeMockReading, makeMockStatus, normalizeMockMode } from './mockData';
+import { makeMockReading, makeMockStatus, normalizeMockMode, estadoMockMode } from './mockData';
 
 describe('makeMockReading', () => {
   it('gera valores dentro de faixas plausíveis', () => {
@@ -37,5 +37,16 @@ describe('normalizeMockMode', () => {
     for (const v of [null, undefined, {}, { ativo: false }, { ativo: 'true' }, true, 'true']) {
       expect(normalizeMockMode(v)).toBe(false);
     }
+  });
+});
+
+describe('estadoMockMode', () => {
+  it('read failure is "desconhecido" (never a default that looks real) and not "on"', () => {
+    expect(estadoMockMode({ ok: false })).toEqual({ estado: 'desconhecido', on: false });
+  });
+  it('successful read maps ativo true/false to ligado/desligado', () => {
+    expect(estadoMockMode({ ok: true, value: { ativo: true } })).toEqual({ estado: 'ligado', on: true });
+    expect(estadoMockMode({ ok: true, value: { ativo: false } })).toEqual({ estado: 'desligado', on: false });
+    expect(estadoMockMode({ ok: true, value: null })).toEqual({ estado: 'desligado', on: false });
   });
 });

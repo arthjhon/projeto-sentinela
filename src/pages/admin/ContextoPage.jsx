@@ -1,21 +1,25 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { deviceIdsOf } from '../../services/buoyRegistry';
+import { usePolling } from '../../hooks/usePolling';
 import { useContextoAmbiental } from '../../hooks/useContextoAmbiental';
 import { DURACOES } from '../../services/influxQueries';
 import {
   ESTACOES_LABEL, ESTACOES_COM_DADOS, ESTACAO_PADRAO, janelaAtalho, dominio, PASSO_MS,
-  hojeMaceio, inicioValido, rotuloPasso,
+  hojeMaceio, inicioValido, rotuloPasso, janelaAtualizada, horaMaceio,
 } from '../../services/contextoAmbiental';
-import ContextoChart from './ContextoChart';
+import { createDragStore } from '../../utils/dragStore';
+import { WATER_PARAMS } from '../../config/waterQuality';
+import { CONTEXTO_REFRESH_MS, CONTEXTO_ESPERA_DATA_MS } from '../../config/adminTimings';
+import RegistryErrorBanner from '../../components/admin/RegistryErrorBanner';
+import ContextoChart from '../../components/admin/ContextoChart';
 import './ContextoPage.css';
 
 const ATALHOS = [7, 30, 90];
-// a data digitada só vale depois de uma pausa (ou ao sair do campo / Enter)
-const ESPERA_DATA_MS = 600;
+const COR_TURBIDEZ = WATER_PARAMS.find(p => p.key === 'turbidez').color;
 
 export default function ContextoPage() {
-  const { buoys } = useBuoyRegistry();
+  const { buoys, loading: carregandoRegistro, error: erroRegistro, isFallback, reload } = useBuoyRegistry();
   const [buoyCode, setBuoyCode] = useState(null);
   const [estacao, setEstacao] = useState(ESTACAO_PADRAO);
   // `agora` faz parte da janela: toda escolha (atalho, data, duração) corta o eixo no instante dela
@@ -25,24 +29,32 @@ export default function ContextoPage() {
   });
   const [mostrarNivel, setMostrarNivel] = useState(false);
   const [zoom, setZoom] = useState(null);
-  const [drag, setDrag] = useState(null);
+  // arrasto fora do estado da página: mover o mouse não re-renderiza os gráficos
+  const dragStore = useMemo(() => createDragStore(), []);
 
   const buoy = buoys.find(b => b.codigo === buoyCode) ?? buoys[0] ?? null;
   const deviceIds = useMemo(() => deviceIdsOf(buoy), [buoy]);
   const { turbidez, ana } = useContextoAmbiental({
     deviceIds, estacao, inicio: janela.inicio, duracao: janela.duracao, atualizadoEm: janela.agora.getTime(),
+    registroCarregado: !carregandoRegistro || buoys.length > 0,
   });
-  const domain = zoom ?? dominio(janela.inicio, janela.duracao, janela.agora);
+  const domain = useMemo(
+    () => zoom ?? dominio(janela.inicio, janela.duracao, janela.agora),
+    [zoom, janela.inicio, janela.duracao, janela.agora],
+  );
+
+  // o "agora" avança sozinho (aba visível): o eixo e as séries acompanham o tempo
+  usePolling(() => setJanela(j => janelaAtualizada(j, new Date(), CONTEXTO_REFRESH_MS)), CONTEXTO_REFRESH_MS);
 
   // qualquer filtro limpa o zoom
-  const alterar = setter => valor => { setter(valor); setZoom(null); setDrag(null); };
+  const alterar = setter => valor => { setter(valor); setZoom(null); dragStore.cancel(); };
   const setBuoy = alterar(setBuoyCode);
   const setEstacaoF = alterar(setEstacao);
   const mudarJanela = patch => {
     const agora = new Date();
     setJanela(j => ({ ...j, ...patch, agora }));
     setZoom(null);
-    setDrag(null);
+    dragStore.cancel();
   };
 
   // "A partir de": rascunho local; só uma data real (inicioValido) é aplicada, após
@@ -62,33 +74,31 @@ export default function ContextoPage() {
   const digitarInicio = valor => {
     setRascunho(valor);
     clearTimeout(esperaData.current);
-    esperaData.current = setTimeout(() => aplicarInicio(valor), ESPERA_DATA_MS);
+    esperaData.current = setTimeout(() => aplicarInicio(valor), CONTEXTO_ESPERA_DATA_MS);
   };
   useEffect(() => {
     const espera = esperaData;
     return () => clearTimeout(espera.current);
   }, []);
 
-  const onDragStart = (id, x) => setDrag({ id, a: x, b: null });
-  const onDragMove = (id, x) => setDrag(d => (d && d.id === id ? { ...d, b: x } : d));
-  const onDragEnd = () => {
-    if (drag && drag.a != null && drag.b != null && drag.a !== drag.b) {
-      setZoom([Math.min(drag.a, drag.b), Math.max(drag.a, drag.b)]);
-    }
-    setDrag(null);
-  };
-  const onDragCancel = () => setDrag(null);
-  const dragProps = { passoMs: PASSO_MS[janela.duracao], zoom, drag, onDragStart, onDragMove, onDragEnd, onDragCancel, domain };
+  const onDragEnd = useCallback(() => {
+    const faixa = dragStore.end();
+    if (faixa) setZoom(faixa);
+  }, [dragStore]);
+  const passoMs = PASSO_MS[janela.duracao];
+  const dragProps = { passoMs, zoom, dragStore, onDragEnd, domain };
 
-  // sair do gráfico (onDragCancel) ou soltar o botão fora dele cancela, sem aplicar zoom;
-  // soltar dentro é tratado por onDragEnd, que roda antes deste listener
-  const arrastando = drag != null;
+  // soltar o botão fora do gráfico cancela, sem aplicar zoom; soltar dentro é tratado
+  // por onDragEnd, que roda antes deste listener
   useEffect(() => {
-    if (!arrastando) return;
-    const cancelar = () => setDrag(null);
-    window.addEventListener('mouseup', cancelar);
-    return () => window.removeEventListener('mouseup', cancelar);
-  }, [arrastando]);
+    window.addEventListener('mouseup', dragStore.cancel);
+    return () => window.removeEventListener('mouseup', dragStore.cancel);
+  }, [dragStore]);
+
+  // estados dos gráficos estáveis: o gráfico só renderiza quando os dados dele mudam
+  const chuva = useMemo(() => ({ ...ana, data: ana.data.chuva }), [ana]);
+  const vazao = useMemo(() => ({ ...ana, data: ana.data.vazao }), [ana]);
+  const nivel = useMemo(() => ({ ...ana, data: ana.data.nivel }), [ana]);
 
   const nomeEstacao = ESTACOES_LABEL[estacao];
   const nomeBoia = buoy ? `${buoy.codigo} ${buoy.nome}` : '—';
@@ -98,7 +108,12 @@ export default function ContextoPage() {
       <div className="page-header">
         <h1>Contexto ambiental</h1>
         <p>Turbidez da bóia sobre chuva, vazão e nível da ANA, no mesmo eixo de tempo. Comparação visual: não indica causa.</p>
+        <p className="text-muted ctx-atualizado">
+          Atualizado às {horaMaceio(janela.agora)} (Maceió); renova a cada {CONTEXTO_REFRESH_MS / 60000} min com a aba aberta.
+        </p>
       </div>
+
+      <RegistryErrorBanner error={isFallback ? erroRegistro : null} onRetry={reload} />
 
       <div className="ctx-controls glass">
         <label>Bóia
@@ -140,21 +155,21 @@ export default function ContextoPage() {
       </div>
 
       <ContextoChart
-        id="turbidez" title={`Turbidez — ${nomeBoia} (NTU)`} unit="NTU" color="#00f0ff"
+        id="turbidez" title={`Turbidez — ${nomeBoia} (NTU)`} unit="NTU" color={COR_TURBIDEZ}
         state={turbidez} {...dragProps}
       />
       <ContextoChart
         id="chuva" title={`Chuva em ${nomeEstacao} (mm por ${rotuloPasso(PASSO_MS[janela.duracao])}, rio acima)`} unit="mm" color="#60a5fa" kind="bar"
-        state={{ ...ana, data: ana.data.chuva }} {...dragProps}
+        state={chuva} {...dragProps}
       />
       <ContextoChart
         id="vazao" title={`Vazão em ${nomeEstacao} (m³/s)`} unit="m³/s" color="#10b981"
-        state={{ ...ana, data: ana.data.vazao }} {...dragProps}
+        state={vazao} {...dragProps}
       />
       {mostrarNivel && (
         <ContextoChart
           id="nivel" title={`Nível em ${nomeEstacao} (cm)`} unit="cm" color="#f59e0b"
-          state={{ ...ana, data: ana.data.nivel }} {...dragProps}
+          state={nivel} {...dragProps}
         />
       )}
       <p className="text-muted ctx-hint">Arraste sobre um gráfico para ampliar o período em todos.</p>
