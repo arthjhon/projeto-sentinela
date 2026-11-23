@@ -11,14 +11,18 @@
 //   4. auth.admin.deleteUser — o ON DELETE CASCADE apaga o profile. Conta sem
 //      profile (órfã de exclusão antiga) também pode ser removida por aqui.
 //
-// Sessões já emitidas: o JWT do usuário apagado continua tecnicamente válido
-// até expirar (exp), mas o GoTrue rejeita refresh e as policies de RLS passam
-// a exigir uma linha em profiles, que não existe mais.
+// Sessões já emitidas: o JWT do usuário apagado continua válido até expirar
+// (exp). O GoTrue rejeita o refresh, mas várias policies de RLS só checam
+// auth.role()/auth.uid() e não dependem de profiles; não há revogação imediata.
+//
+// Corrida do último admin: a checagem acima é só para dar mensagem clara. A
+// garantia é o trigger profiles_admin_delete_guard (migration 20261123), que
+// roda no cascade sob pg_advisory_xact_lock e recusa remover o último admin.
 //
 // CORS é tratado pelo Kong (plugin cors na rota functions-v1).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import { checkDelete, isUuid } from './rules.ts';
+import { checkDelete, isUuid, normalizeUuid } from './rules.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -48,10 +52,10 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'Corpo da requisição inválido.' }, 400);
   }
 
-  const { userId } = body;
-  if (!isUuid(userId)) {
+  if (!isUuid(body.userId)) {
     return json({ error: 'userId é obrigatório e deve ser um UUID.' }, 400);
   }
+  const userId = normalizeUuid(body.userId);
 
   // Client com a sessão de quem chamou — só pra identificar o chamador.
   const callerClient = createClient(SUPABASE_URL, ANON_KEY, {
@@ -107,6 +111,14 @@ Deno.serve(async (req: Request) => {
     if (deleteError.status === 404) {
       await admin.from('profiles').delete().eq('id', userId);
       return json({ success: true, alreadyGone: true });
+    }
+    // Perdeu a corrida pelo último admin (o trigger recusou o cascade)?
+    if (target?.role === 'admin') {
+      const { count: restantes } = await admin
+        .from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin');
+      if (restantes !== null && restantes <= 1) {
+        return json({ error: 'Não é possível excluir o último administrador.' }, 409);
+      }
     }
     return json({ error: `Falha ao excluir usuário: ${deleteError.message}` }, 500);
   }

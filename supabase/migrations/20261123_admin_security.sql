@@ -19,6 +19,14 @@
 --      Edge Function admin-delete-user (auth.admin.deleteUser; cascade removes the profile).
 --   5. profiles BEFORE UPDATE OF role trigger: a client session cannot change its own role nor
 --      demote the last admin. SQL editor / service_role (auth.uid() IS NULL) are unaffected.
+--   6. profiles BEFORE DELETE trigger: refuses to remove the last admin (also on the cascade
+--      from auth.users, i.e. what the Edge Function does). Triggers 5 and 6 take the same
+--      pg_advisory_xact_lock, so two concurrent demotions/deletions cannot both pass.
+--   7. maintenance_logs, sensor_calibrations, firmware_deploys: BEFORE INSERT trigger sets
+--      operador_nome from profiles.name of operador_id (client value ignored; username/e-mail
+--      are credentials and the demo account can SELECT these tables). Existing rows with an
+--      operador_id are backfilled from profiles.name. NOTE: the backfill is not reversible
+--      (old usernames are lost); take a dump of those 3 tables first if you want rollback.
 --
 -- Assumption to confirm on the target DB before applying (read-only):
 --   select policyname, cmd from pg_policies where tablename in ('profiles','audit_logs');
@@ -40,6 +48,13 @@
 --   DROP POLICY IF EXISTS audit_insert ON public.audit_logs;
 --   CREATE POLICY audit_insert ON public.audit_logs FOR INSERT WITH CHECK (
 --     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin', 'operador')));
+--   DROP TRIGGER IF EXISTS profiles_admin_delete_guard ON public.profiles;
+--   DROP FUNCTION IF EXISTS public.profiles_admin_delete_guard();
+--   DROP TRIGGER IF EXISTS maintenance_logs_set_operador ON public.maintenance_logs;
+--   DROP TRIGGER IF EXISTS sensor_calibrations_set_operador ON public.sensor_calibrations;
+--   DROP TRIGGER IF EXISTS firmware_deploys_set_operador ON public.firmware_deploys;
+--   DROP FUNCTION IF EXISTS public.set_operador_nome_from_profile();
+--   (restore operador_nome of the 3 tables from the pre-migration dump if needed)
 --   DROP FUNCTION IF EXISTS public.current_user_role();
 
 BEGIN;
@@ -135,6 +150,9 @@ BEGIN
   IF OLD.id = auth.uid() THEN
     RAISE EXCEPTION 'Você não pode alterar o seu próprio nível de acesso.' USING ERRCODE = '42501';
   END IF;
+  -- Serializes with other role changes/deletions; READ COMMITTED gives the next statement a
+  -- fresh snapshot, so it sees what the previous holder committed.
+  PERFORM pg_advisory_xact_lock(hashtext('profiles_admin_guard'));
   IF OLD.role = 'admin'
      AND NOT EXISTS (SELECT 1 FROM public.profiles WHERE role = 'admin' AND id <> OLD.id) THEN
     RAISE EXCEPTION 'Não é possível rebaixar o último administrador.' USING ERRCODE = '42501';
@@ -148,5 +166,72 @@ DROP TRIGGER IF EXISTS profiles_role_guard ON public.profiles;
 CREATE TRIGGER profiles_role_guard
   BEFORE UPDATE OF role ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.profiles_role_guard();
+
+-- 6. Last-admin guard on DELETE (covers the cascade from auth.users).
+CREATE OR REPLACE FUNCTION public.profiles_admin_delete_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF OLD.role <> 'admin' THEN
+    RETURN OLD;
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtext('profiles_admin_guard'));
+  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE role = 'admin' AND id <> OLD.id) THEN
+    RAISE EXCEPTION 'Não é possível excluir o último administrador.' USING ERRCODE = '42501';
+  END IF;
+  RETURN OLD;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.profiles_admin_delete_guard() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS profiles_admin_delete_guard ON public.profiles;
+CREATE TRIGGER profiles_admin_delete_guard
+  BEFORE DELETE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.profiles_admin_delete_guard();
+
+-- 7. operador_nome from profiles.name on the operational tables.
+CREATE OR REPLACE FUNCTION public.set_operador_nome_from_profile()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.operador_id IS NOT NULL THEN
+    SELECT name INTO NEW.operador_nome FROM public.profiles WHERE id = NEW.operador_id;
+  END IF;
+  IF NEW.operador_nome IS NULL AND TG_TABLE_NAME <> 'firmware_deploys' THEN
+    NEW.operador_nome := 'desconhecido';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.set_operador_nome_from_profile() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS maintenance_logs_set_operador ON public.maintenance_logs;
+CREATE TRIGGER maintenance_logs_set_operador
+  BEFORE INSERT ON public.maintenance_logs
+  FOR EACH ROW EXECUTE FUNCTION public.set_operador_nome_from_profile();
+
+DROP TRIGGER IF EXISTS sensor_calibrations_set_operador ON public.sensor_calibrations;
+CREATE TRIGGER sensor_calibrations_set_operador
+  BEFORE INSERT ON public.sensor_calibrations
+  FOR EACH ROW EXECUTE FUNCTION public.set_operador_nome_from_profile();
+
+DROP TRIGGER IF EXISTS firmware_deploys_set_operador ON public.firmware_deploys;
+CREATE TRIGGER firmware_deploys_set_operador
+  BEFORE INSERT ON public.firmware_deploys
+  FOR EACH ROW EXECUTE FUNCTION public.set_operador_nome_from_profile();
+
+-- Backfill: replace stored usernames by display names where the operator still exists.
+UPDATE public.maintenance_logs t SET operador_nome = p.name
+  FROM public.profiles p WHERE p.id = t.operador_id AND t.operador_nome IS DISTINCT FROM p.name;
+UPDATE public.sensor_calibrations t SET operador_nome = p.name
+  FROM public.profiles p WHERE p.id = t.operador_id AND t.operador_nome IS DISTINCT FROM p.name;
+UPDATE public.firmware_deploys t SET operador_nome = p.name
+  FROM public.profiles p WHERE p.id = t.operador_id AND t.operador_nome IS DISTINCT FROM p.name;
 
 COMMIT;

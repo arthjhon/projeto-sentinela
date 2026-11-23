@@ -7,6 +7,11 @@ export function isUuid(v: unknown): v is string {
   return typeof v === 'string' && UUID_RE.test(v);
 }
 
+/** UUIDs compare case-insensitively; always compare the lower-case form. */
+export function normalizeUuid(v: string): string {
+  return v.toLowerCase();
+}
+
 export interface DeleteContext {
   callerId: string;
   targetId: string;
@@ -19,7 +24,7 @@ export interface DeleteContext {
 export type DeleteDecision = { ok: true } | { ok: false; status: number; error: string };
 
 export function checkDelete(ctx: DeleteContext): DeleteDecision {
-  if (ctx.callerId === ctx.targetId) {
+  if (normalizeUuid(ctx.callerId) === normalizeUuid(ctx.targetId)) {
     return { ok: false, status: 400, error: 'Você não pode excluir a própria conta.' };
   }
   if (ctx.targetRole === 'admin' && ctx.adminCount <= 1) {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { checkDelete, isUuid } from './rules';
+import { checkDelete, isUuid, normalizeUuid } from './rules';
 
-const CALLER = '11111111-1111-4111-8111-111111111111';
+const CALLER = 'abcdef12-1111-4111-8111-abcdefabcdef';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
 describe('isUuid', () => {
@@ -13,7 +13,18 @@ describe('isUuid', () => {
   });
 });
 
+describe('normalizeUuid', () => {
+  it('lower-cases a valid uuid', () => {
+    expect(normalizeUuid(CALLER.toUpperCase())).toBe(CALLER);
+  });
+});
+
 describe('checkDelete', () => {
+  it('refuses self-deletion regardless of letter case', () => {
+    const r = checkDelete({ callerId: CALLER, targetId: CALLER.toUpperCase(), targetRole: 'admin', adminCount: 3 });
+    expect(r).toMatchObject({ ok: false, status: 400 });
+  });
+
   it('refuses self-deletion', () => {
     const r = checkDelete({ callerId: CALLER, targetId: CALLER, targetRole: 'admin', adminCount: 3 });
     expect(r).toMatchObject({ ok: false, status: 400 });
