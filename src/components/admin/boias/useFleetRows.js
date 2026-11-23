@@ -5,9 +5,7 @@ import { usePolling } from '../../../hooks/usePolling';
 import { getMqttTopics } from '../../../config/fleet';
 import { topicsForRegistry } from '../../../services/buoyRegistry';
 import { manutencoesAbertas } from '../../../services/maintenance';
-import { fetchUltimasLeituras } from '../../../hooks/useInfluxHistory';
-import { criarFilaSerial } from '../../../utils/filaSerial';
-import { deviceIdsOf } from '../../../utils/deviceIds';
+import { useUltimasLeituras } from '../../../hooks/useUltimasLeituras';
 import { fetchSensorHealth, fetchWorkerJobs } from '../../../services/sensorHealth';
 import { montarLinhaBoia } from '../../../utils/boiasView';
 
@@ -64,21 +62,9 @@ export function useFleetRows() {
   }, [codigos]);
   usePolling(() => carregarManutencoes(), POLL_MS, [codigosKey]);
 
-  // Últimas leituras gravadas por bóia (só dos seriais dela): mesma fonte da Visão geral para
-  // "última leitura" e estado de conexão logo após o carregamento. Uma consulta por bóia, em
-  // sequência pela fila serial (limite de conexões do proxy), a cada rodada de 60 s.
-  const [fila] = useState(criarFilaSerial);
-  const [ultimas, setUltimas] = useState({}); // codigo -> rows
-  const alvosKey = JSON.stringify(registryBuoys.map((b) => [b.codigo, deviceIdsOf(b)]));
-  usePolling(async ({ signal, isCurrent }) => {
-    for (const [codigo, ids] of JSON.parse(alvosKey)) {
-      if (!isCurrent()) return;
-      try {
-        const lidas = await fila((sinal) => fetchUltimasLeituras(ids, { periodo: '30d', signal: sinal }), { signal });
-        if (isCurrent()) setUltimas((u) => ({ ...u, [codigo]: lidas }));
-      } catch { /* mantém a última lista lida; a conexão segue só com o MQTT */ }
-    }
-  }, POLL_MS, [alvosKey]);
+  // Últimas leituras gravadas por bóia (mesma fonte da Visão geral, Status e Firmware):
+  // piso da "última leitura" e do estado de conexão logo após o carregamento.
+  const { ultimas } = useUltimasLeituras(registryBuoys, { pollMs: POLL_MS });
 
   const rows = useMemo(() => registryBuoys.map((registro) => montarLinhaBoia({
     registro, mensagens: messages, chegadas: receivedAt, ultimas: ultimas[registro.codigo] ?? [], agoraMs: agora, brokerConectado: connected,

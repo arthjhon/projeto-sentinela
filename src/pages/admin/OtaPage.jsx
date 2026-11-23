@@ -5,14 +5,15 @@ import { useReadOnly } from '../../hooks/useReadOnly';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { usePolling } from '../../hooks/usePolling';
+import { useUltimasLeituras } from '../../hooks/useUltimasLeituras';
 import { useOtaDeploy } from '../../hooks/useOtaDeploy';
 import { FLEET, getMqttTopics } from '../../config/fleet';
-import { topicsForRegistry, normalizeModo } from '../../services/buoyRegistry';
+import { topicsForRegistry } from '../../services/buoyRegistry';
 import { listarDeploys } from '../../services/otaCommand';
 import { isBinFile, createRequestToken, podeResetar } from '../../services/otaDeployState';
 import { sha256Hex } from '../../utils/sha256';
-import { estadoConexao, leituraMsDaChegada, ROTULO_CONEXAO, TOM_CONEXAO } from '../../utils/buoyConnection';
-import { formatUptime, formatRssi } from '../../utils/format';
+import { ROTULO_CONEXAO, TOM_CONEXAO } from '../../utils/buoyConnection';
+import { conexaoDoRegistro, saudeDoStatus, frotaDoOta } from '../../utils/conexaoFrota';
 import { TOM_CLASSE } from '../../utils/dashboardView';
 import {
   UploadCloud, Cpu, Wifi, WifiOff, CheckCircle2,
@@ -85,21 +86,17 @@ const OtaPageConteudo = () => {
 
   const logBodyRef = useRef(null);
 
-  // ── Bóias (registro × FLEET) ──
-  // Identidade (código, nome, deviceId) vem do registro; FLEET só completa os
-  // metadados pelo código. FLEET é o fallback síncrono apenas até a primeira
-  // leitura do registro — carregado e vazio = nenhuma bóia.
-  const buoys = useMemo(() => (
-    registryLoading && !registryBuoys.length
-      ? FLEET
-      : registryBuoys.map(r => ({
-          ...FLEET.find(f => f.id === r.codigo),
-          id: r.codigo,
-          name: r.nome,
-          deviceId: r.deviceId || null,
-          modo: r.modo,
-        }))
-  ), [registryBuoys, registryLoading]);
+  // ── Bóias (cadastro) ──
+  // Identidade (código, nome, deviceId válido) vem do cadastro; FLEET só completa
+  // metadados pelo código. Enquanto o cadastro carrega a lista fica vazia: a
+  // semente não é a frota (frotaDoOta). Carregado e vazio = nenhuma bóia.
+  const frotaCarregando = registryLoading && !registryBuoys.length;
+  const buoys = useMemo(
+    () => frotaDoOta({ registro: registryBuoys, carregando: registryLoading, fleet: FLEET }),
+    [registryBuoys, registryLoading],
+  );
+  // Últimas leituras gravadas: a mesma entrada de conexão da Visão geral.
+  const { ultimas } = useUltimasLeituras(registryBuoys);
 
   // Destinos de OTA: só bóias com dispositivo (deviceId null = bóia planejada).
   const otaTargets = useMemo(() => buoys.filter(b => b.deviceId), [buoys]);
@@ -178,29 +175,24 @@ const OtaPageConteudo = () => {
   };
 
   // ─── Dados ao vivo de cada bóia ──────────────────────────────────────────
-  // Estado de conexão: função única (utils/buoyConnection). Leitura = o /status
-  // recebido nesta sessão (retido não conta); LWT = <id>/availability.
+  // Conexão: função única (conexaoDoRegistro = a da Visão geral: MQTT + última
+  // leitura gravada). Firmware/RSSI/uptime vêm do /status, com a idade dele.
   const fleetStatus = buoys.map(buoy => {
-    const conexao = estadoConexao({
-      modo: normalizeModo(buoy.modo),
-      lwt: buoy.deviceId ? messages[`${buoy.deviceId}/availability`] : undefined,
-      ultimaLeituraMs: buoy.deviceId ? (leituraMsDaChegada(receivedAt?.[`${buoy.deviceId}/status`]) ?? undefined) : undefined,
-      agoraMs,
-      brokerConectado: connected,
-      temHardware: Boolean(buoy.deviceId),
+    const { estado: conexao } = conexaoDoRegistro({
+      registro: { codigo: buoy.id, deviceId: buoy.deviceId, modo: buoy.modo },
+      mensagens: messages, chegadas: receivedAt, ultimas: ultimas[buoy.id] ?? [], agoraMs, brokerConectado: connected,
     });
     if (!buoy.deviceId) {
-      return { ...buoy, conexao, online: false, firmware: 'N/A', rssi: null, uptime: null };
+      return { ...buoy, conexao, online: false, saude: null };
     }
-    const status = messages[`${buoy.deviceId}/status`];
-    const otaSt  = messages[`${buoy.deviceId}/ota/status`];
+    const otaSt = messages[`${buoy.deviceId}/ota/status`];
     return {
       ...buoy,
       conexao,
-      online:   conexao === 'online',
-      firmware: status?.firmware ?? '---',
-      rssi:     formatRssi(status?.rssi),
-      uptime:   formatUptime(status?.uptime),
+      online: conexao === 'online',
+      saude: saudeDoStatus({
+        status: messages[`${buoy.deviceId}/status`], chegada: receivedAt?.[`${buoy.deviceId}/status`], agoraMs,
+      }),
       otaPhase: otaSt?.status ?? null,
       otaProgress: otaSt?.progress ?? 0,
     };
@@ -238,6 +230,8 @@ const OtaPageConteudo = () => {
           </span>
         </h2>
 
+        {frotaCarregando && <p className="text-muted">Carregando cadastro de bóias…</p>}
+        {!frotaCarregando && fleetStatus.length === 0 && <p className="text-muted">Nenhuma bóia cadastrada.</p>}
         <div className="ota-fleet-grid">
           {fleetStatus.map(buoy => (
             <div key={buoy.id} className={`ota-device-card glass ${buoy.online ? 'card-online' : 'card-offline'}`}>
@@ -248,10 +242,18 @@ const OtaPageConteudo = () => {
               <p className="device-name">{buoy.name}</p>
               <span className={`badge ${TOM_CLASSE[TOM_CONEXAO[buoy.conexao]]}`}>{ROTULO_CONEXAO[buoy.conexao]}</span>
               <div className="device-meta">
-                <span><FileCode2 size={13} /> {buoy.firmware}</span>
-                {buoy.rssi    && <span><Wifi size={13} /> {buoy.rssi}</span>}
-                {buoy.uptime  && <span><RotateCw size={13} /> {buoy.uptime}</span>}
-                {!buoy.deviceId && <span className="text-muted">Sem hardware</span>}
+                {!buoy.deviceId ? <span className="text-muted">Sem hardware</span> : (
+                  <>
+                    <span><FileCode2 size={13} /> {buoy.saude.firmware ?? '---'}</span>
+                    {buoy.saude.rssi && <span><Wifi size={13} /> {buoy.saude.rssi}</span>}
+                    {buoy.saude.uptime && <span><RotateCw size={13} /> {buoy.saude.uptime}</span>}
+                    <span className="device-age text-muted">
+                      {buoy.saude.idade ? `status recebido ${buoy.saude.idade}`
+                        : buoy.saude.retida ? 'status retido (sem hora da bóia)'
+                          : 'sem /status nesta sessão'}
+                    </span>
+                  </>
+                )}
               </div>
 
               {/* Barra de progresso de OTA ativa nesta bóia */}

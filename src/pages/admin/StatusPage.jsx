@@ -3,18 +3,18 @@ import { RefreshCw } from 'lucide-react';
 import { useSystemStatus } from '../../contexts/SystemStatusContext';
 import { useMqtt } from '../../hooks/useMqtt';
 import { usePolling } from '../../hooks/usePolling';
+import { useUltimasLeituras } from '../../hooks/useUltimasLeituras';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { getMqttTopics } from '../../config/fleet';
 import { CLOCK_TICK_MS, STATUS_HEALTH_POLL_MS } from '../../config/adminTimings';
-import { topicsForRegistry, normalizeModo } from '../../services/buoyRegistry';
+import { topicsForRegistry } from '../../services/buoyRegistry';
 import { mqttBrokerStatus, brokerDesde, BADGE_META } from '../../services/systemStatus';
 import {
   fetchSensorHealth, healthForDevice, estadoMeta, eventTone, fmtDate,
 } from '../../services/sensorHealth';
-import { estadoConexao, leituraMsDaChegada } from '../../utils/buoyConnection';
+import { conexaoDoRegistro } from '../../utils/conexaoFrota';
 import { formatIdade, formatUptime, formatRssi } from '../../utils/format';
 import { rotuloConexao, TOM_CLASSE } from '../../utils/dashboardView';
-import { serialValido } from '../../utils/deviceIds';
 import RegistryErrorBanner from '../../components/admin/RegistryErrorBanner';
 import './StatusPage.css';
 
@@ -60,6 +60,7 @@ const StatusPage = () => {
   const sys = useSystemStatus();
   const { messages, receivedAt, connected, addTopics } = useMqtt(getMqttTopics());
   const { buoys: registry, error: registryError, isFallback, reload: reloadRegistry } = useBuoyRegistry();
+  const { ultimas } = useUltimasLeituras(registry);
   const [now, setNow] = useState(() => Date.now());
   const [healthRows, setHealthRows] = useState([]);
   const [healthError, setHealthError] = useState(false);
@@ -114,22 +115,17 @@ const StatusPage = () => {
   const writes = ingestao?.dados ?? {};
 
   const buoyRows = useMemo(() => registry.map((r) => {
-    const d = serialValido(r) || null;
-    const modo = normalizeModo(r.modo);
-    // Uma única regra de conexão (buoyConnection). Mensagem retida não conta como leitura.
-    const chegadas = d ? ['sensores', 'status'].map((x) => leituraMsDaChegada(receivedAt[`${d}/${x}`])) : [];
-    const vivas = chegadas.filter((x) => x !== null);
-    const lastAt = vivas.length ? Math.max(...vivas) : null;
+    // Mesma entrada da Visão geral (MQTT + última leitura gravada): conexaoDoRegistro.
+    const { serial: d, modo, estado, ultimaMs: lastAt } = conexaoDoRegistro({
+      registro: r, mensagens: messages, chegadas: receivedAt, ultimas: ultimas[r.codigo] ?? [], agoraMs: now, brokerConectado: connected,
+    });
     const lwt = d ? messages[`${d}/availability`] : undefined;
     const st = d ? messages[`${d}/status`] : undefined;
     const health = st && typeof st === 'object' ? st : {};
     const statusChegada = d ? receivedAt[`${d}/status`] : undefined;
-    const estado = estadoConexao({
-      modo, lwt, ultimaLeituraMs: lastAt ?? undefined, agoraMs: now, brokerConectado: connected, temHardware: Boolean(d),
-    });
     const sh = d ? healthForDevice(healthRows, d, modo) : { sensores: [], pior: 'ok' };
     return { r, d, modo, lwt, lastAt, health, statusChegada, estado, sh };
-  }), [registry, messages, receivedAt, healthRows, now, connected]);
+  }), [registry, messages, receivedAt, ultimas, healthRows, now, connected]);
 
   const badgeMeta = BADGE_META[sys.badge] ?? BADGE_META.verificando;
 
@@ -189,7 +185,7 @@ const StatusPage = () => {
           <table className="sensors-table status-buoys">
             <thead>
               <tr>
-                <th>Código</th><th>Nome</th><th>Modo</th><th>Conexão</th><th>Última mensagem</th>
+                <th>Código</th><th>Nome</th><th>Modo</th><th>Conexão</th><th>Última leitura</th>
                 <th>Última gravação Influx</th><th>Status recebido</th><th>RSSI</th><th>Uptime</th><th>Firmware</th><th>Calibrado</th><th>Sensores</th>
               </tr>
             </thead>
