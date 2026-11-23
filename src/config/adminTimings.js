@@ -3,8 +3,6 @@
 
 /** Relógio das telas ("há X s" recalculado). */
 export const CLOCK_TICK_MS = 5_000;
-/** Polling de saúde dos sensores na página Status. */
-export const STATUS_HEALTH_POLL_MS = 30_000;
 /** Broker MQTT fora há até isto: ainda "conectando". */
 export const BROKER_CONNECTING_MS = 10_000;
 /** Broker MQTT fora há mais que isto: falha (entre os dois: reconectando). */

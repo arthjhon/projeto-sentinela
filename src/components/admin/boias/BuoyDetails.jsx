@@ -1,14 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Wrench, History, Edit2, Trash2, AlertTriangle } from 'lucide-react';
+import { Wrench, History, FileText, Edit2, Trash2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
-import { HealthEvents } from '../SensorHealth';
 import { useBuoyDetails } from './useBuoyDetails';
 import { MaintenancePanel, MaintenanceStartModal } from './MaintenancePanel';
 import CalibrationForm from './CalibrationForm';
 import { ICONES_SENSOR } from './sensorIcons';
 import { formatInterval } from '../../../utils/buoyRuntime';
-import { formatData, formatIdade, formatRssi, formatUptime } from '../../../utils/format';
+import { hrefFicha } from '../../../utils/fichaBoia';
 import {
   divergeFirmware, hrefHistorico, permissaoAcao, rotuloCalibracao,
 } from '../../../utils/boiasView';
@@ -31,14 +30,14 @@ function BotaoAcao({ permissao, className, onClick, btnRef, descrito, children }
 }
 
 /**
- * Detalhe expandido de uma bóia: informações, sensores com calibração, histórico
- * de manutenção e ações. Os dados persistidos são desta bóia (useBuoyDetails) e
+ * Detalhe expandido de uma bóia: coordenadas, sensores com calibração e ações
+ * (o histórico e os dados do dispositivo moram na ficha da bóia). Os dados persistidos são desta bóia (useBuoyDetails) e
  * somem ao fechar a linha.
  */
 export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover, onMudou }) {
   const { currentUser } = useAuth();
   const role = currentUser?.role;
-  const { timeline, aberta, calibracoes, error, carregando, recarregar } = useBuoyDetails(linha.id);
+  const { aberta, calibracoes, error, carregando, recarregar } = useBuoyDetails(linha.id);
   const [painelAberto, setPainelAberto] = useState(false);
   const [pedindoMotivo, setPedindoMotivo] = useState(false);
   const [calibrando, setCalibrando] = useState(null); // sensor com o formulário aberto
@@ -56,8 +55,7 @@ export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover
   const cadastro = permissaoAcao(role, 'cadastro');
   const manutencao = permissaoAcao(role, 'manutencao');
   const calibracao = permissaoAcao(role, 'calibracao');
-  const saude = linha.saude;
-  const diverge = divergeFirmware(saude);
+  const diverge = divergeFirmware(linha.saude);
   const idAviso = `acao-aviso-${linha.id}`;
   const manutencaoEfetiva = error
     ? { permitido: false, motivo: 'Estado da manutenção indisponível: recarregue a página.' }
@@ -67,28 +65,9 @@ export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover
 
   const aposMudanca = async () => { await recarregar(); onMudou?.(); };
 
-  const idadeStatus = linha.statusIdadeMs == null
-    ? 'sem /status recebido nesta sessão'
-    : `recebido ${formatIdade(linha.statusIdadeMs)}`;
-  const uptime = formatUptime(saude.uptime);
-  const rssi = formatRssi(saude.rssi);
-
   return (
     <div className="details-container animate-fade-in">
-      {linha.deviceId && (
-        <div className="details-health">
-          <span className="info-label">Saúde dos sensores</span>
-          <HealthEvents deviceId={linha.deviceId} modo={linha.modo} />
-        </div>
-      )}
-
       <div className="details-info-grid">
-        {linha.deviceId && (
-          <div className="info-block">
-            <span className="info-label">Nº de Série / Device ID</span>
-            <span className="info-value" style={{ fontFamily: 'monospace', letterSpacing: '0.03em' }}>{linha.deviceId}</span>
-          </div>
-        )}
         <div className="info-block">
           <span className="info-label">Coordenadas (lat, lng)</span>
           <span className="info-value">{linha.coordenadas}</span>
@@ -99,68 +78,6 @@ export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover
             {formatInterval(linha.intervaloMs)}
           </span>
         </div>
-        <div className="info-block">
-          <span className="info-label">Manutenções</span>
-          {error ? (
-            <span className="info-value text-danger">indisponível ({error})</span>
-          ) : carregando ? (
-            <span className="info-value maint-vazio">carregando...</span>
-          ) : timeline.length === 0 ? (
-            <span className="info-value maint-vazio">nenhum registro</span>
-          ) : (
-            <ul className="maint-timeline">
-              {timeline.slice(0, 4).map((m) => (
-                <li key={m.id} className={m.timestamp_fim ? '' : 'aberta'}>
-                  <span className="maint-quando">
-                    {formatData(m.timestamp_inicio)}
-                    {!m.timestamp_fim && ' · em andamento'}
-                  </span>
-                  <span className="maint-motivo" title={m.motivo}>{m.motivo}</span>
-                  <span className="maint-quem">{m.operador_nome}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        {rssi && (
-          <div className="info-block">
-            <span className="info-label">Sinal WiFi (RSSI)</span>
-            <span className="info-value">{rssi}</span>
-            <span className="info-sub text-muted">{idadeStatus}</span>
-          </div>
-        )}
-        {uptime && (
-          <div className="info-block">
-            <span className="info-label">Uptime do Dispositivo</span>
-            <span className="info-value">{uptime}</span>
-            <span className="info-sub text-muted">{idadeStatus}</span>
-          </div>
-        )}
-        {Number.isFinite(saude.mqtt_latency) && (
-          <div className="info-block">
-            <span className="info-label">Latência MQTT</span>
-            <span className="info-value">{saude.mqtt_latency} ms</span>
-            <span className="info-sub text-muted">{idadeStatus}</span>
-          </div>
-        )}
-        {saude.firmware && (
-          <div className="info-block">
-            <span className="info-label">Firmware</span>
-            <span className="info-value" style={{ fontFamily: 'monospace' }}>
-              {saude.firmware}{saude.board ? ` · ${saude.board}` : ''}
-            </span>
-            <span className="info-sub text-muted">{idadeStatus}</span>
-          </div>
-        )}
-        {typeof saude.calibrated === 'boolean' && (
-          <div className="info-block">
-            <span className="info-label">Calibração no Firmware</span>
-            <span className={`info-value ${saude.calibrated ? '' : 'text-warning'}`}>
-              {saude.calibrated ? 'Calibrado' : 'Não calibrado'}
-            </span>
-            <span className="info-sub text-muted">{idadeStatus}</span>
-          </div>
-        )}
       </div>
 
       {painelAberto && aberta ? (
@@ -227,6 +144,9 @@ export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover
             <BotaoAcao permissao={cadastro} descrito={idAviso} className="btn-table action-btn danger-btn" onClick={() => onRemover(linha.id)}>
               <Trash2 size={16} /> Remover
             </BotaoAcao>
+            <Link className="btn-table action-btn" to={hrefFicha(linha.id)}>
+              <FileText size={16} /> Abrir ficha
+            </Link>
             <Link className="btn-table action-btn" to={hrefHistorico(linha.id)}>
               <History size={16} /> Ver histórico e exportar
             </Link>

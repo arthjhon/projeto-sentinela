@@ -68,7 +68,6 @@
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
-.bdm-sec h4 { margin: var(--sp-3) 0 var(--sp-1); font-size: var(--fs-sm); }
 /* Rótulo | valor numa linha de ~32 px em qualquer largura (antes, abaixo de
    480 px, o rótulo ia para cima do valor: ~46 px por linha). Com o corpo do
    modal largo o bastante para dois pares lado a lado (>= 600 px, contêiner),
@@ -83,8 +82,14 @@
 .bdm-tiles-fallback { filter: brightness(0.55); }
 .bdm-coord { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); color: var(--text-muted); }
 
-.bdm-list { margin: 0; padding-left: var(--sp-4); font-size: var(--fs-sm); display: grid; gap: var(--sp-1); }
 .bdm-nao-medido ul { margin: 0; padding-left: var(--sp-4); font-size: var(--fs-sm); }
+
+.bdm-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
 
 @container (min-width: 600px) {
   .bdm-sec dl { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-5); }
@@ -94,5 +99,6 @@
 @media (max-width: 479px) {
   .bdm-head { padding: var(--sp-3); }
   .bdm-body { padding: 0 var(--sp-3) var(--sp-3); }
+  .bdm-foot { padding: var(--sp-3); }
   .bdm-map { height: 160px; }
 }

@@ -64,29 +64,20 @@ const ok = (value) => ({ status: 'fulfilled', value });
 const falha = (msg) => ({ status: 'rejected', reason: new Error(msg) });
 
 describe('blocosDetalhes', () => {
-  const manut = [1, 2, 3, 4].map((id) => ({ id }));
-  const calibs = {
-    ph: { sensor_key: 'ph', calibrated_at: '2026-09-01T00:00:00Z' },
-    turbidez: { sensor_key: 'turbidez', calibrated_at: '2026-09-25T00:00:00Z' },
-    temperatura: { sensor_key: 'temperatura', calibrated_at: '2026-08-01T00:00:00Z' },
-    extra: { sensor_key: 'extra', calibrated_at: '2026-07-01T00:00:00Z' },
-  };
-  it('tudo lido: 3 manutenções, calibrações da mais recente, manutenção aberta e deploy', () => {
-    const b = blocosDetalhes([ok(manut), ok(null), ok(calibs), ok({ versao: '5.1.0' })]);
-    expect(b.manutencoes).toEqual({ ok: true, valor: manut.slice(0, 3) });
-    expect(b.aberta).toEqual({ ok: true, valor: null });
-    expect(b.calibracoes.ok).toBe(true);
-    expect(b.calibracoes.valor.map((c) => c.sensor_key)).toEqual(['turbidez', 'ph', 'temperatura']);
-    expect(b.deploy).toEqual({ ok: true, valor: { versao: '5.1.0' } });
+  it('lê manutenção aberta e deploy em blocos independentes', () => {
+    const b = blocosDetalhes([ok(null), ok({ versao: '5.1.0' })]);
+    expect(b).toEqual({
+      aberta: { ok: true, valor: null },
+      deploy: { ok: true, valor: { versao: '5.1.0' } },
+    });
   });
   it('uma leitura falha: só aquele bloco fica em erro, com a mensagem', () => {
-    const b = blocosDetalhes([ok([]), ok(null), falha('permission denied'), ok(null)]);
-    expect(b.calibracoes).toEqual({ ok: false, erro: 'permission denied' });
-    expect(b.manutencoes).toEqual({ ok: true, valor: [] });
+    const b = blocosDetalhes([falha('permission denied'), ok(null)]);
+    expect(b.aberta).toEqual({ ok: false, erro: 'permission denied' });
     expect(b.deploy).toEqual({ ok: true, valor: null });
   });
   it('rejeição sem Error vira texto', () => {
-    expect(blocosDetalhes([falha('x'), falha('y'), ok({}), { status: 'rejected', reason: 'boom' }]).deploy)
+    expect(blocosDetalhes([ok(null), { status: 'rejected', reason: 'boom' }]).deploy)
       .toEqual({ ok: false, erro: 'boom' });
   });
 });

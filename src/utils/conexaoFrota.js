@@ -57,3 +57,6 @@ export function frotaDoOta({ registro, carregando, fleet }) {
     modo: r.modo,
   }));
 }
+
+/** Colunas da tabela "Bóias" da tela Status (o detalhe de dispositivo mora na ficha da bóia). */
+export const COLUNAS_STATUS_BOIAS = ['Código', 'Nome', 'Modo', 'Conexão', 'Última leitura', 'Última gravação Influx'];

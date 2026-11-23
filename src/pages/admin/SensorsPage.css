@@ -169,16 +169,6 @@
   gap: var(--sp-3);
 }
 
-/* Saúde dos sensores: rótulo e "sem eventos" numa linha; a lista, quando há, embaixo. */
-.details-health {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--sp-1) var(--sp-3);
-}
-
-.details-health .sh-events { flex-basis: 100%; }
-
 .details-info-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
@@ -210,8 +200,6 @@
   font-size: var(--fs-sm);
   overflow-wrap: anywhere;
 }
-
-.info-sub { display: block; font-size: var(--fs-xs); }
 
 .attached-sensors-section {
   display: flex;
@@ -335,41 +323,6 @@
   background: rgba(245, 158, 11, 0.1);
   border-color: rgba(245, 158, 11, 0.6);
 }
-
-/* ── Timeline de manutenções ─────────────────────────────────── */
-.maint-timeline {
-  list-style: none;
-  margin: 2px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-}
-
-.maint-timeline li {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-left: var(--sp-2);
-  border-left: 2px solid rgba(255, 255, 255, 0.12);
-  font-size: var(--fs-sm);
-}
-
-/* manutenção ainda aberta: âmbar, o mesmo código de cor do modo manutenção */
-.maint-timeline li.aberta { border-left-color: var(--warning); }
-
-.maint-quando { color: var(--text-muted); font-size: var(--fs-xs); }
-
-.maint-motivo {
-  color: #e2e8f0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 220px;
-}
-
-.maint-quem { color: var(--text-subtle); font-size: var(--fs-xs); }
-.maint-vazio { color: var(--text-subtle); font-style: italic; }
 
 /* Manutenção aberta na linha da tabela */
 .maint-tag {
@@ -555,7 +508,6 @@
   .sensors-table.fleet-table .details-row td { padding: 0; background: transparent; }
   .sensors-table.fleet-table .details-container { padding: var(--sp-3) var(--sp-2); }
   .sensors-table.fleet-table .details-info-grid { padding: var(--sp-2); gap: var(--sp-2); }
-  .sensors-table.fleet-table .maint-motivo { max-width: 100%; }
   .sensors-table.fleet-table td[data-label]::before { content: attr(data-label) ': '; color: var(--text-muted); font-size: var(--fs-xs); }
   .sensors-table.fleet-table td.fleet-vazio { display: flex; align-items: center; justify-content: center; height: auto; min-height: 72px; }
 }

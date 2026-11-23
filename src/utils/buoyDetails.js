@@ -46,27 +46,13 @@ const bloco = (r) => (r.status === 'fulfilled'
   : { ok: false, erro: r.reason?.message ?? String(r.reason) });
 
 /**
- * Resultados de Promise.allSettled das 4 leituras do modal, na ordem
- * [listarManutencoes, manutencaoAberta, ultimasCalibracoes, ultimoDeploy],
- * em blocos independentes {ok:true, valor} | {ok:false, erro}. Uma leitura
- * que falha nunca vira "nenhuma registrada": o bloco fica em erro.
+ * Resultados de Promise.allSettled das 2 leituras do modal, na ordem
+ * [manutencaoAberta, ultimoDeploy], em blocos independentes
+ * {ok:true, valor} | {ok:false, erro}. Uma leitura que falha nunca vira
+ * "nenhuma registrada": o bloco fica em erro. O histórico mora na ficha da bóia.
  */
-export function blocosDetalhes([manutencoes, aberta, calibracoes, deploy]) {
-  const m = bloco(manutencoes);
-  const c = bloco(calibracoes);
-  return {
-    manutencoes: m.ok ? { ok: true, valor: (m.valor ?? []).slice(0, 3) } : m,
-    aberta: bloco(aberta),
-    calibracoes: c.ok
-      ? {
-          ok: true,
-          valor: Object.values(c.valor ?? {})
-            .sort((a, b) => new Date(b.calibrated_at) - new Date(a.calibrated_at))
-            .slice(0, 3),
-        }
-      : c,
-    deploy: bloco(deploy),
-  };
+export function blocosDetalhes([aberta, deploy]) {
+  return { aberta: bloco(aberta), deploy: bloco(deploy) };
 }
 
 /**

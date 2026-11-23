@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { conexaoDoRegistro, saudeDoStatus, frotaDoOta } from './conexaoFrota';
+import { conexaoDoRegistro, saudeDoStatus, frotaDoOta, COLUNAS_STATUS_BOIAS } from './conexaoFrota';
 import { montarLinhaBoia } from './boiasView';
 import { resumoBoia, mensagemDaSessao } from './dashboardView';
 
@@ -90,5 +90,11 @@ describe('frotaDoOta', () => {
   });
   it('carregado e vazio: nenhuma bóia', () => {
     expect(frotaDoOta({ registro: [], carregando: false, fleet })).toEqual([]);
+  });
+});
+
+describe('COLUNAS_STATUS_BOIAS', () => {
+  it('Status mostra só identificação, modo, conexão e as duas idades', () => {
+    expect(COLUNAS_STATUS_BOIAS).toEqual(['Código', 'Nome', 'Modo', 'Conexão', 'Última leitura', 'Última gravação Influx']);
   });
 });

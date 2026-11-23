@@ -1,19 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import { useSystemStatus } from '../../contexts/SystemStatusContext';
 import { useMqtt } from '../../hooks/useMqtt';
-import { usePolling } from '../../hooks/usePolling';
 import { useUltimasLeituras } from '../../hooks/useUltimasLeituras';
 import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { getMqttTopics } from '../../config/fleet';
-import { CLOCK_TICK_MS, STATUS_HEALTH_POLL_MS } from '../../config/adminTimings';
+import { CLOCK_TICK_MS } from '../../config/adminTimings';
 import { topicsForRegistry } from '../../services/buoyRegistry';
 import { mqttBrokerStatus, brokerDesde } from '../../services/systemStatus';
-import {
-  fetchSensorHealth, healthForDevice, estadoMeta, eventTone, fmtDate,
-} from '../../services/sensorHealth';
-import { conexaoDoRegistro } from '../../utils/conexaoFrota';
-import { formatIdade, formatUptime, formatRssi } from '../../utils/format';
+import { fmtDate } from '../../services/sensorHealth';
+import { conexaoDoRegistro, COLUNAS_STATUS_BOIAS } from '../../utils/conexaoFrota';
+import { hrefFicha } from '../../utils/fichaBoia';
+import { formatIdade } from '../../utils/format';
 import { rotuloConexao, TOM_CLASSE } from '../../utils/dashboardView';
 import RegistryErrorBanner from '../../components/admin/RegistryErrorBanner';
 import PageToolbar from '../../components/admin/PageToolbar';
@@ -60,8 +59,6 @@ const StatusPage = () => {
   const { buoys: registry, error: registryError, isFallback, reload: reloadRegistry } = useBuoyRegistry();
   const { ultimas } = useUltimasLeituras(registry);
   const [now, setNow] = useState(() => Date.now());
-  const [healthRows, setHealthRows] = useState([]);
-  const [healthError, setHealthError] = useState(false);
   // Hora da última transição de `connected` observada nesta página (ou da montagem):
   // é a única marca de tempo honesta do broker; sem ela não se mostra idade.
   const [broker0, setBroker0] = useState(() => ({ connected, desde: now }));
@@ -76,16 +73,7 @@ const StatusPage = () => {
     if (registry.length) addTopics(topicsForRegistry(registry));
   }, [registry, addTopics]);
 
-  const { runNow: reloadHealth } = usePolling(async ({ isCurrent }) => {
-    try {
-      const rows = await fetchSensorHealth();
-      if (isCurrent()) { setHealthRows(rows); setHealthError(false); }
-    } catch {
-      if (isCurrent()) setHealthError(true);
-    }
-  }, STATUS_HEALTH_POLL_MS);
-
-  const handleRefresh = () => { sys.refresh(); reloadHealth(); };
+  const handleRefresh = () => sys.refresh();
 
   const rowByName = useMemo(
     () => Object.fromEntries((sys.rows ?? []).map((r) => [r.componente, r])),
@@ -118,12 +106,8 @@ const StatusPage = () => {
       registro: r, mensagens: messages, chegadas: receivedAt, ultimas: ultimas[r.codigo] ?? [], agoraMs: now, brokerConectado: connected,
     });
     const lwt = d ? messages[`${d}/availability`] : undefined;
-    const st = d ? messages[`${d}/status`] : undefined;
-    const health = st && typeof st === 'object' ? st : {};
-    const statusChegada = d ? receivedAt[`${d}/status`] : undefined;
-    const sh = d ? healthForDevice(healthRows, d, modo) : { sensores: [], pior: 'ok' };
-    return { r, d, modo, lwt, lastAt, health, statusChegada, estado, sh };
-  }), [registry, messages, receivedAt, ultimas, healthRows, now, connected]);
+    return { r, d, modo, lwt, lastAt, estado };
+  }), [registry, messages, receivedAt, ultimas, now, connected]);
 
   const lwtTexto = (b) => (b.lwt === 'online' || b.lwt === 'offline' ? `LWT: ${b.lwt}` : 'sem LWT');
 
@@ -169,29 +153,23 @@ const StatusPage = () => {
 
       <section className="status-section glass">
         <h2>Bóias</h2>
-        {healthError && <p className="text-muted status-empty">Saúde dos sensores indisponível.</p>}
         <div className="status-table-wrap">
           <table className="sensors-table status-buoys">
             <thead>
               <tr>
-                <th>Código</th><th>Nome</th><th>Modo</th><th>Conexão</th><th>Última leitura</th>
-                <th>Última gravação Influx</th><th>Status recebido</th><th>RSSI</th><th>Uptime</th><th>Firmware</th><th>Calibrado</th><th>Sensores</th>
+                {COLUNAS_STATUS_BOIAS.map((c) => <th key={c}>{c}</th>)}
               </tr>
             </thead>
             <tbody>
               {buoyRows.length === 0 && (
-                <tr><td colSpan={12} className="text-muted">Nenhuma bóia cadastrada.</td></tr>
+                <tr><td colSpan={COLUNAS_STATUS_BOIAS.length} className="text-muted">Nenhuma bóia cadastrada.</td></tr>
               )}
               {buoyRows.map((b) => {
-                const tone = eventTone(b.sh.pior, b.modo);
                 const writeIso = b.d ? writes[b.d] : null;
-                const { health } = b;
                 const conexao = rotuloConexao(b.estado, b.lastAt ? formatIdade(now - b.lastAt) : null);
-                const stAt = b.statusChegada?.at;
-                const stIdade = Number.isFinite(stAt) ? formatIdade(now - stAt) : null;
                 return (
                   <tr key={b.r.codigo}>
-                    <td data-label="Código">{b.r.codigo}</td>
+                    <td data-label="Código"><Link to={hrefFicha(b.r.codigo)}>{b.r.codigo}</Link></td>
                     <td data-label="Nome">{b.r.nome}</td>
                     <td data-label="Modo"><span className={`badge ${b.modo === 'campo' ? 'badge-online' : 'badge-planejada'}`}>{b.modo === 'campo' ? 'Campo' : 'Bancada'}</span></td>
                     <td data-label="Conexão">
@@ -200,16 +178,6 @@ const StatusPage = () => {
                     </td>
                     <td data-label="Última leitura">{b.lastAt ? formatIdade(now - b.lastAt) : '—'}</td>
                     <td data-label="Última gravação Influx" title={writeIso ? fmtDate(writeIso) : undefined}>{writeIso ? ageOf(writeIso, now) : '—'}</td>
-                    <td data-label="Status recebido" title="Idade da última mensagem /status; RSSI, uptime e firmware abaixo são dela">
-                      {stIdade ? `${stIdade}${b.statusChegada.retained ? ' (retida)' : ''}` : '—'}
-                    </td>
-                    <td data-label="RSSI">{formatRssi(health.rssi) ?? '—'}</td>
-                    <td data-label="Uptime">{formatUptime(health.uptime) ?? '—'}</td>
-                    <td data-label="Firmware">{health.firmware ?? '—'}</td>
-                    <td data-label="Calibrado">{typeof health.calibrated === 'boolean' ? (health.calibrated ? 'Sim' : 'Não') : '—'}</td>
-                    <td data-label="Sensores">{b.d
-                      ? <span className={`badge ${TOM_CLASSE[tone]}`}>{estadoMeta(b.sh.pior).label}</span>
-                      : '—'}</td>
                   </tr>
                 );
               })}

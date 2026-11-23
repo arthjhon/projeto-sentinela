@@ -1,22 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { MapContainer, TileLayer, CircleMarker, AttributionControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { X } from 'lucide-react';
 import { TILES } from '../../../config/mapTiles';
 import { supabase } from '../../../lib/supabase';
-import { listarManutencoes, ultimasCalibracoes, manutencaoAberta } from '../../../services/maintenance';
+import { manutencaoAberta } from '../../../services/maintenance';
 import { ultimoDeploy } from '../../../services/otaCommand';
 import { normalizeModo } from '../../../services/buoyRegistry';
 import { blocosDetalhes, estadoManutencao } from '../../../utils/buoyDetails';
 import DeviceInfoList, { Row, Muted, SerialRows } from './DeviceInfoList';
 import { formatDataHora } from '../../../utils/format';
 import { destinoTab } from '../../../utils/focusTrap';
+import { hrefFicha } from '../../../utils/fichaBoia';
 import './BuoyDetailsModal.css';
 
 const FALHA = 'indisponível (falha na leitura)';
 const NAO_MEDIDO = ['Bateria', 'Temperatura interna', 'GPS', 'Sinal de gateway'];
-const SENSOR_LABEL = { temperatura: 'Temperatura', ph: 'pH', turbidez: 'Turbidez' };
 
 const fmtData = formatDataHora;
 
@@ -60,9 +61,7 @@ export default function BuoyDetailsModal({ buoy, statusMsg, agoraMs, onClose }) 
     let cancelado = false;
     // allSettled: uma leitura que falha não apaga as outras nem vira "nenhuma registrada"
     Promise.allSettled([
-      listarManutencoes(buoy.codigo),
       manutencaoAberta(buoy.codigo),
-      ultimasCalibracoes(buoy.codigo),
       ultimoDeploy(supabase, buoy.codigo),
     ]).then((resultados) => {
       if (!cancelado) setDados({ codigo: buoy.codigo, blocos: blocosDetalhes(resultados) });
@@ -123,43 +122,6 @@ export default function BuoyDetailsModal({ buoy, statusMsg, agoraMs, onClose }) 
             <DeviceInfoList statusMsg={statusMsg} agoraMs={agoraMs} deployBloco={blocos.deploy} />
           </section>
 
-          <section className="bdm-sec">
-            <h3>Histórico</h3>
-            <h4>Últimas manutenções</h4>
-            {!blocos.manutencoes ? <Muted>carregando…</Muted>
-              : !blocos.manutencoes.ok ? <Muted title={blocos.manutencoes.erro}>{FALHA}</Muted>
-              : blocos.manutencoes.valor.length ? (
-              <ul className="bdm-list">
-                {blocos.manutencoes.valor.map((m) => (
-                  <li key={m.id}>
-                    <strong>{fmtData(m.timestamp_inicio)}</strong>{m.timestamp_fim ? ` → ${fmtData(m.timestamp_fim)}` : ' (em aberto)'}
-                    <br /><Muted>{m.operador_nome}: {m.motivo}</Muted>
-                  </li>
-                ))}
-              </ul>
-            ) : <Muted>nenhuma registrada</Muted>}
-            <h4>Últimas calibrações</h4>
-            {!blocos.calibracoes ? <Muted>carregando…</Muted>
-              : !blocos.calibracoes.ok ? <Muted title={blocos.calibracoes.erro}>{FALHA}</Muted>
-              : blocos.calibracoes.valor.length ? (
-              <ul className="bdm-list">
-                {blocos.calibracoes.valor.map((c) => (
-                  <li key={c.id ?? c.sensor_key}>
-                    <strong>{SENSOR_LABEL[c.sensor_key] ?? c.sensor_key}</strong> em {fmtData(c.calibrated_at)}
-                    <br /><Muted>{c.operador_nome}{c.observacao ? `: ${c.observacao}` : ''}</Muted>
-                  </li>
-                ))}
-              </ul>
-            ) : <Muted>nenhuma registrada</Muted>}
-            <h4>Último deploy de firmware</h4>
-            {!blocos.deploy ? <Muted>carregando…</Muted>
-              : !blocos.deploy.ok ? <Muted title={blocos.deploy.erro}>{FALHA}</Muted>
-              : blocos.deploy.valor ? (
-              <p><strong>{blocos.deploy.valor.versao}</strong> em {fmtData(blocos.deploy.valor.data_deploy)}
-                {blocos.deploy.valor.operador_nome && <Muted> por {blocos.deploy.valor.operador_nome}</Muted>}</p>
-            ) : <Muted>nenhum deploy com sucesso registrado</Muted>}
-          </section>
-
           <section className="bdm-sec bdm-nao-medido">
             <h3>Não medido por este hardware</h3>
             <ul>
@@ -167,6 +129,10 @@ export default function BuoyDetailsModal({ buoy, statusMsg, agoraMs, onClose }) 
             </ul>
           </section>
         </div>
+
+        <footer className="bdm-foot">
+          <Link className="btn-table action-btn" to={hrefFicha(buoy.codigo)} onClick={onClose}>Abrir ficha completa</Link>
+        </footer>
       </div>
     </div>,
     document.body

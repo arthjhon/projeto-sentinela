@@ -152,17 +152,12 @@ describe('registrarCalibracao', () => {
 });
 
 describe('leituras por bóia com limite', () => {
-  it('listarManutencoes aplica .limit quando o limite é inteiro', async () => {
+  it('listarManutencoes aplica .limit', async () => {
     chain.lista.listResult = [{ id: 1 }];
     expect(await listarManutencoes('SM-01', 100)).toEqual([{ id: 1 }]);
     expect(chain.calls).toContainEqual(['eq', 'boia_id', 'SM-01']);
     expect(chain.calls).toContainEqual(['order', 'timestamp_inicio', { ascending: false }]);
     expect(chain.calls).toContainEqual(['limit', 100]);
-  });
-  it('listarManutencoes sem limite (chamadores atuais) não aplica .limit', async () => {
-    chain.lista.listResult = [];
-    await listarManutencoes('SM-01');
-    expect(chain.calls.some((c) => c[0] === 'limit')).toBe(false);
   });
   it('listarManutencoes lança em erro e devolve [] com data nula', async () => {
     chain.lista.listError = { message: 'boom' };

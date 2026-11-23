@@ -130,17 +130,15 @@ export async function cancelarManutencao(boiaId, notas) {
 }
 
 /**
- * Histórico de manutenções da bóia, mais recente primeiro. `limite` só é
- * aplicado quando inteiro: chamadores antigos (sem limite) seguem sem teto.
+ * Histórico de manutenções da bóia, mais recente primeiro, até `limite` registros.
  */
 export async function listarManutencoes(boiaId, limite) {
-  let q = supabase
+  const { data, error } = await supabase
     .from('maintenance_logs')
     .select('*')
     .eq('boia_id', boiaId)
-    .order('timestamp_inicio', { ascending: false });
-  if (Number.isInteger(limite)) q = q.limit(limite);
-  const { data, error } = await q;
+    .order('timestamp_inicio', { ascending: false })
+    .limit(limite);
   if (error) throw new Error(error.message);
   return data ?? [];
 }
