@@ -1,0 +1,92 @@
+/* Seção "Clima e aporte" da visão geral. */
+
+.clima-coleta { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; font-size: 0.78rem; }
+.clima-selo { font-size: 0.68rem; padding: 0.1rem 0.5rem; }
+
+.clima-aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+}
+.clima-aviso svg { color: var(--warning); flex-shrink: 0; margin-top: 0.1rem; }
+
+.clima-bloco { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+.clima-bloco h4 { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; margin: 0; }
+.clima-sub { margin-top: 0.4rem !important; }
+.clima-vazio { font-size: 0.82rem; }
+
+.clima-tag {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #93c5fd;
+  border: 1px dashed rgba(147, 197, 253, 0.55);
+}
+.clima-tag.is-medido { color: #6ee7b7; border: 1px solid rgba(110, 231, 183, 0.55); }
+
+/* Dias: grade que quebra em vez de rolar de lado */
+.clima-dias {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 128px), 1fr));
+  gap: 0.6rem;
+}
+.clima-dia {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.15);
+  min-width: 0;
+}
+.clima-dia.is-forte { border-color: color-mix(in srgb, var(--warning) 60%, transparent); }
+.clima-dia-nome { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: capitalize; }
+.clima-dia-chuva { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 1.1rem; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+.clima-dia-chuva.is-vazio { font-size: 0.85rem; color: #64748b; }
+.clima-dia-forte { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; font-weight: 600; color: var(--warning); }
+.clima-dia-dados { display: grid; gap: 0.15rem; margin: 0; font-size: 0.72rem; }
+.clima-dia-dados div { display: flex; justify-content: space-between; gap: 0.4rem; }
+.clima-dia-dados dt { color: #64748b; }
+.clima-dia-dados dd { margin: 0; color: #cbd5e1; text-align: right; font-variant-numeric: tabular-nums; }
+.clima-dia-parcial { font-size: 0.68rem; color: #64748b; }
+
+/* Hoje hora a hora: dois gráficos pequenos (um eixo cada) */
+.clima-horas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 1rem; }
+.clima-grafico { margin: 0; min-width: 0; }
+.clima-grafico figcaption { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+.clima-grafico-corpo { height: 150px; }
+.clima-tt { font-size: 0.8rem; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+
+/* Bacia e rio */
+.clima-duo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.clima-colunas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 1rem; }
+.clima-col-titulo { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; margin: 0 0 0.4rem !important; font-size: 0.78rem !important; color: var(--text-muted); }
+.clima-acums { display: grid; gap: 0.3rem; margin: 0; }
+.clima-acum { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; font-size: 0.85rem; }
+.clima-acum dt { color: var(--text-muted); }
+.clima-acum dd { margin: 0; font-family: 'Outfit', sans-serif; font-weight: 700; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+.clima-acum dd.is-vazio { font-family: inherit; font-weight: 600; color: #64748b; font-size: 0.8rem; }
+.clima-leitura { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem !important; }
+
+.clima-rio { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; }
+.clima-rio-valor { font-family: 'Outfit', sans-serif; font-size: 1.6rem; font-weight: 700; color: #e2e8f0; font-variant-numeric: tabular-nums; }

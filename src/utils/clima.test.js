@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   LIMITE_CHUVA_FORTE_MM, diasLocais, acumuladoProximas, acumuladoUltimas,
-  classificarVazao, avisoChuvaForte, frescor,
+  classificarVazao, avisoChuvaForte, frescor, hojeLocal, horaLocal,
 } from './clima';
 
 const H = 3600000;
@@ -148,5 +148,31 @@ describe('frescor', () => {
     expect(frescor(null, agora)).toBe('sem dado');
     expect(frescor(undefined, agora)).toBe('sem dado');
     expect(frescor(NaN, agora)).toBe('sem dado');
+  });
+});
+
+describe('hojeLocal', () => {
+  it('21:00–23:59 local (00:00–02:59 UTC do dia seguinte) ainda é o dia local anterior', () => {
+    expect(hojeLocal(utc('2026-11-23T00:00:00Z'))).toBe('2026-11-22'); // 21:00 local
+    expect(hojeLocal(utc('2026-11-23T02:59:59Z'))).toBe('2026-11-22'); // 23:59:59 local
+  });
+  it('vira à meia-noite local (03:00 UTC)', () => {
+    expect(hojeLocal(utc('2026-11-23T03:00:00Z'))).toBe('2026-11-23');
+    expect(hojeLocal(utc('2026-11-22T12:00:00Z'))).toBe('2026-11-22');
+  });
+  it('virada de mês e de ano', () => {
+    expect(hojeLocal(utc('2027-01-01T01:30:00Z'))).toBe('2026-12-31');
+  });
+});
+
+describe('horaLocal', () => {
+  it('HH:MM em Maceió (UTC-3)', () => {
+    expect(horaLocal(utc('2026-11-23T02:30:00Z'))).toBe('23:30');
+    expect(horaLocal(utc('2026-11-22T03:05:00Z'))).toBe('00:05');
+    expect(horaLocal(utc('2026-11-22T15:00:00Z'))).toBe('12:00');
+  });
+  it('sem instante válido = null', () => {
+    expect(horaLocal(null)).toBeNull();
+    expect(horaLocal(NaN)).toBeNull();
   });
 });

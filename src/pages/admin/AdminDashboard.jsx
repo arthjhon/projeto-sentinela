@@ -15,10 +15,11 @@ import { criarFilaSerial } from '../../utils/filaSerial';
 import FleetStrip from '../../components/admin/dashboard/FleetStrip';
 import BuoyPanel from '../../components/admin/dashboard/BuoyPanel';
 import BuoyDetailsModal from '../../components/admin/dashboard/BuoyDetailsModal';
+import ClimaPanel from '../../components/admin/dashboard/ClimaPanel';
 import './AdminDashboard.css';
 
-// Visão geral: a frota primeiro (um card por bóia do cadastro), depois tudo da
-// bóia selecionada. Seleção no endereço (?boia=<codigo>) para link e "voltar".
+// Visão geral: a frota primeiro (um card por bóia do cadastro), o clima e o
+// aporte de água doce, depois tudo da bóia selecionada. Seleção no endereço (?boia=<codigo>) para link e "voltar".
 // Só dado real: sem leitura aparece como "sem leitura", nunca 0 nem valor de
 // outra bóia.
 
@@ -171,6 +172,7 @@ const AdminDashboard = () => {
             saudeIndisponivel={healthRows === null}
             agoraMs={agoraMs}
           />
+          <ClimaPanel fila={fila} jobs={jobs} agoraMs={agoraMs} />
           {atual && (
             <BuoyPanel
               key={atual.buoy.codigo}

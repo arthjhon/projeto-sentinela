@@ -28,6 +28,17 @@ function diaLocal(ms) {
   return new Date(ms + OFFSET_LOCAL_MS).toISOString().slice(0, 10);
 }
 
+/** 'YYYY-MM-DD' de hoje em Maceió (UTC−3) para o instante `agoraMs`. */
+export function hojeLocal(agoraMs) {
+  return diaLocal(agoraMs);
+}
+
+/** 'HH:MM' em Maceió (UTC−3); null sem instante válido. */
+export function horaLocal(ms) {
+  const t = numero(ms);
+  return t === null ? null : new Date(t + OFFSET_LOCAL_MS).toISOString().slice(11, 16);
+}
+
 const soma = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) : null);
 const max = (xs) => (xs.length ? Math.max(...xs) : null);
 const min = (xs) => (xs.length ? Math.min(...xs) : null);
