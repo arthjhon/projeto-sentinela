@@ -21,13 +21,15 @@ const SEM_TOPICOS = [];
  *   conexao: {texto: string, tom: string},
  *   ultimaMs: number|null,
  *   agoraMs: number,
+ *   ultimasErro: string|null,
+ *   recarregarUltimas: (() => Promise<void>)|null,
  * }}
  */
 export function useFichaAoVivo(buoy) {
   const { messages, receivedAt, connected, addTopics } = useMqtt(SEM_TOPICOS);
   const serial = serialValido(buoy);
   const temSerial = deviceIdsOf(buoy).length > 0;
-  const { ultimas } = useUltimasLeituras(temSerial ? [buoy] : SEM_BOIAS);
+  const { ultimas, erros, recarregar } = useUltimasLeituras(temSerial ? [buoy] : SEM_BOIAS);
   const [agoraMs, setAgoraMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -46,5 +48,8 @@ export function useFichaAoVivo(buoy) {
   const conexao = rotuloConexao(estado, ultimaMs ? formatIdade(agoraMs - ultimaMs) : null);
   const statusMsg = serial ? mensagemDaSessao(messages[`${serial}/status`], receivedAt[`${serial}/status`]) : null;
 
-  return { statusMsg, conexao, ultimaMs, agoraMs };
+  const ultimasErro = erros[buoy.codigo] ?? null;
+  const recarregarUltimas = temSerial ? () => recarregar(buoy.codigo) : null;
+
+  return { statusMsg, conexao, ultimaMs, agoraMs, ultimasErro, recarregarUltimas };
 }

@@ -159,9 +159,9 @@ describe('motivoCodigoInvalido', () => {
     expect(motivoCodigoInvalido('FROTA')).toBe('O código "FROTA" é reservado pelo painel.');
     expect(motivoCodigoInvalido('firmware')).toBe('O código "firmware" é reservado pelo painel.');
   });
-  it('recusa "/", "." e ".."', () => {
-    const msg = 'O código não pode conter "/" nem ser "." ou "..".';
-    for (const c of ['a/b', '.', '..']) expect(motivoCodigoInvalido(c)).toBe(msg);
+  it('recusa "/", "%", "." e ".."', () => {
+    const msg = 'O código não pode conter "/" nem "%", nem ser "." ou "..".';
+    for (const c of ['a/b', 'a%2Fb', '.', '..']) expect(motivoCodigoInvalido(c)).toBe(msg);
   });
   it('aceita código comum', () => {
     expect(motivoCodigoInvalido('SM-01')).toBeNull();

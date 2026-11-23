@@ -4,7 +4,7 @@ import {
   paraFonte, fonteInicial, nomeDoSensor,
   itensManutencao, itensCalibracao, itensFirmware, itensSaude, itensCadastro,
   montarLinhaDoTempo, linhasSensores, resolverFicha, hrefFicha,
-  manutencaoAbertaDaFonte, ultimoDeploySucessoDaFonte,
+  manutencaoAbertaDaFonte, ultimoDeploySucessoDaFonte, linhaDoTempoVazia,
 } from './fichaBoia';
 import { formatDataHora } from './format';
 import { AUDIT } from '../services/auditLog';
@@ -261,5 +261,22 @@ describe('ultimoDeploySucessoDaFonte', () => {
     expect(ultimoDeploySucessoDaFonte({ estado: 'ok', linhas: [{ status: 'erro' }] })).toEqual({ ok: true, valor: null });
     const ok = { id: 2, status: 'sucesso' };
     expect(ultimoDeploySucessoDaFonte({ estado: 'ok', linhas: [{ status: 'pendente' }, ok, { status: 'sucesso', id: 1 }] })).toEqual({ ok: true, valor: ok });
+  });
+});
+
+describe('linhaDoTempoVazia', () => {
+  it('vazia sem avisos', () => {
+    expect(linhaDoTempoVazia({ itens: [], avisos: [] })).toBe(true);
+  });
+  it('vazia quando todos os avisos são sem-acesso', () => {
+    expect(linhaDoTempoVazia({ itens: [], avisos: [{ tipo: 'cadastro', estado: 'sem-acesso' }] })).toBe(true);
+  });
+  it('não vazia com aviso de erro ou carregando', () => {
+    expect(linhaDoTempoVazia({ itens: [], avisos: [{ tipo: 'saude', estado: 'erro' }] })).toBe(false);
+    expect(linhaDoTempoVazia({ itens: [], avisos: [{ tipo: 'saude', estado: 'carregando' }] })).toBe(false);
+    expect(linhaDoTempoVazia({ itens: [], avisos: [{ tipo: 'cadastro', estado: 'sem-acesso' }, { tipo: 'saude', estado: 'erro' }] })).toBe(false);
+  });
+  it('não vazia com qualquer item', () => {
+    expect(linhaDoTempoVazia({ itens: [{ id: 'x' }], avisos: [] })).toBe(false);
   });
 });

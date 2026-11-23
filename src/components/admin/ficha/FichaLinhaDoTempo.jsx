@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TIPOS, ROTULO_TIPO, montarLinhaDoTempo } from '../../../utils/fichaBoia';
+import { TIPOS, ROTULO_TIPO, montarLinhaDoTempo, linhaDoTempoVazia } from '../../../utils/fichaBoia';
 import { paginar } from '../../../utils/paginar';
 import { formatDataHora } from '../../../utils/format';
 import { TOM_CLASSE } from '../../../utils/dashboardView';
@@ -28,7 +28,7 @@ export default function FichaLinhaDoTempo({ fontes, agoraMs, serialAtual, modo, 
 
   const { itens, avisos, limitesAtingidos } = montarLinhaDoTempo({ fontes, filtro, agoraMs, serialAtual, modo });
   const { itens: visiveis, pagina: atual, totalPaginas } = paginar(itens, pagina, POR_PAGINA);
-  const vazio = itens.length === 0 && avisos.length === 0;
+  const vazio = linhaDoTempoVazia({ itens, avisos });
 
   const escolher = (chave) => { setFiltro(chave); setPagina(1); };
 

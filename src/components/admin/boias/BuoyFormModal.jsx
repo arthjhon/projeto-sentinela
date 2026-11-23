@@ -86,12 +86,14 @@ export default function BuoyFormModal({ inicial, editando, codigosExistentes, on
       setSalvando(false);
       return;
     }
+    // Aguarda o insert da auditoria (logAcao nunca lança) para que o recarregamento
+    // da linha do tempo em onSaved já enxergue o evento. "Salvando..." segue visível.
     if (editando) {
+      await logAcao(AUDIT.BOIA_EDITAR, codigo, { nome, deviceId, modo: form.modo });
       addToast('Cadastro da bóia atualizado.', 'success');
-      logAcao(AUDIT.BOIA_EDITAR, codigo, { nome, deviceId, modo: form.modo });
     } else {
+      await logAcao(AUDIT.BOIA_CRIAR, codigo, { nome, deviceId, modo: form.modo });
       addToast('Bóia cadastrada.', 'success');
-      logAcao(AUDIT.BOIA_CRIAR, codigo, { nome, deviceId, modo: form.modo });
     }
     onSaved(codigo);
     onClose();

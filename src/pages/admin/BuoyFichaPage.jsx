@@ -87,6 +87,14 @@ function FichaConteudo({ buoy, registry }) {
           <p className="ficha-conexao">
             <span className={`badge ${TOM_CLASSE[vivo.conexao.tom]}`}>{vivo.conexao.texto}</span>
           </p>
+          {vivo.ultimasErro && (
+            <p className="text-muted" role="status">
+              Última leitura gravada indisponível ({vivo.ultimasErro}).
+              {vivo.recarregarUltimas && (
+                <>{' '}<button type="button" className="btn-table btn-sm" onClick={vivo.recarregarUltimas}>Tentar de novo</button></>
+              )}
+            </p>
+          )}
           <DeviceInfoList statusMsg={vivo.statusMsg} agoraMs={vivo.agoraMs} deployBloco={ficha.ultimoDeploySucesso} />
         </section>
 

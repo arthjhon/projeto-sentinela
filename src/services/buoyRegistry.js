@@ -98,8 +98,8 @@ export function motivoCodigoInvalido(codigo) {
     return `O código "${codigo}" é reservado pelo painel.`;
   }
   const c = String(codigo);
-  if (c.includes('/') || c === '.' || c === '..') {
-    return 'O código não pode conter "/" nem ser "." ou "..".';
+  if (c.includes('/') || c.includes('%') || c === '.' || c === '..') {
+    return 'O código não pode conter "/" nem "%", nem ser "." ou "..".';
   }
   return null;
 }

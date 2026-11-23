@@ -248,3 +248,11 @@ export function ultimoDeploySucessoDaFonte(fonte) {
   if (fonte?.estado === 'ok') return { ok: true, valor: fonte.linhas.find((r) => r.status === 'sucesso') ?? null };
   return fonte?.estado === 'erro' ? { ok: false, erro: fonte.erro } : undefined;
 }
+
+/**
+ * "Nenhum evento registrado." vale quando não há itens e todo aviso é
+ * 'sem-acesso' (zero avisos conta). Aviso de erro/carregando não é vazio.
+ */
+export function linhaDoTempoVazia({ itens, avisos }) {
+  return itens.length === 0 && avisos.every((a) => a.estado === 'sem-acesso');
+}
