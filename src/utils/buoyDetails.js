@@ -24,6 +24,39 @@ export function formatMemoria(free, total) {
   return t ? `${f} livres de ${t}` : `${f} livres`;
 }
 
+/** Rótulos do motivo do último reset da placa (campo `reset_reason`, firmware >= 5.2.0). */
+export const ROTULO_REINICIO = {
+  poweron: 'Energia ligada',
+  external: 'Botão de reset',
+  brownout: 'Queda de tensão',
+  panic: 'Falha do firmware (panic)',
+  task_wdt: 'Watchdog (tarefa travada)',
+  int_wdt: 'Watchdog (interrupção)',
+  other_wdt: 'Watchdog',
+  deepsleep: 'Saída do sono profundo',
+  ota: 'Atualização de firmware (OTA)',
+  rollback: 'Volta automática (rollback)',
+  offline: 'Sem broker por 10 min',
+  remote: 'Comando remoto',
+  console: 'Console serial',
+  software: 'Reinício pelo firmware',
+  unknown: 'Desconhecido',
+};
+
+export function rotuloReinicio(codigo) {
+  if (codigo === undefined || codigo === null || codigo === '') return null;
+  return Object.hasOwn(ROTULO_REINICIO, codigo) ? ROTULO_REINICIO[codigo] : `Desconhecido (${codigo})`;
+}
+
+/** Memória com mínimo desde o boot e maior bloco contíguo, quando a placa os informa. */
+export function formatMemoriaDetalhada(statusMsg) {
+  const base = formatMemoria(statusMsg?.free_heap, statusMsg?.total_heap);
+  if (!base) return null;
+  const min = formatBytes(statusMsg.min_free_heap);
+  const bloco = formatBytes(statusMsg.max_alloc_heap);
+  return base + (min ? ` · mínimo ${min} desde o boot` : '') + (bloco ? ` · maior bloco ${bloco}` : '');
+}
+
 /** "recebido há X" de um valor de /status da sessão (`_recebidoEm`); sem hora = null. */
 export function rotuloRecebido(recebidoEm, agoraMs) {
   const idade = typeof recebidoEm === 'number' && Number.isFinite(recebidoEm) ? formatIdade(agoraMs - recebidoEm) : null;

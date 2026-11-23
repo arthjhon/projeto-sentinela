@@ -13,7 +13,7 @@ const chain = vi.hoisted(() => {
 });
 vi.mock('../lib/supabase', () => ({ supabase: { from: () => chain.q } }));
 
-import { montarRegistro, listarAuditoriaDaEntidade, AUDIT } from './auditLog.js';
+import { montarRegistro, listarAuditoriaDaEntidade, AUDIT, AUDIT_LABELS } from './auditLog.js';
 
 describe('montarRegistro', () => {
   it('never carries operador_nome (the server derives it from profiles)', () => {
@@ -52,5 +52,12 @@ describe('listarAuditoriaDaEntidade', () => {
     expect(await listarAuditoriaDaEntidade('SM-01', ['x'], 5)).toEqual([]);
     chain.res.error = { message: 'rls' };
     await expect(listarAuditoriaDaEntidade('SM-01', ['x'], 5)).rejects.toThrow('rls');
+  });
+});
+
+describe('BOIA_REINICIAR', () => {
+  it('ação e rótulo', () => {
+    expect(AUDIT.BOIA_REINICIAR).toBe('boia.reiniciar');
+    expect(AUDIT_LABELS['boia.reiniciar']).toBe('Placa reiniciada (comando remoto)');
   });
 });

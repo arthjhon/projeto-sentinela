@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   buildDeployRow, requestOtaCommand, otaErrorMessage, ultimoDeploy,
   removeFirmwareFile, listarDeploys, listarDeploysDaBoia, deveRemoverBin,
+  requestRebootCommand,
 } from './otaCommand';
 
 const httpError = (status, body) => ({
@@ -208,5 +209,26 @@ describe('listarDeploysDaBoia', () => {
   it('returns [] on null data and throws on error', async () => {
     expect(await listarDeploysDaBoia(chain({ data: null, error: null }).client, 'SM-01', 5)).toEqual([]);
     await expect(listarDeploysDaBoia(chain({ data: null, error: { message: 'rls' } }).client, 'SM-01', 5)).rejects.toThrow('rls');
+  });
+});
+
+describe('requestRebootCommand', () => {
+  it('invoca ota-command e devolve sentAt em ms', async () => {
+    const { client, invoke, from } = makeClient({ data: { ok: true, sent_at: 1700000000 }, error: null });
+    expect(await requestRebootCommand(client, 'SM-01')).toEqual({ ok: true, sentAt: 1700000000000 });
+    expect(invoke).toHaveBeenCalledWith('ota-command', { body: { action: 'reboot', boia_id: 'SM-01' } });
+    expect(from).not.toHaveBeenCalled();
+  });
+  it('erro com código, sem tocar firmware_deploys', async () => {
+    const { client, from } = makeClient({ data: null, error: httpError(422, { error: 'no_device' }) });
+    const r = await requestRebootCommand(client, 'SM-01');
+    expect(r).toMatchObject({ ok: false, code: 'no_device', status: 422 });
+    expect(r.message).toBe(otaErrorMessage('no_device'));
+    expect(from).not.toHaveBeenCalled();
+  });
+  it('invalid_boia_id tem mensagem própria', () => expect(otaErrorMessage('invalid_boia_id')).not.toMatch(/Falha ao enviar/));
+  it('erro de rede', async () => {
+    const { client } = makeClient({ data: null, error: { name: 'FunctionsFetchError', message: 'x', context: {} } });
+    expect(await requestRebootCommand(client, 'SM-01')).toMatchObject({ ok: false, code: 'network_error', status: null });
   });
 });

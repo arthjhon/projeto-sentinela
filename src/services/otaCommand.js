@@ -4,6 +4,7 @@
 
 const MESSAGES = {
   not_pending: 'O deploy não está pendente (já foi enviado ou encerrado).',
+  invalid_boia_id: 'Identificador da bóia inválido.',
   no_device: 'A bóia selecionada não possui dispositivo associado.',
   bad_device: 'O identificador do dispositivo da bóia é inválido.',
   bad_path: 'O caminho do arquivo de firmware é inválido.',
@@ -73,6 +74,31 @@ export async function requestOtaCommand(supabaseClient, deployId) {
     } catch { /* history is best-effort here */ }
   }
 
+  return { ok: false, code, status, message: otaErrorMessage(code) };
+}
+
+/**
+ * Pede à Edge Function o reinício remoto da placa da bóia. Não toca em
+ * firmware_deploys. `sentAt` em ms (a função devolve segundos). Nunca lança.
+ * @returns {Promise<{ok: true, sentAt: number} | {ok: false, code: string, status: number|null, message: string}>}
+ */
+export async function requestRebootCommand(supabaseClient, boiaId) {
+  const { data, error } = await supabaseClient.functions.invoke('ota-command', {
+    body: { action: 'reboot', boia_id: boiaId },
+  });
+  if (!error) {
+    const s = Number(data?.sent_at);
+    return { ok: true, sentAt: Number.isFinite(s) ? s * 1000 : Date.now() };
+  }
+
+  const status = error.context?.status ?? null;
+  let code = status ? 'http_error' : 'network_error';
+  if (error.context?.json) {
+    try {
+      const body = await error.context.json();
+      if (body?.error) code = String(body.error);
+    } catch { /* body is not JSON; keep generic code */ }
+  }
   return { ok: false, code, status, message: otaErrorMessage(code) };
 }
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   formatUptime, formatBytes, formatMemoria, escolherFirmware, formatRssi,
   blocosDetalhes, estadoFirmware, estadoManutencao, rotuloRecebido,
+  ROTULO_REINICIO, rotuloReinicio, formatMemoriaDetalhada,
 } from './buoyDetails';
 
 describe('formatUptime', () => {
@@ -116,4 +117,30 @@ describe('rotuloRecebido (idade do valor de status)', () => {
     expect(rotuloRecebido(null, agoraMs)).toBeNull();
     expect(rotuloRecebido(NaN, agoraMs)).toBeNull();
   });
+});
+
+describe('rotuloReinicio', () => {
+  it('15 rótulos exatos', () => {
+    expect(ROTULO_REINICIO).toEqual({
+      poweron: 'Energia ligada', external: 'Botão de reset', brownout: 'Queda de tensão',
+      panic: 'Falha do firmware (panic)', task_wdt: 'Watchdog (tarefa travada)',
+      int_wdt: 'Watchdog (interrupção)', other_wdt: 'Watchdog', deepsleep: 'Saída do sono profundo',
+      ota: 'Atualização de firmware (OTA)', rollback: 'Volta automática (rollback)',
+      offline: 'Sem broker por 10 min', remote: 'Comando remoto', console: 'Console serial',
+      software: 'Reinício pelo firmware', unknown: 'Desconhecido',
+    });
+  });
+  it('conhecido', () => expect(rotuloReinicio('remote')).toBe('Comando remoto'));
+  it('fora da lista', () => expect(rotuloReinicio('xyz')).toBe('Desconhecido (xyz)'));
+  it('ausente', () => { expect(rotuloReinicio(undefined)).toBeNull(); expect(rotuloReinicio(null)).toBeNull(); });
+});
+
+describe('formatMemoriaDetalhada', () => {
+  it('completa', () => expect(formatMemoriaDetalhada({ free_heap: 200000, total_heap: 300000, min_free_heap: 100000, max_alloc_heap: 50000 }))
+    .toBe('195 KB livres de 293 KB · mínimo 98 KB desde o boot · maior bloco 49 KB'));
+  it('sem min_free_heap só a base', () => expect(formatMemoriaDetalhada({ free_heap: 200000, total_heap: 300000 }))
+    .toBe('195 KB livres de 293 KB'));
+  it('só maior bloco', () => expect(formatMemoriaDetalhada({ free_heap: 200000, max_alloc_heap: 50000 }))
+    .toBe('195 KB livres · maior bloco 49 KB'));
+  it('sem free_heap', () => { expect(formatMemoriaDetalhada({ min_free_heap: 1 })).toBeNull(); expect(formatMemoriaDetalhada(null)).toBeNull(); });
 });
