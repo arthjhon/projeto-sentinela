@@ -10,8 +10,8 @@ import BuoyRow from '../../components/admin/boias/BuoyRow';
 import BuoyDetails from '../../components/admin/boias/BuoyDetails';
 import BuoyFormModal from '../../components/admin/boias/BuoyFormModal';
 import { logAcao, AUDIT } from '../../services/auditLog';
-import { getBuoyRegistry, saveBuoyRegistry, normalizeModo } from '../../services/buoyRegistry';
-import { FORM_VAZIO, permissaoAcao } from '../../utils/boiasView';
+import { getBuoyRegistry, saveBuoyRegistry } from '../../services/buoyRegistry';
+import { FORM_VAZIO, permissaoAcao, formDoRegistro } from '../../utils/boiasView';
 import PageToolbar from '../../components/admin/PageToolbar';
 import './SensorsPage.css';
 
@@ -54,19 +54,7 @@ const SensorsPage = () => {
       reloadRegistry();
       return;
     }
-    setFormulario({
-      editando: true,
-      inicial: {
-        id: linha.id,
-        deviceId: reg.deviceId ?? '',
-        deviceIdsAnteriores: reg.deviceIdsAnteriores ?? [],
-        name: reg.nome ?? linha.nome,
-        lagoa: reg.lagoa ?? 'mundau',
-        modo: normalizeModo(reg.modo),
-        lat: reg.lat ?? '',
-        lng: reg.lng ?? '',
-      },
-    });
+    setFormulario({ editando: true, inicial: formDoRegistro({ ...reg, nome: reg.nome ?? linha.nome }) });
   };
 
   // Registro primeiro: a tabela é derivada dele, então a bóia só some da lista quando

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   rotuloCalibracao, divergeFirmware,
-  rotuloManutencaoAberta, permissaoAcao, hrefHistorico, montarLinhaBoia,
+  rotuloManutencaoAberta, permissaoAcao, hrefHistorico, montarLinhaBoia, formDoRegistro,
 } from './boiasView';
 import { resumoBoia } from './dashboardView';
 import { SEM_LEITURA_MS } from './buoyConnection';
@@ -182,6 +182,14 @@ describe('montarLinhaBoia', () => {
     it('valor do sensor cai na leitura gravada quando não há MQTT', () => {
       const l = montarLinhaBoia(base({ ultimas: [{ time: new Date(AGORA - 20_000), ph: 7.1, turbidez: 12.34, temperatura: 28 }] }));
       expect(l.sensores.find((x) => x.key === 'turbidez').valor).toBe('12,3 NTU');
+    });
+  });
+});
+
+describe('formDoRegistro', () => {
+  it('normaliza o registro para o formulário de edição', () => {
+    expect(formDoRegistro({ codigo: 'SM-01', nome: 'X', modo: 'xyz' })).toEqual({
+      id: 'SM-01', deviceId: '', deviceIdsAnteriores: [], name: 'X', lagoa: 'mundau', modo: 'bancada', lat: '', lng: '',
     });
   });
 });

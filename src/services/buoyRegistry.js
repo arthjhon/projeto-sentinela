@@ -86,3 +86,19 @@ export function withModo(previous, entry, nowIso) {
   }
   return previous.modoDesde ? { ...rest, modo, modoDesde: previous.modoDesde } : { ...rest, modo };
 }
+
+const CODIGOS_RESERVADOS = ['frota', 'firmware'];
+
+/**
+ * Motivo pelo qual o código geraria uma ficha inalcançável em /admin/boias/:codigo
+ * (rotas irmãs do painel, ou segmento que o roteador não casa); null se serve.
+ */
+export function motivoCodigoInvalido(codigo) {
+  if (CODIGOS_RESERVADOS.includes(String(codigo).toLowerCase())) {
+    return `O código "${codigo}" é reservado pelo painel.`;
+  }
+  if (codigo.includes('/') || codigo === '.' || codigo === '..') {
+    return 'O código não pode conter "/" nem ser "." ou "..".';
+  }
+  return null;
+}

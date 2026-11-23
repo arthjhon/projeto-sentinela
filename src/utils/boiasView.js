@@ -20,6 +20,20 @@ export const SENSORES_BOIA = [
 /** Formulário de cadastro de bóia, vazio. */
 export const FORM_VAZIO = { id: '', deviceId: '', name: '', lagoa: 'mundau', modo: 'bancada', lat: '', lng: '' };
 
+/** Formulário de edição a partir de uma entrada do registro (ausentes viram '' / padrão). */
+export function formDoRegistro(reg) {
+  return {
+    id: reg.codigo,
+    deviceId: reg.deviceId ?? '',
+    deviceIdsAnteriores: reg.deviceIdsAnteriores ?? [],
+    name: reg.nome ?? '',
+    lagoa: reg.lagoa ?? 'mundau',
+    modo: normalizeModo(reg.modo),
+    lat: reg.lat ?? '',
+    lng: reg.lng ?? '',
+  };
+}
+
 /** "registrada por X em DD/MM/AAAA" a partir do registro de sensor_calibrations. */
 export function rotuloCalibracao(registro) {
   if (!registro) return 'nunca registrada';

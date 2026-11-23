@@ -150,6 +150,11 @@ describe('tituloDaRota', () => {
     expect(tituloDaRota('/admin/config/operadores', 'admin')).toBe('Configurações');
   });
 
+  it('ficha da bóia usa o título da seção e não muda as abas', () => {
+    expect(tituloDaRota('/admin/boias/SM-01', 'admin')).toBe('Bóias');
+    expect(abasDaSecao('boias', 'operador')).toEqual([{ to: 'frota', label: 'Frota' }]);
+  });
+
   it('índice da seção, antes do redirect, já tem título', () => {
     expect(tituloDaRota('/admin/boias', 'admin')).toBe('Bóias');
     expect(tituloDaRota('/admin/boias/', 'admin')).toBe('Bóias');

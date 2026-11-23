@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { FLEET, getMqttTopics } from '../config/fleet';
 import {
   topicsForRegistry, codigoEmUso, upsertRegistryEntry,
-  SEED_BUOYS, LAGOA_LABEL, MODOS, normalizeModo, withModo,
+  SEED_BUOYS, LAGOA_LABEL, MODOS, normalizeModo, withModo, motivoCodigoInvalido,
 } from './buoyRegistry';
 
 describe('topicsForRegistry', () => {
@@ -151,5 +151,19 @@ describe('seed SM-01 e re-export de deviceIds', () => {
     const sm01 = SEED_BUOYS.find(b => b.codigo === 'SM-01');
     expect(sm01.deviceId).toBe('snt-0001');
     expect(sm01.deviceIdsAnteriores).toEqual(['esp_sururu']);
+  });
+});
+
+describe('motivoCodigoInvalido', () => {
+  it('recusa nomes reservados sem diferenciar maiúsculas', () => {
+    expect(motivoCodigoInvalido('FROTA')).toBe('O código "FROTA" é reservado pelo painel.');
+    expect(motivoCodigoInvalido('firmware')).toBe('O código "firmware" é reservado pelo painel.');
+  });
+  it('recusa "/", "." e ".."', () => {
+    const msg = 'O código não pode conter "/" nem ser "." ou "..".';
+    for (const c of ['a/b', '.', '..']) expect(motivoCodigoInvalido(c)).toBe(msg);
+  });
+  it('aceita código comum', () => {
+    expect(motivoCodigoInvalido('SM-01')).toBeNull();
   });
 });
