@@ -39,8 +39,8 @@ const MonitoringPage = () => {
   // carregado e vazio (admin apagou todas) = nenhuma bóia em destaque — o
   // FLEET não volta a valer. Do registro vêm identidade (id/name/deviceId) e
   // lagoa (rótulo via LAGOA_LABEL); o FLEET de mesmo código (id === codigo) só
-  // completa o que o registro não guarda (bateria, coordenadas GMS, datas) —
-  // bóia só do registro fica sem esses campos.
+  // completa o que o registro não guarda (hoje só o rótulo). Bateria vem só do
+  // /status do firmware (sem leitura = "--"), nunca de um valor fixo.
   const fleetBuoy = FLEET.find(b => b.deviceId) || FLEET[0];
   const registryEntry = registryBuoys.find(b => b.deviceId) || registryBuoys[0];
   const matchedFleet = registryEntry ? FLEET.find(f => f.id === registryEntry.codigo) : null;
@@ -232,7 +232,7 @@ const MonitoringPage = () => {
         <MinMaxAvgBars history={history} />
         <Histogram history={history} />
       </div>
-      <DeviceHealth status={latestStatus} battery={BUOY.battery} />
+      <DeviceHealth status={latestStatus} battery={Number.isFinite(latestStatus?.battery) ? latestStatus.battery : null} />
 
       {/* Mapa */}
       <div className="mon-map-section glass">

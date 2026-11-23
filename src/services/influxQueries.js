@@ -22,7 +22,7 @@ export const ESTACOES_ANA = ['39770000', '39760000', '39740000', '39700000', '39
 // Painel de clima: pontos de previsão (tag `ponto` de previsao_atual, gravada pelo worker openmeteo)
 // e a estação ANA da bacia do Mundaú, fixa em ana-recente. Lista fechada: o map do nginx repete.
 export const PONTOS_PREVISAO = ['celmm', 'bacia_mundau'];
-export const ESTACAO_ANA_RECENTE = '39770000';
+const ESTACAO_ANA_RECENTE = '39770000';
 export const INICIO_RE = /^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
 // sufixo que faz da data local o instante da meia-noite de Maceió; o map do nginx
 // (sentinela-http.conf) repete o literal e o teste de paridade confere os dois

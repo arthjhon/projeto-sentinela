@@ -76,7 +76,6 @@
 .bdm-row dd { margin: 0; overflow-wrap: anywhere; }
 .bdm-muted { color: var(--text-muted); font-size: 0.85em; }
 .bdm-chip { margin-right: 0.4rem; }
-.bdm-error { color: var(--danger); font-size: 0.85rem; }
 
 .bdm-map {
   height: 200px;

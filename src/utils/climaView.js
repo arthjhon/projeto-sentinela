@@ -11,8 +11,7 @@ import {
 /** Job do worker que grava a previsão (worker_jobs.job). */
 export const JOB_PREVISAO = 'openmeteo';
 
-export const ROTULO_PONTO = { celmm: 'lagoa (CELMM)', bacia_mundau: 'bacia do Mundaú' };
-
+const ROTULO_PONTO = { celmm: 'lagoa (CELMM)', bacia_mundau: 'bacia do Mundaú' };
 const ROTULO_CLASSE = { acima: 'acima do normal', normal: 'normal', abaixo: 'abaixo do normal' };
 const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const DIA_MS = 86400000;

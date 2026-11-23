@@ -4,7 +4,7 @@ import { FLEET } from '../config/fleet';
 import { serialValido } from '../utils/deviceIds';
 export { deviceIdsOf, applyDeviceIdChange } from '../utils/deviceIds';
 
-export const MAP_BUOYS_KEY = 'map_buoys';
+const MAP_BUOYS_KEY = 'map_buoys';
 
 // Rótulo de exibição de cada valor de `lagoa` (o registro só guarda a chave).
 export const LAGOA_LABEL = { mundau: 'Lagoa Mundaú', manguaba: 'Lagoa Manguaba' };
