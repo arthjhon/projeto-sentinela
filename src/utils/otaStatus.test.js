@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isFreshDeployEvent, phaseFromOtaStatus, phaseAfterCommandSent } from './otaStatus';
+import { isFreshDeployEvent } from './otaStatus';
 
 // useMqtt guarda o último payload de cada tópico e o JSON.parse cria um objeto
 // novo por mensagem — por isso a identidade do objeto distingue mensagens.
@@ -36,33 +36,5 @@ describe('isFreshDeployEvent', () => {
 
   it('sem payload não há evento', () => {
     expect(isFreshDeployEvent(undefined, undefined, 'waiting')).toBe(false);
-  });
-});
-
-describe('phaseFromOtaStatus', () => {
-  it('mapeia os status publicados pelo firmware', () => {
-    expect(phaseFromOtaStatus('downloading')).toBe('waiting');
-    expect(phaseFromOtaStatus('flashing')).toBe('waiting');
-    expect(phaseFromOtaStatus('success')).toBe('success');
-    expect(phaseFromOtaStatus('error')).toBe('error');
-  });
-
-  it('status desconhecido não muda a fase', () => {
-    expect(phaseFromOtaStatus('idle')).toBeNull();
-    expect(phaseFromOtaStatus(undefined)).toBeNull();
-  });
-});
-
-describe('phaseAfterCommandSent', () => {
-  it('passa de sending para waiting quando a função confirma o envio', () => {
-    expect(phaseAfterCommandSent('sending')).toBe('waiting');
-  });
-
-  it('não sobrescreve a recusa rápida da bóia que chegou antes da resposta da função', () => {
-    // same_version/busy/unconfirmed_image chegam pelo WSS antes do 200 da Edge Function:
-    // o effect de ota/status já pôs 'error' (ou 'success'/'waiting'); o handler não volta atrás.
-    for (const phase of ['error', 'success', 'waiting', 'idle']) {
-      expect(phaseAfterCommandSent(phase)).toBe(phase);
-    }
   });
 });

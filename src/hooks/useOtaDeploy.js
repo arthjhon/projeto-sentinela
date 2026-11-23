@@ -5,7 +5,7 @@ import {
   buildDeployRow, requestOtaCommand, removeFirmwareFile, deveRemoverBin,
 } from '../services/otaCommand';
 import {
-  initialState, otaReducer, WAIT_TIMEOUT_MS, createRequestToken,
+  initialState, otaReducer, WAIT_TIMEOUT_MS, createRequestToken, faseDoStatus, eventoDoDeploy,
 } from '../services/otaDeployState';
 import { isFreshDeployEvent } from '../utils/otaStatus';
 
@@ -21,15 +21,18 @@ const ts = () => new Date().toLocaleTimeString('pt-BR', {
  *
  * @param {object} p
  * @param {object} p.messages   estado de useMqtt (último payload por tópico)
+ * @param {object} p.receivedAt hora de chegada por tópico (useMqtt), para correlacionar o ota/status ao deploy
  * @param {() => void} [p.onSettled]  chamado quando o histórico mudou (para recarregar a tabela)
  */
-export function useOtaDeploy({ messages, onSettled }) {
+export function useOtaDeploy({ messages, receivedAt, onSettled }) {
   const [state, dispatch] = useReducer(otaReducer, initialState);
   const [uploadProgress, setUploadProgress] = useState(0);
   // Bump a cada evento novo da bóia: 'downloading' longo reinicia o timeout.
   const [eventN, setEventN] = useState(0);
   const seenOtaRef = useRef({});
   const runRef = useRef(createRequestToken());
+  // Date.now() de antes de pedir o comando deste deploy; null = nenhum comando em curso
+  const sentAtRef = useRef(null);
   const onSettledRef = useRef(onSettled);
   useEffect(() => { onSettledRef.current = onSettled; });
 
@@ -45,11 +48,13 @@ export function useOtaDeploy({ messages, onSettled }) {
     seenOtaRef.current[topic] = otaData;
     // Status retido de um OTA anterior aparece só no card da frota.
     if (!fresh) return;
+    // Só evento ao vivo recebido depois do comando DESTE deploy (ver eventoDoDeploy).
+    if (!eventoDoDeploy(receivedAt?.[topic], sentAtRef.current)) return;
 
     const status = otaData.status;
     log(`OTA: ${status} — ${otaData.progress ?? 0}%${otaData.error ? ` (${otaData.error})` : ''}`);
     dispatch({ type: 'device_status', status });
-    setEventN(n => n + 1);
+    if (faseDoStatus(status)) setEventN(n => n + 1);
 
     // Fecha o registro conforme a bóia reporta o desfecho; sem isso a linha
     // ficaria 'pendente' para sempre.
@@ -66,7 +71,7 @@ export function useOtaDeploy({ messages, onSettled }) {
           onSettledRef.current?.();
         });
     }
-  }, [messages, deployId, deviceId, phase, log]);
+  }, [messages, receivedAt, deployId, deviceId, phase, log]);
 
   // ── Timeout: comando enviado e a bóia não responde ──
   useEffect(() => {
@@ -84,6 +89,7 @@ export function useOtaDeploy({ messages, onSettled }) {
     let uploadedPath = null;
     let rowCreated = false;
 
+    sentAtRef.current = null;
     dispatch({ type: 'start', deviceId: target.deviceId });
     try {
       // 1. Upload para o Storage
@@ -118,6 +124,7 @@ export function useOtaDeploy({ messages, onSettled }) {
       onSettledRef.current?.();
 
       // 3. Edge Function publica o comando (o navegador não tem credencial MQTT)
+      sentAtRef.current = Date.now();
       const result = await requestOtaCommand(supabase, row.id);
       if (stale()) return;
       if (!result.ok) {
@@ -147,6 +154,7 @@ export function useOtaDeploy({ messages, onSettled }) {
   const reset = useCallback(() => {
     runRef.current.invalidate();
     seenOtaRef.current = {};
+    sentAtRef.current = null;
     setUploadProgress(0);
     dispatch({ type: 'reset' });
   }, []);

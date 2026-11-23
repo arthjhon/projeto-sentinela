@@ -107,13 +107,23 @@ export async function removeFirmwareFile(supabaseClient, path) {
   }
 }
 
+// Recusas da Edge Function que acontecem ANTES de publicar o comando.
+const RECUSA_PRE_PUBLICACAO = new Set([
+  'invalid_body', 'invalid_deploy_id', 'forbidden', 'deploy_not_found',
+  'unauthenticated', 'invalid_session', 'not_configured',
+  'not_pending', 'no_device', 'bad_device', 'bad_path', 'bad_sha', 'no_version', 'too_large',
+]);
+
 /**
- * O .bin só é apagado quando a recusa é definitiva (houve resposta HTTP). Em
- * erro de rede (status null) a função pode ter publicado o comando e a bóia
- * ainda baixar o arquivo: apagar quebraria um OTA possivelmente em curso.
+ * O .bin só é apagado em recusa anterior à publicação (4xx ou código conhecido
+ * da função). Nunca em 5xx nem erro de rede: 502 broker_unavailable pode ser o
+ * "mqtt timeout" depois de um publish QoS 1 que o broker já entregou (504/546
+ * do gateway idem), e a bóia ainda estaria baixando o arquivo.
  */
 export function deveRemoverBin(result) {
-  return result?.ok === false && result.status != null;
+  if (!result || result.ok !== false) return false;
+  if (RECUSA_PRE_PUBLICACAO.has(result.code)) return true;
+  return result.status >= 400 && result.status < 500;
 }
 
 /** Últimos deploys (mais recentes primeiro). Lança em erro de leitura. */

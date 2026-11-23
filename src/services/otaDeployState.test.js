@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   initialState, otaReducer, WAIT_TIMEOUT_MS, PENDENTE_STALE_MS,
   isBinFile, createRequestToken, statusEfetivo, rotuloStatusDeploy, podeResetar,
+  faseDoStatus, eventoDoDeploy,
 } from './otaDeployState';
 
 const run = (actions, s = initialState) => actions.reduce(otaReducer, s);
@@ -58,15 +59,15 @@ describe('otaReducer', () => {
 
   it('reset returns to the initial state from sending, waiting, timeout and error', () => {
     const base = run([{ type: 'start', deviceId: 'd' }, { type: 'deploy_created', deployId: 'x' }]);
-    for (const phase of ['sending', 'waiting', 'timeout', 'error', 'success']) {
+    for (const phase of ['uploading', 'sending', 'waiting', 'timeout', 'error', 'success']) {
       const s = otaReducer({ ...base, phase }, { type: 'reset' });
       expect(s).toEqual(initialState);
     }
   });
 
-  it('podeResetar: true in sending/waiting/timeout/error/success, false in idle/uploading', () => {
+  it('podeResetar: true in every phase but idle (uploading has no abort, so reset must be the exit)', () => {
     expect(['idle', 'uploading', 'sending', 'waiting', 'timeout', 'error', 'success'].map(podeResetar))
-      .toEqual([false, false, true, true, true, true, true]);
+      .toEqual([false, true, true, true, true, true, true]);
   });
 
   it('timeout constants: 120 s wait, 15 min stale', () => {
@@ -119,5 +120,32 @@ describe('statusEfetivo', () => {
     expect(rotuloStatusDeploy('sucesso').tom).toBe('ok');
     expect(rotuloStatusDeploy('falha').tom).toBe('bad');
     expect(rotuloStatusDeploy('xyz').texto).toBe('xyz');
+  });
+});
+
+describe('faseDoStatus', () => {
+  it('maps firmware statuses; unknown is null', () => {
+    expect(faseDoStatus('success')).toBe('success');
+    expect(faseDoStatus('error')).toBe('error');
+    expect(faseDoStatus('downloading')).toBe('waiting');
+    expect(faseDoStatus('flashing')).toBe('waiting');
+    expect(faseDoStatus('idle')).toBeNull();
+    expect(faseDoStatus(undefined)).toBeNull();
+  });
+});
+
+describe('eventoDoDeploy', () => {
+  // The firmware payload's `firmware` is the version RUNNING when it publishes
+  // (old one even on "success", published before the restart), so it cannot
+  // identify the deploy; correlation is by arrival time instead.
+  it('accepts only live events that arrived after this deploy command started', () => {
+    expect(eventoDoDeploy({ at: 1000, retained: false }, 1000)).toBe(true);
+    expect(eventoDoDeploy({ at: 1500, retained: false }, 1000)).toBe(true);
+    expect(eventoDoDeploy({ at: 999, retained: false }, 1000)).toBe(false);
+  });
+  it('rejects retained events, missing arrival time, and no command sent yet', () => {
+    expect(eventoDoDeploy({ at: 2000, retained: true }, 1000)).toBe(false);
+    expect(eventoDoDeploy(undefined, 1000)).toBe(false);
+    expect(eventoDoDeploy({ at: 2000, retained: false }, null)).toBe(false);
   });
 });

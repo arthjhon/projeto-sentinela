@@ -20,22 +20,3 @@ const DEPLOY_ACTIVE = ['sending', 'waiting'];
 export function isFreshDeployEvent(otaData, lastSeen, phase) {
   return !!otaData && otaData !== lastSeen && DEPLOY_ACTIVE.includes(phase);
 }
-
-/** Fase do formulário correspondente ao status publicado pelo firmware, ou null. */
-export function phaseFromOtaStatus(status) {
-  if (status === 'success') return 'success';
-  if (status === 'error') return 'error';
-  if (status === 'downloading' || status === 'flashing') return 'waiting';
-  return null;
-}
-
-/**
- * Fase depois que a Edge Function confirmou o envio do comando OTA. Só sai de
- * 'sending': uma recusa rápida da bóia (same_version, busy, unconfirmed_image,
- * url_not_allowed) pode chegar pelo WSS antes da resposta HTTP, e o effect de
- * ota/status já terá posto 'error' — voltar para 'waiting' prenderia o
- * formulário (não há reset em 'waiting').
- */
-export function phaseAfterCommandSent(phase) {
-  return phase === 'sending' ? 'waiting' : phase;
-}

@@ -15,16 +15,18 @@ export const initialState = Object.freeze({
 });
 
 const ACTIVE = ['sending', 'waiting'];
-const RESETAVEIS = ['sending', 'waiting', 'timeout', 'error', 'success'];
+// 'uploading' entra: o upload do Storage não tem abort/timeout; o token de
+// execução do hook descarta a continuação e remove o .bin enviado.
+const RESETAVEIS = ['uploading', 'sending', 'waiting', 'timeout', 'error', 'success'];
 
-/** Reset disponível fora de idle e de uploading (o upload não é cancelável). */
+/** Reset disponível em toda fase exceto idle. */
 export const podeResetar = (phase) => RESETAVEIS.includes(phase);
 
 const line = (a, msg) => `${a.ts ? `[${a.ts}] ` : ''}${msg}`;
 const addLog = (s, a, msg) => ({ ...s, log: [...s.log, line(a, msg)] });
 
 /** Fase correspondente ao status publicado pelo firmware, ou null. */
-function faseDoStatus(status) {
+export function faseDoStatus(status) {
   if (status === 'success') return 'success';
   if (status === 'error') return 'error';
   if (status === 'downloading' || status === 'flashing') return 'waiting';
@@ -97,4 +99,21 @@ const ROTULOS = {
 
 export function rotuloStatusDeploy(status) {
   return ROTULOS[status] ?? { texto: String(status ?? '—'), tom: 'neutral' };
+}
+
+/**
+ * O ota/status é desta tentativa? O campo `firmware` do payload é a versão EM
+ * EXECUÇÃO ao publicar (até o "success" sai com a versão antiga, antes do
+ * restart), então não identifica o deploy: a correlação é por hora de chegada.
+ * Vale só evento ao vivo (não retido) recebido depois do início do comando
+ * deste deploy; um success tardio de uma tentativa anterior (timeout) que
+ * chegou antes do reenvio não fecha a linha da nova.
+ * Limite: evento tardio que chegue DEPOIS do reenvio é indistinguível.
+ *
+ * @param {{at:number, retained:boolean}|undefined} chegada  receivedAt[topico] do useMqtt
+ * @param {number|null} enviadoEm  Date.now() de antes de pedir o comando; null = ainda não enviado
+ */
+export function eventoDoDeploy(chegada, enviadoEm) {
+  if (!chegada || chegada.retained || enviadoEm == null) return false;
+  return Number.isFinite(chegada.at) && chegada.at >= enviadoEm;
 }

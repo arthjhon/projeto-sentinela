@@ -287,41 +287,7 @@
 
 /* .spin vive em styles/admin-shared.css. */
 
-/* ── Modal de confirmação ────────────────────────────── */
-.ota-confirm-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  backdrop-filter: blur(4px);
-}
-.ota-confirm-modal {
-  background: #0D141F;
-  border: 1px solid rgba(0, 240, 255, 0.15);
-  border-radius: 12px;
-  padding: 2rem;
-  max-width: 420px;
-  width: 90%;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.ota-confirm-icon {
-  margin-bottom: 0.25rem;
-}
-.ota-confirm-modal h3 {
-  font-size: 1.1rem;
-  color: #e2e8f0;
-}
-.ota-confirm-modal p {
-  font-size: 0.88rem;
-  color: #94a3b8;
-  line-height: 1.6;
-}
+/* ── Modal de confirmação (aviso dentro do Modal compartilhado) ── */
 .ota-confirm-warning {
   display: flex;
   align-items: center;
@@ -334,13 +300,6 @@
   border-radius: 6px;
   padding: 0.5rem 0.75rem !important;
 }
-.ota-confirm-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: center;
-  margin-top: 0.5rem;
-}
-
 /* Hash do .bin (4.1): monospace e quebra em qualquer ponto — são 64 caracteres
    sem espaço, que estourariam a caixa do upload. */
 .file-hash {

@@ -146,12 +146,23 @@ describe('removeFirmwareFile (M6)', () => {
 });
 
 describe('deveRemoverBin', () => {
-  it('removes after a definite refusal, keeps it when the outcome is unknown', () => {
-    expect(deveRemoverBin({ ok: false, status: 422 })).toBe(true);
-    expect(deveRemoverBin({ ok: false, status: 502 })).toBe(true);
-    // network error: the function may have published the command and the
-    // device may still download the file.
-    expect(deveRemoverBin({ ok: false, status: null })).toBe(false);
+  it('removes only after a refusal that happened before publishing', () => {
+    for (const status of [400, 401, 403, 404, 422]) {
+      expect(deveRemoverBin({ ok: false, status, code: 'x' })).toBe(true);
+    }
+    for (const code of ['invalid_body', 'invalid_deploy_id', 'forbidden', 'deploy_not_found',
+      'unauthenticated', 'invalid_session', 'bad_sha', 'too_large', 'not_configured']) {
+      expect(deveRemoverBin({ ok: false, status: 500, code })).toBe(true);
+    }
+  });
+  it('keeps the file when the publish may have happened (5xx, network, ok)', () => {
+    // 502 broker_unavailable can be an MQTT timeout after a QoS 1 publish the
+    // broker already delivered; 504/546 from the gateway likewise.
+    for (const status of [500, 502, 504, 546]) {
+      expect(deveRemoverBin({ ok: false, status, code: 'broker_unavailable' })).toBe(false);
+    }
+    expect(deveRemoverBin({ ok: false, status: 502, code: 'http_error' })).toBe(false);
+    expect(deveRemoverBin({ ok: false, status: null, code: 'network_error' })).toBe(false);
     expect(deveRemoverBin({ ok: true })).toBe(false);
   });
 });

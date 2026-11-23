@@ -80,7 +80,7 @@ const OtaPageConteudo = () => {
   }, HISTORY_POLL_MS);
 
   const { phase, uploadProgress, deploy, reset, appendLog, log: deployLog } = useOtaDeploy({
-    messages, onSettled: reloadDeploys,
+    messages, receivedAt, onSettled: reloadDeploys,
   });
 
   const logBodyRef = useRef(null);
