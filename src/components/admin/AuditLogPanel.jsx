@@ -1,17 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ScrollText, RotateCw } from 'lucide-react';
 import { listarAuditoria, AUDIT_LABELS, LIMITE_AUDITORIA } from '../../services/auditLog';
+import { formatDataHora } from '../../utils/format';
 import './AuditLogPanel.css';
 
 // Log de auditoria (backlog 6.1). Aba própria em Configurações
 // (/admin/config/auditoria), ao lado de Operadores: auditoria é sobre quem fez
 // o quê. Era aba interna da tela de operadores até a reorganização de 2026-11-22.
-
-function formatarData(iso) {
-  const d = new Date(iso);
-  const p = n => String(n).padStart(2, '0');
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-}
 
 /** Resumo legível do JSONB, sem despejar o objeto cru na tela. */
 function resumirDetalhes(detalhes) {
@@ -121,7 +116,7 @@ export default function AuditLogPanel({ operadores = [], operadoresIndisponiveis
             <tbody>
               {logs.map(l => (
                 <tr key={l.id}>
-                  <td className="audit-when">{formatarData(l.created_at)}</td>
+                  <td className="audit-when">{formatDataHora(l.created_at)}</td>
                   <td className="audit-who">{l.operador_nome}</td>
                   <td><span className="audit-acao">{AUDIT_LABELS[l.acao] ?? l.acao}</span></td>
                   <td className="audit-alvo">{l.entidade_afetada ?? '—'}</td>

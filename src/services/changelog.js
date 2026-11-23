@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { logAcao, AUDIT } from './auditLog';
+import { hojeMaceio } from '../utils/dataMaceio';
 
 // Changelog público ("Evolução"). Ver
 // a spec do changelog público.
@@ -8,13 +9,6 @@ import { logAcao, AUDIT } from './auditLog';
 // calculados no cliente por src/utils/milestones.js — não vivem aqui).
 
 const BUCKET = 'changelog';
-
-/** 'YYYY-MM-DD' de hoje, no fuso local (mesmo critério usado para `data` nas entradas). */
-function hojeIso() {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
 
 /**
  * Entradas publicadas com data já ocorrida (uso público). O filtro de data
@@ -26,7 +20,7 @@ export async function listarPublicadas() {
     .from('changelog_entries')
     .select('*')
     .eq('publicado', true)
-    .lte('data', hojeIso())
+    .lte('data', hojeMaceio())
     .order('data', { ascending: false });
   if (error) throw new Error(error.message);
   return data ?? [];

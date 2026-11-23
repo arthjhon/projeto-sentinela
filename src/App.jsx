@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { REDIRECTS_LEGADOS, legacyTarget } from './config/adminNav';
+import { REDIRECTS_LEGADOS, legacyTarget, ehPerfilAuditoria } from './config/adminNav';
 
 import './App.css';
 
@@ -25,6 +25,8 @@ const OtaPage = lazy(() => import('./pages/admin/OtaPage'));
 const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
 const ChangelogPage = lazy(() => import('./pages/admin/ChangelogPage'));
 const AuditoriaPage = lazy(() => import('./pages/admin/AuditoriaPage'));
+const ConfigIndex = lazy(() => import('./components/admin/ConfigIndex'));
+const NotFoundPage = lazy(() => import('./pages/admin/NotFoundPage'));
 const AdminSection = lazy(() => import('./components/admin/AdminSection'));
 const RequireGestao = lazy(() => import('./components/admin/RequireGestao'));
 
@@ -77,12 +79,15 @@ function App() {
               <Route path="status" element={lazyElement(StatusPage)} />
               <Route path="contexto" element={lazyElement(ContextoPage)} />
               <Route path="config" element={lazyElement(AdminSection, { secao: 'config', rotulo: 'Seções de Configurações' })}>
-                <Route index element={<Navigate to="site" replace />} />
+                <Route index element={lazyElement(ConfigIndex)} />
                 {/* Telas de gestão: o guarda único mora aqui (páginas ainda têm o próprio, redundante) */}
                 <Route element={lazyElement(RequireGestao)}>
                   <Route path="site" element={lazyElement(SettingsPage)} />
                   <Route path="changelog" element={lazyElement(ChangelogPage)} />
                   <Route path="operadores" element={lazyElement(UsersPage)} />
+                </Route>
+                {/* Auditoria: admin e operador (a conta demo, visualizador, não lê o log) */}
+                <Route element={lazyElement(RequireGestao, { permitido: ehPerfilAuditoria, mensagem: 'O log de auditoria é restrito a administradores e operadores.' })}>
                   <Route path="auditoria" element={lazyElement(AuditoriaPage)} />
                 </Route>
               </Route>
@@ -90,6 +95,8 @@ function App() {
               {Object.keys(REDIRECTS_LEGADOS).map((antigo) => (
                 <Route key={antigo} path={antigo} element={<LegacyRedirect antigo={antigo} />} />
               ))}
+              {/* Endereço desconhecido sob /admin: 404 do painel, não a landing pública */}
+              <Route path="*" element={lazyElement(NotFoundPage)} />
             </Route>
           </Route>
         </Route>

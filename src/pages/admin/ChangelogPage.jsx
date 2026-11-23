@@ -12,6 +12,7 @@ import { getSetting, saveSetting, MONITORAMENTO_INICIO_KEY } from '../../service
 import { useAuth } from '../../contexts/AuthContext';
 import AcessoNegado from '../../components/admin/AcessoNegado';
 import { ehPerfilGestao } from '../../config/adminNav';
+import { formatData } from '../../utils/format';
 import './ChangelogPage.css';
 
 const initialFormData = { titulo: '', descricao: '', categoria: 'Hardware', data: '' };
@@ -261,7 +262,7 @@ const ChangelogPageConteudo = () => {
             <tbody>
               {entries.map((entry) => (
                 <tr key={entry.id}>
-                  <td className="changelog-cell-data">{entry.data}</td>
+                  <td className="changelog-cell-data">{formatData(entry.data)}</td>
                   <td>
                     <span className="changelog-badge" style={{ '--c': CATEGORIA_COLORS[entry.categoria] }}>
                       {entry.categoria}
