@@ -10,10 +10,8 @@ const MAP_BUOYS_KEY = 'map_buoys';
 export const LAGOA_LABEL = { mundau: 'Lagoa Mundaú', manguaba: 'Lagoa Manguaba' };
 
 // Semente usada só se `map_buoys` nunca foi salvo — e como fallback quando o
-// registro não pode ser lido (ver useBuoyRegistry). Coordenadas decimais — não
-// convertidas de FLEET.coordinates (string GMS), pra não arriscar erro de
-// parsing/sinal num dado que já existe correto em produção (mesmas
-// coordenadas hoje hardcoded em InteractiveMap.jsx).
+// registro não pode ser lido (ver useBuoyRegistry). Coordenadas decimais, as mesmas
+// hoje hardcoded em InteractiveMap.jsx.
 export const SEED_BUOYS = [
   { codigo: 'SM-01', nome: 'Bóia Mundaú Centro', lagoa: 'mundau',   lat: -9.6559, lng: -35.7701, deviceId: FLEET.find(f => f.id === 'SM-01')?.deviceId ?? null, deviceIdsAnteriores: FLEET.find(f => f.id === 'SM-01')?.deviceIdsAnteriores ?? [] },
   { codigo: 'SM-02', nome: 'Bóia Mundaú Sul',     lagoa: 'mundau',   lat: -9.6862, lng: -35.7847, deviceId: FLEET.find(f => f.id === 'SM-02')?.deviceId ?? null },

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { carregarContexto, podeBuscar, ANA_VAZIO } from '../services/contextoAmbiental';
 
 const INICIAL = {
@@ -18,6 +18,7 @@ export function useContextoAmbiental({ deviceIds, estacao, inicio, duracao, atua
   // chave estável: o array novo a cada render não pode refazer a busca
   const idsKey = JSON.stringify(deviceIds ?? []);
   const [state, setState] = useState(INICIAL);
+  const ultimaChave = useRef(null); // janela da última busca: igual = renovação, os dados ficam
 
   useEffect(() => {
     // sem o cadastro carregado a busca sairia com deviceIds vazio (e de novo ao carregar)
@@ -27,8 +28,11 @@ export function useContextoAmbiental({ deviceIds, estacao, inicio, duracao, atua
       if (controller.signal.aborted) return;
       setState(s => ({ ...s, [chave]: { ...s[chave], ...patch } }));
     };
+    const chave = `${idsKey}|${estacao}|${inicio}|${duracao}`;
+    const manterDados = ultimaChave.current === chave;
+    ultimaChave.current = chave;
     carregarContexto(
-      { deviceIds: JSON.parse(idsKey), estacao, inicio, duracao }, controller.signal, emit,
+      { deviceIds: JSON.parse(idsKey), estacao, inicio, duracao }, controller.signal, emit, { manterDados },
     );
     return () => controller.abort();
   }, [idsKey, estacao, inicio, duracao, atualizadoEm, registroCarregado]);

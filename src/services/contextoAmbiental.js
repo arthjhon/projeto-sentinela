@@ -183,16 +183,19 @@ export const ANA_VAZIO = { chuva: [], vazao: [], nivel: [] };
  * uma com seu próprio estado: a falha de uma não apaga a outra.
  * `emit(chave, patch)` recebe mudanças parciais de `turbidez` | `ana`.
  * Abort não é erro: retorna sem emitir.
+ * `opcoes.manterDados`: não limpa os dados ao começar (renovação da mesma janela).
  */
-export async function carregarContexto({ deviceIds, estacao, inicio, duracao }, signal, emit) {
+export async function carregarContexto({ deviceIds, estacao, inicio, duracao }, signal, emit, { manterDados = false } = {}) {
   const passos = [
     ['turbidez', () => fetchTurbidezJanela(deviceIds, inicio, duracao, { signal })],
     ['ana', () => fetchAna(estacao, inicio, duracao, { signal })],
   ];
   // as duas séries entram em loading já, com dados limpos: nada da janela,
   // estação ou bóia anterior pode ficar ao lado de um erro ou do novo eixo X
-  emit('turbidez', { data: [], loading: true, error: null });
-  emit('ana', { data: ANA_VAZIO, loading: true, error: null });
+  // Com `manterDados` (renovação periódica da mesma janela) os dados anteriores seguem
+  // visíveis enquanto recarrega: só a primeira carga mostra "Carregando…".
+  emit('turbidez', manterDados ? { loading: true, error: null } : { data: [], loading: true, error: null });
+  emit('ana', manterDados ? { loading: true, error: null } : { data: ANA_VAZIO, loading: true, error: null });
   await Promise.all(passos.map(async ([chave, buscar]) => {
     try {
       const data = await buscar();

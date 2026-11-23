@@ -33,6 +33,9 @@ const TZ = 'America/Maceio';
 const PARTES = new Intl.DateTimeFormat('pt-BR', {
   timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 });
+const PARTES_SEG = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+});
 const SO_DATA_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const VAZIO = '—';
 
@@ -59,6 +62,16 @@ export function formatDataHora(valor) {
   const p = partes(valor);
   if (!p) return VAZIO;
   return p.hora == null ? `${p.dia}/${p.mes}/${p.ano}` : `${p.dia}/${p.mes}/${p.ano} ${p.hora}:${p.minuto}`;
+}
+
+/** "DD/MM/AAAA HH:MM:SS" (Maceió); "AAAA-MM-DD" sem hora vira só a data; inválido = "—". */
+export function formatDataHoraSeg(valor) {
+  const p = partes(valor);
+  if (!p) return VAZIO;
+  if (p.hora == null) return `${p.dia}/${p.mes}/${p.ano}`;
+  const d = valor instanceof Date ? valor : new Date(valor);
+  const seg = PARTES_SEG.formatToParts(d).find((x) => x.type === 'second').value;
+  return `${p.dia}/${p.mes}/${p.ano} ${p.hora}:${p.minuto}:${seg}`;
 }
 
 /** Qualidade do RSSI (dBm). */

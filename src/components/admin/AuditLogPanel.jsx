@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ScrollText, RotateCw } from 'lucide-react';
 import { listarAuditoria, AUDIT_LABELS, LIMITE_AUDITORIA } from '../../services/auditLog';
-import { formatDataHora } from '../../utils/format';
+import { formatDataHoraSeg } from '../../utils/format';
 import './AuditLogPanel.css';
 
 // Log de auditoria (backlog 6.1). Aba própria em Configurações
@@ -116,7 +116,7 @@ export default function AuditLogPanel({ operadores = [], operadoresIndisponiveis
             <tbody>
               {logs.map(l => (
                 <tr key={l.id}>
-                  <td className="audit-when">{formatDataHora(l.created_at)}</td>
+                  <td className="audit-when">{formatDataHoraSeg(l.created_at)}</td>
                   <td className="audit-who">{l.operador_nome}</td>
                   <td><span className="audit-acao">{AUDIT_LABELS[l.acao] ?? l.acao}</span></td>
                   <td className="audit-alvo">{l.entidade_afetada ?? '—'}</td>

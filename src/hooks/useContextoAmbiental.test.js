@@ -88,4 +88,23 @@ describe('carregarContexto', () => {
     expect(estado.turbidez).toEqual({ data: [], loading: false, error: 'Influx 502' });
     expect(estado.ana).toEqual({ data: { chuva: [], vazao: [], nivel: [] }, loading: false, error: 'Influx 502' });
   });
+
+  it('refresh keeps previous data visible while reloading (loading true, data intact, no error)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url) => url.includes('/q/ana')
+      ? ok([{ columns: ['time', 'chuva', 'vazao', 'nivel'], values: [[1000, 1, 2, 3]] }])
+      : ok([{ columns: ['time', 'mean'], values: [[1000, 5]] }])));
+    const { estado, emit } = coletor();
+    await carregarContexto(entrada, new AbortController().signal, emit);
+    const antes = estado.turbidez.data;
+    let visto;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      visto ??= { t: { ...estado.turbidez }, a: { ...estado.ana } };
+      return ok([{ columns: ['time', 'mean'], values: [[2000, 6]] }]);
+    }));
+    await carregarContexto(entrada, new AbortController().signal, emit, { manterDados: true });
+    expect(visto.t).toEqual({ data: antes, loading: true, error: null });
+    expect(visto.a.data.chuva).toHaveLength(1);
+    expect(visto.a.loading).toBe(true);
+    expect(estado.turbidez.data[0].value).toBe(6);
+  });
 });

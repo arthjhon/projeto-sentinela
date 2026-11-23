@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, badgeState, mqttBrokerStatus, buildErrorSnapshot, fetchRest,
+  worstState, applyStaleness, withTimeout, buildSnapshot, createPollGuard, classifySupabaseHealth, jobsToStatus, badgeState, mqttBrokerStatus, buildErrorSnapshot, fetchRest, brokerDesde,
 } from './systemStatus';
 import { supabase } from '../lib/supabase';
 
@@ -232,3 +232,17 @@ describe('jobsToStatus verificado_em', () => {
   });
 });
 
+
+describe('brokerDesde (idade honesta do estado do broker)', () => {
+  const now = 1_000_000_000;
+  it('connected: "conectado há X" from the observed transition', () => {
+    expect(brokerDesde(true, now - 180_000, now)).toBe('conectado há 3 min');
+  });
+  it('disconnected: "fora há X"', () => {
+    expect(brokerDesde(false, now - 45_000, now)).toBe('fora há 45 s');
+  });
+  it('no known transition time: null (no fake age)', () => {
+    expect(brokerDesde(true, null, now)).toBeNull();
+    expect(brokerDesde(false, undefined, now)).toBeNull();
+  });
+});

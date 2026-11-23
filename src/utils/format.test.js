@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatIdade, formatUptime, formatData, formatDataHora, formatRssi } from './format';
+import { formatIdade, formatUptime, formatData, formatDataHora, formatDataHoraSeg, formatRssi } from './format';
 
 describe('formatIdade', () => {
   it('seconds, minutes, hours, days', () => {
@@ -68,5 +68,16 @@ describe('formatRssi', () => {
     expect(formatRssi(undefined)).toBeNull();
     expect(formatRssi(null)).toBeNull();
     expect(formatRssi('x')).toBeNull();
+  });
+});
+
+describe('formatDataHoraSeg (Maceio, with seconds)', () => {
+  it('formats DD/MM/AAAA HH:MM:SS in UTC-3', () => {
+    expect(formatDataHoraSeg('2026-11-23T02:30:07Z')).toBe('22/11/2026 23:30:07');
+  });
+  it('calendar day without time is just the date; invalid is the dash', () => {
+    expect(formatDataHoraSeg('2026-11-23')).toBe('23/11/2026');
+    expect(formatDataHoraSeg('lixo')).toBe('—');
+    expect(formatDataHoraSeg(null)).toBe('—');
   });
 });

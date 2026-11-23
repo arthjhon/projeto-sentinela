@@ -43,8 +43,8 @@ const SupportUsPage = () => {
   const [copied, setCopied] = useState(false);
   const pixKey = 'apoio@projetosentinela.com.br';
 
-  // 5.3 — dias monitorados (mock persistente ou dado real do Influx)
-  const { dias, fonte } = useDiasMonitorados();
+  // 5.3 — dias monitorados (sempre dado real do Influx)
+  const { dias } = useDiasMonitorados();
 
   // 5.4 — meta de financiamento, configurada no painel admin
   const [funding, setFunding] = useState(null);
@@ -71,7 +71,7 @@ const SupportUsPage = () => {
     ...IMPACT_STATS,
     {
       value: dias == null ? '—' : dias.toLocaleString('pt-BR'),
-      label: fonte === 'real' ? 'Dias Monitorados' : 'Dias de Monitoramento',
+      label: 'Dias Monitorados',
     },
   ];
 

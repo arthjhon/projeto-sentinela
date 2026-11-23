@@ -28,7 +28,7 @@ async function fetchPrimeiraLeitura(signal) {
 }
 
 /**
- * @returns {{dias: number|null, fonte: 'real', carregando: boolean}}
+ * @returns {{dias: number|null, carregando: boolean}}
  */
 export function useDiasMonitorados() {
   const [real, setReal] = useState(null);
@@ -46,5 +46,5 @@ export function useDiasMonitorados() {
     return () => ctrl.abort();
   }, []);
 
-  return { dias: real, fonte: 'real', carregando: real === null };
+  return { dias: real, carregando: real === null };
 }

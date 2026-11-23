@@ -97,7 +97,7 @@ function ContextoChart({
   ];
 
   let body;
-  if (state.loading) body = <div className="ctx-state text-muted">Carregando…</div>;
+  if (state.loading && !hasValue) body = <div className="ctx-state text-muted">Carregando…</div>;
   else if (state.error) body = <div className="ctx-state ctx-error">{state.error}</div>;
   else if (!hasValue) body = <div className="ctx-state text-muted">Sem dados neste período</div>;
   else {
@@ -125,7 +125,7 @@ function ContextoChart({
     <section className="ctx-chart glass">
       <h2>{title}</h2>
       {body}
-      {kind === 'bar' && hasValue && !state.loading && !state.error && (
+      {kind === 'bar' && hasValue && !state.error && (
         <p className="text-muted ctx-legenda">faixa cinza = sem leitura</p>
       )}
     </section>

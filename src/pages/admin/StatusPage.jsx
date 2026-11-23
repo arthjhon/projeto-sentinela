@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useSystemStatus } from '../../contexts/SystemStatusContext';
 import { useMqtt } from '../../hooks/useMqtt';
@@ -7,7 +7,7 @@ import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { getMqttTopics } from '../../config/fleet';
 import { CLOCK_TICK_MS, STATUS_HEALTH_POLL_MS } from '../../config/adminTimings';
 import { topicsForRegistry, normalizeModo } from '../../services/buoyRegistry';
-import { mqttBrokerStatus, BADGE_META } from '../../services/systemStatus';
+import { mqttBrokerStatus, brokerDesde, BADGE_META } from '../../services/systemStatus';
 import {
   fetchSensorHealth, healthForDevice, estadoMeta, eventTone, fmtDate,
 } from '../../services/sensorHealth';
@@ -63,21 +63,13 @@ const StatusPage = () => {
   const [now, setNow] = useState(() => Date.now());
   const [healthRows, setHealthRows] = useState([]);
   const [healthError, setHealthError] = useState(false);
-  const [downSince, setDownSince] = useState(() => Date.now());
-  // Hora real da última checagem do broker (o estado vem do hook, reavaliado a cada tick).
-  const [brokerCheckedAt, setBrokerCheckedAt] = useState(() => Date.now());
-
-  const connectedRef = useRef(connected);
-  useEffect(() => { connectedRef.current = connected; }, [connected]);
+  // Hora da última transição de `connected` observada nesta página (ou da montagem):
+  // é a única marca de tempo honesta do broker; sem ela não se mostra idade.
+  const [broker0, setBroker0] = useState(() => ({ connected, desde: now }));
+  if (broker0.connected !== connected) setBroker0({ connected, desde: now }); // now: relógio de 5 s, precisão da marca
 
   useEffect(() => {
-    const id = setInterval(() => {
-      const t = Date.now();
-      setNow(t);
-      setBrokerCheckedAt(t);
-      // Desde quando o broker está fora (referência: montagem, se nunca conectou).
-      setDownSince((prev) => (connectedRef.current ? null : (prev ?? t)));
-    }, CLOCK_TICK_MS);
+    const id = setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -116,7 +108,8 @@ const StatusPage = () => {
   const collectionJobs = sys.jobs?.filter((j) => j.componente !== WORKER_JOB) ?? null;
   const sb = sys.supabase;
   const sbChecked = sys.checkedAt ? formatIdade(now - sys.checkedAt) : null;
-  const broker = mqttBrokerStatus(connected, downSince, now);
+  const broker = mqttBrokerStatus(connected, broker0.desde, now);
+  const brokerIdade = connected ? brokerDesde(connected, broker0.desde, now) : null; // fora: o detalhe já traz o tempo
   const ingestao = rowByName.telegraf_ingestao;
   const writes = ingestao?.dados ?? {};
 
@@ -167,7 +160,7 @@ const StatusPage = () => {
           estado={sb?.auth?.estado ?? 'desconhecido'} detalhe={sb ? (sb.auth?.detalhe ?? sb.detalhe) : 'Verificando…'} checked={sbChecked} />
         <StatusItem name="Supabase — REST"
           estado={sb?.rest?.estado ?? 'desconhecido'} detalhe={sb ? (sb.rest?.detalhe ?? sb.detalhe) : 'Verificando…'} checked={sbChecked} />
-        <StatusItem name="Broker MQTT" estado={broker.estado} detalhe={broker.detalhe} checked={formatIdade(now - brokerCheckedAt)} />
+        <StatusItem name="Broker MQTT" estado={broker.estado} detalhe={[broker.detalhe, brokerIdade].filter(Boolean).join(' · ')} checked={null} />
         <StatusItem {...workerRow('influxdb', 'InfluxDB')} />
         <StatusItem {...workerRow('telegraf_ingestao', 'Ingestão Telegraf')} />
         <StatusItem {...workerRow('worker', 'Worker')} />

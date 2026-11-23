@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { jobStaleness, jobTitle } from './sensorHealth';
 import { createPollGuard } from '../utils/pollGuard';
+import { formatIdade } from '../utils/format';
 import { BROKER_CONNECTING_MS, BROKER_FAIL_MS } from '../config/adminTimings';
 
 // Modelo de estado da página/selo de status. Funções puras no topo; fetchers no fim.
@@ -62,6 +63,17 @@ export function mqttBrokerStatus(connected, disconnectedSinceMs, now = Date.now(
   if (down > BROKER_FAIL_MS) return { estado: 'falha', detalhe: `Desconectado há ${Math.round(down / 1000)} s` };
   if (down > BROKER_CONNECTING_MS) return { estado: 'degradado', detalhe: 'Reconectando…' };
   return { estado: 'desconhecido', detalhe: 'Conectando…' };
+}
+
+/**
+ * Há quanto tempo o broker está no estado atual, a partir da última transição de
+ * `connected` observada pela página (ou a montagem). Sem hora conhecida: null, nunca
+ * uma idade inventada.
+ */
+export function brokerDesde(connected, desdeMs, now = Date.now()) {
+  if (!Number.isFinite(desdeMs)) return null;
+  const idade = formatIdade(toMs(now) - desdeMs);
+  return idade ? `${connected ? 'conectado' : 'fora'} ${idade}` : null;
 }
 
 /**
