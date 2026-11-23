@@ -126,6 +126,37 @@ describe('itensCadastro', () => {
   });
 });
 
+describe('itensCadastro com linhas legadas', () => {
+  const mk = (id, acao, d, t) => ({ id, acao, detalhes: d, operador_nome: 'Ana', created_at: t });
+  const frases = (rows) => itensCadastro(rows).map((i) => i.frase);
+  it('sem modo: omite o campo', () => {
+    expect(frases([mk(1, AUDIT.BOIA_CRIAR, { nome: 'Boia Teste Plano', deviceId: 'esp_teste_plano' }, '2026-11-01T10:00:00Z')]))
+      .toEqual(['Cadastrada (Boia Teste Plano, serial esp_teste_plano)']);
+  });
+  it('serial vazio vira sem serial; chaves extras são ignoradas', () => {
+    expect(frases([mk(1, AUDIT.BOIA_CRIAR, { nome: 'X', deviceId: '' }, '2026-11-01T10:00:00Z')])).toEqual(['Cadastrada (X, sem serial)']);
+    expect(frases([mk(1, AUDIT.BOIA_CRIAR, { nome: 'X', status: 'online', deviceId: 'esp' }, '2026-11-01T10:00:00Z')]))
+      .toEqual(['Cadastrada (X, serial esp)']);
+  });
+  it('compara só campos presentes nos dois eventos', () => {
+    const rows = [
+      mk(2, AUDIT.BOIA_EDITAR, { nome: 'A', status: 'online', deviceId: 'esp', modo: 'campo' }, '2026-11-02T10:00:00Z'),
+      mk(1, AUDIT.BOIA_CRIAR, { nome: 'A', deviceId: 'esp' }, '2026-11-01T10:00:00Z'),
+    ];
+    expect(frases(rows)[0]).toBe('Cadastro editado (sem mudança de nome, serial ou modo)');
+    const rows2 = [
+      mk(2, AUDIT.BOIA_EDITAR, { nome: 'A', deviceId: 'esp' }, '2026-11-02T10:00:00Z'),
+      mk(1, AUDIT.BOIA_CRIAR, { nome: 'A', deviceId: '' }, '2026-11-01T10:00:00Z'),
+    ];
+    expect(frases(rows2)[0]).toBe('Cadastro editado: serial sem serial → esp');
+    const rows3 = [
+      mk(2, AUDIT.BOIA_EDITAR, { nome: 'A' }, '2026-11-02T10:00:00Z'),
+      mk(1, AUDIT.BOIA_CRIAR, { nome: 'B', deviceId: 'esp' }, '2026-11-01T10:00:00Z'),
+    ];
+    expect(frases(rows3)[0]).toBe('Cadastro editado: nome B → A');
+  });
+});
+
 describe('montarLinhaDoTempo', () => {
   const man = (id, t) => ({ id, motivo: 'm', timestamp_inicio: t, timestamp_fim: null, operador_nome: 'A' });
   const cal = (id, t) => ({ id, sensor_key: 'ph', observacao: null, operador_nome: 'A', calibrated_at: t });

@@ -112,7 +112,19 @@ export function itensSaude(rows, { serialAtual, modo }) {
   });
 }
 
-const serialTxt = (s) => (s ? `serial ${s}` : 'sem serial');
+const temValor = (v) => v !== undefined && v !== null && String(v).trim() !== '';
+/** Serial normalizado: null/undefined/'' (após trim) = sem serial. */
+const serialDe = (d) => (temValor(d?.deviceId) ? String(d.deviceId).trim() : null);
+const serialTxt = (d) => (serialDe(d) ? `serial ${serialDe(d)}` : 'sem serial');
+const SEM_SERIAL = 'sem serial';
+
+// Linhas antigas de audit_logs podem não ter `modo`/`nome` e trazem chaves extras
+// (ex.: status): campo ausente é omitido da frase e só se compara quando presente nos dois eventos.
+const valoresTxt = (d) => [
+  temValor(d.nome) ? d.nome : null,
+  serialTxt(d),
+  temValor(d.modo) ? d.modo : null,
+].filter((x) => x !== null).join(', ');
 
 /** `rows` do mais novo ao mais antigo (como a consulta devolve); muda = comparação com o evento anterior. */
 export function itensCadastro(rows) {
@@ -122,15 +134,15 @@ export function itensCadastro(rows) {
     const prev = lista[i + 1]?.detalhes; // o mais antigo vem depois na lista
     let frase;
     if (r.acao === AUDIT.BOIA_CRIAR) {
-      frase = `Cadastrada (${d.nome}, ${serialTxt(d.deviceId)}, ${d.modo})`;
+      frase = `Cadastrada (${valoresTxt(d)})`;
     } else if (!prev) {
-      frase = `Cadastro editado (valores: ${d.nome}, ${serialTxt(d.deviceId)}, ${d.modo})`;
+      frase = `Cadastro editado (valores: ${valoresTxt(d)})`;
     } else {
       const mud = [];
-      if (prev.nome !== d.nome) mud.push(`nome ${prev.nome} → ${d.nome}`);
-      if (prev.modo !== d.modo) mud.push(`modo ${prev.modo} → ${d.modo}`);
-      if ((prev.deviceId ?? null) !== (d.deviceId ?? null)) {
-        mud.push(`serial ${prev.deviceId ?? 'sem serial'} → ${d.deviceId ?? 'sem serial'}`);
+      if (temValor(prev.nome) && temValor(d.nome) && prev.nome !== d.nome) mud.push(`nome ${prev.nome} → ${d.nome}`);
+      if (temValor(prev.modo) && temValor(d.modo) && prev.modo !== d.modo) mud.push(`modo ${prev.modo} → ${d.modo}`);
+      if (prev.deviceId !== undefined && d.deviceId !== undefined && serialDe(prev) !== serialDe(d)) {
+        mud.push(`serial ${serialDe(prev) ?? SEM_SERIAL} → ${serialDe(d) ?? SEM_SERIAL}`);
       }
       frase = mud.length ? `Cadastro editado: ${mud.join('; ')}` : 'Cadastro editado (sem mudança de nome, serial ou modo)';
     }

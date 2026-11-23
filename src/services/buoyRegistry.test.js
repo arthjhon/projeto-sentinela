@@ -165,5 +165,6 @@ describe('motivoCodigoInvalido', () => {
   });
   it('aceita código comum', () => {
     expect(motivoCodigoInvalido('SM-01')).toBeNull();
+    expect(motivoCodigoInvalido(undefined)).toBeNull();
   });
 });
