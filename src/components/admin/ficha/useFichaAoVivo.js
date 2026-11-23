@@ -19,6 +19,7 @@ const SEM_TOPICOS = [];
  * @returns {{
  *   statusMsg: object|null,
  *   conexao: {texto: string, tom: string},
+ *   estado: string,
  *   ultimaMs: number|null,
  *   agoraMs: number,
  *   ultimasErro: string|null,
@@ -51,5 +52,5 @@ export function useFichaAoVivo(buoy) {
   const ultimasErro = erros[buoy.codigo] ?? null;
   const recarregarUltimas = temSerial ? () => recarregar(buoy.codigo) : null;
 
-  return { statusMsg, conexao, ultimaMs, agoraMs, ultimasErro, recarregarUltimas };
+  return { statusMsg, conexao, estado, ultimaMs, agoraMs, ultimasErro, recarregarUltimas };
 }

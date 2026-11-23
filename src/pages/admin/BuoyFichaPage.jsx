@@ -7,6 +7,7 @@ import { useFichaAoVivo } from '../../components/admin/ficha/useFichaAoVivo';
 import FichaIdentificacao from '../../components/admin/ficha/FichaIdentificacao';
 import FichaSensores from '../../components/admin/ficha/FichaSensores';
 import FichaLinhaDoTempo from '../../components/admin/ficha/FichaLinhaDoTempo';
+import ReiniciarPlaca from '../../components/admin/ficha/ReiniciarPlaca';
 import DeviceInfoList from '../../components/admin/dashboard/DeviceInfoList';
 import BuoyFormModal from '../../components/admin/boias/BuoyFormModal';
 import PageToolbar from '../../components/admin/PageToolbar';
@@ -96,6 +97,14 @@ function FichaConteudo({ buoy, registry }) {
             </p>
           )}
           <DeviceInfoList statusMsg={vivo.statusMsg} agoraMs={vivo.agoraMs} deployBloco={ficha.ultimoDeploySucesso} />
+          <ReiniciarPlaca
+            buoy={buoy}
+            role={role}
+            isFallback={registry.isFallback}
+            conexao={vivo.estado}
+            statusMsg={vivo.statusMsg}
+            agoraMs={vivo.agoraMs}
+          />
         </section>
 
         <section className="ficha-bloco glass" aria-labelledby="ficha-sens">
