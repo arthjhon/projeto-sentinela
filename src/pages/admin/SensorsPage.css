@@ -79,7 +79,9 @@
   text-align: center;
 }
 
-.sensor-id-cell {
+/* O flex fica num div interno: uma <td> com display:flex deixa de ser célula de
+   tabela e não estica até a altura da linha (o fundo dela sobrava, desalinhado). */
+.sc-ident {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -97,6 +99,7 @@
 
 .sc-name {
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .sc-serial {
@@ -502,8 +505,8 @@
   }
   .sensors-table.fleet-table tr.buoy-row td { grid-column: 2; min-width: 0; padding: 2px var(--sp-2); background: transparent; border: 0; border-radius: 0; }
   .sensors-table.fleet-table tr.buoy-row td.expand-cell { grid-column: 1; grid-row: 1 / span 5; align-self: start; padding: 0; }
-  .sensors-table.fleet-table .sensor-id-cell { flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); }
-  .sensors-table.fleet-table .sc-name { overflow-wrap: anywhere; }
+  .sensors-table.fleet-table .sc-ident { flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); }
+  .sensors-table.fleet-table .sc-name { overflow-wrap: anywhere; white-space: normal; }
   .sensors-table.fleet-table .details-row { margin-bottom: var(--sp-2); }
   .sensors-table.fleet-table .details-row td { padding: 0; background: transparent; }
   .sensors-table.fleet-table .details-container { padding: var(--sp-3) var(--sp-2); }

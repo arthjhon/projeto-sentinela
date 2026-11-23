@@ -33,15 +33,17 @@ export default function BuoyRow({ linha, expandida, onToggle, healthRows, manute
           </button>
         </td>
         <td className="sensor-id-cell" onClick={alternar}>
-          <div className={`status-indicator ${INDICADOR[linha.tom]}`}></div>
-          <span className="sc-id">{linha.id}</span>
-          <span className="sc-name">{linha.nome}</span>
-          {linha.deviceId && <span className="sc-serial" title="Número de série / Device ID">{linha.deviceId}</span>}
-          {rotuloManut && (
-            <span className={`maint-tag ${manutencao === 'erro' ? 'indisponivel' : ''}`} title="Manutenção aberta">
-              <Wrench size={12} aria-hidden="true" /> {rotuloManut}
-            </span>
-          )}
+          <div className="sc-ident">
+            <div className={`status-indicator ${INDICADOR[linha.tom]}`}></div>
+            <span className="sc-id">{linha.id}</span>
+            <span className="sc-name">{linha.nome}</span>
+            {linha.deviceId && <span className="sc-serial" title="Número de série / Device ID">{linha.deviceId}</span>}
+            {rotuloManut && (
+              <span className={`maint-tag ${manutencao === 'erro' ? 'indisponivel' : ''}`} title="Manutenção aberta">
+                <Wrench size={12} aria-hidden="true" /> {rotuloManut}
+              </span>
+            )}
+          </div>
         </td>
         <td onClick={alternar}>
           <span className="sc-location"><MapPin size={14} /> {linha.local}</span>
