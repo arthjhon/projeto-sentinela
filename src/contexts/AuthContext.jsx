@@ -92,6 +92,7 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(false);
         setCurrentUser(null);
         setUsers([]);
+        setUsersError(false);
         setIsLoading(false);
       }
     });
