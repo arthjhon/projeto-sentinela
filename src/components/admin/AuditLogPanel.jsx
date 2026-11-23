@@ -26,7 +26,7 @@ function resumirDetalhes(detalhes) {
   return partes.length ? partes.join(' · ') : null;
 }
 
-export default function AuditLogPanel({ operadores = [] }) {
+export default function AuditLogPanel({ operadores = [], operadoresIndisponiveis = false }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState(null);
@@ -68,10 +68,11 @@ export default function AuditLogPanel({ operadores = [] }) {
           <select
             className="audit-select"
             value={filtroOperador}
+            disabled={operadoresIndisponiveis}
             onChange={e => setFiltroOperador(e.target.value)}
             aria-label="Filtrar por operador"
           >
-            <option value="">Todos os operadores</option>
+            <option value="">{operadoresIndisponiveis ? 'Lista de operadores indisponível' : 'Todos os operadores'}</option>
             {operadores.map(o => (
               <option key={o.id} value={o.id}>{o.username ?? o.name}</option>
             ))}
@@ -97,7 +98,7 @@ export default function AuditLogPanel({ operadores = [] }) {
 
       {!erro && logs.length >= LIMITE_AUDITORIA && (
         <p className="audit-empty" role="status">
-          Mostrando os últimos {LIMITE_AUDITORIA} registros. Use os filtros para chegar aos mais antigos.
+          Mostrando os últimos {LIMITE_AUDITORIA} registros.
         </p>
       )}
 

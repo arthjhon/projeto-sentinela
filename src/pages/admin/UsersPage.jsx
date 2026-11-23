@@ -14,7 +14,7 @@ import {
 import './UsersPage.css';
 
 const UsersPage = () => {
-  const { users, currentUser, createAdminUser, deleteAdminUser, editAdminUser, resetUserPassword } = useAuth();
+  const { users, usersError, currentUser, createAdminUser, deleteAdminUser, editAdminUser, resetUserPassword } = useAuth();
   const { addToast } = useToast();
   const readOnly = useReadOnly();
   
@@ -246,6 +246,10 @@ const UsersPage = () => {
             )}
           </div>
       </div>
+
+      {usersError && (
+        <p className="text-muted mt-4" role="alert">Lista de operadores indisponível: não foi possível ler os dados agora. Tente recarregar a página.</p>
+      )}
 
       <div className="users-list-wrapper glass mt-4">
         <table className="users-table">

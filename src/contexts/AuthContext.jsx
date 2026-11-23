@@ -22,15 +22,24 @@ export const AuthProvider = ({ children }) => {
 
   // Lista central de usuários
   const [users, setUsers] = useState([]);
+  // true quando a lista não pôde ser lida: a UI mostra "indisponível", não uma lista vazia.
+  const [usersError, setUsersError] = useState(false);
 
   // Admin lê a tabela inteira (RLS: profiles só abre outras linhas para admin).
   // Operador e visualizador recebem só id, nome e papel pela RPC operadores_lista:
   // o username é parte da credencial e não sai do servidor para eles.
   const fetchAdminUsersList = useCallback(async (role) => {
-    const { data } = role === 'admin'
-      ? await supabase.from('profiles').select('*').order('created_at', { ascending: true })
-      : await supabase.rpc('operadores_lista');
-    if (data) setUsers(data);
+    try {
+      const { data, error } = role === 'admin'
+        ? await supabase.from('profiles').select('*').order('created_at', { ascending: true })
+        : await supabase.rpc('operadores_lista');
+      if (error || !data) throw error ?? new Error('sem dados');
+      setUsers(data);
+      setUsersError(false);
+    } catch (e) {
+      console.error('lista de operadores indisponível:', e?.message ?? e);
+      setUsersError(true);
+    }
   }, []);
 
   // Busca o profile do usuário com até 4 tentativas (trigger PostgreSQL pode demorar ms após o signup)
@@ -232,6 +241,7 @@ export const AuthProvider = ({ children }) => {
       login,
       logout,
       users,
+      usersError,
       setUsers,
       updatePassword,
       resetUserPassword,

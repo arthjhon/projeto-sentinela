@@ -6,13 +6,22 @@ import { logAcao, AUDIT } from './auditLog';
 // boia_id é TEXT ('SM-01') e não FK: a frota mora em config/fleet.js, não no
 // Postgres. Ver supabase_backlog_schema.sql.
 
-/** Nome do operador logado, para gravar junto do registro. */
+/**
+ * Nome gravado junto do registro: nome de exibição, nunca username nem e-mail
+ * (o e-mail é <username>@sentinela.app e a conta demo lê estas tabelas). O
+ * servidor sobrescreve o valor por trigger a partir de profiles.name; este é
+ * só o valor de partida, exigido pelo NOT NULL.
+ */
+export function nomeDoOperador(perfil) {
+  return perfil?.name || 'desconhecido';
+}
+
 async function operadorAtual() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { id: null, nome: 'desconhecido' };
   const { data: perfil } = await supabase
-    .from('profiles').select('username').eq('id', user.id).single();
-  return { id: user.id, nome: perfil?.username ?? user.email ?? 'desconhecido' };
+    .from('profiles').select('name').eq('id', user.id).single();
+  return { id: user.id, nome: nomeDoOperador(perfil) };
 }
 
 // ── 3.1 Manutenção ────────────────────────────────────────────

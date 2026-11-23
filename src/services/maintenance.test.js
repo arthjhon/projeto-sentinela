@@ -16,7 +16,7 @@ const chain = vi.hoisted(() => {
 });
 vi.mock('../lib/supabase', () => ({ supabase: { from: () => chain.q } }));
 
-import { manutencaoAberta } from './maintenance';
+import { manutencaoAberta, nomeDoOperador } from './maintenance';
 
 beforeEach(() => { chain.calls.length = 0; chain.result.data = null; chain.result.error = null; });
 
@@ -33,5 +33,13 @@ describe('manutencaoAberta', () => {
   it('erro de leitura continua lançando (a UI mostra indisponível)', async () => {
     chain.result.error = { message: 'boom' };
     await expect(manutencaoAberta('SM-01')).rejects.toThrow('boom');
+  });
+});
+
+describe('nomeDoOperador', () => {
+  it('usa o nome de exibição, nunca o username nem o e-mail (a demo lê estas tabelas)', () => {
+    expect(nomeDoOperador({ name: 'Ana Lima', username: 'ana' }, { email: 'ana@sentinela.app' })).toBe('Ana Lima');
+    expect(nomeDoOperador(null, { email: 'ana@sentinela.app' })).toBe('desconhecido');
+    expect(nomeDoOperador(undefined, undefined)).toBe('desconhecido');
   });
 });
