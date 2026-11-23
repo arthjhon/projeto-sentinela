@@ -961,6 +961,41 @@ docker exec -e INFLUX_TOKEN "$C" influx restore /tmp/restore --bucket iot --new-
 docker exec "$C" rm -rf /tmp/restore /tmp/restore.tar; unset INFLUX_TOKEN
 ```
 
+### 15b. Backup do broker (volume `sentinela-mosquitto-data`)
+
+O volume é o único lugar das credenciais MQTT (`passwd`: hashes de `svc/telegraf`, `svc/ota` e de cada
+placa `snt-NNNN`). Perdê-lo = reprovisionar todas as placas por USB. Mesmo padrão do 15:
+
+```bash
+sudo install -o root -g root -m 755 infra/bin/mosquitto-backup.sh /usr/local/sbin/mosquitto-backup.sh
+sudo install -d -o root -g root -m 700 /srv/sentinela/backups/mosquitto
+sudo install -o root -g root -m 644 infra/systemd/mosquitto-backup.service infra/systemd/mosquitto-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start mosquitto-backup.service; sudo journalctl -u mosquitto-backup.service -n 20 --no-pager
+sudo ls -l /srv/sentinela/backups/mosquitto/
+sudo systemctl enable --now mosquitto-backup.timer && systemctl list-timers mosquitto-backup.timer
+```
+
+Diário às 03:40, `Persistent=true`; mantém os 14 mais recentes em
+`/srv/sentinela/backups/mosquitto/<UTC>/mosquitto-data.tar` + `SHA256SUMS` (`passwd` obrigatório e
+não vazio; `mosquitto.db` quando existir). O `passwd` é lido sob o `flock` compartilhado do
+`passwd.lock` (o mesmo que o `mqtt-user.sh` usa), então nunca sai pela metade de uma rotação. O tar
+contém hashes de senha: root 700/600, mesmo cuidado de um `.env`. Fica no disco da VM (protege contra
+perda/corrupção do volume, não contra perda da VM); offsite segue pendente.
+
+Restauração do `passwd` (shell root; só o `passwd`, o `mosquitto.db` o broker refaz):
+
+```bash
+B=/srv/sentinela/backups/mosquitto/<UTC>
+(cd "$B" && sha256sum -c SHA256SUMS)
+M=$(docker ps -q --filter label=com.docker.compose.project=sentinela-stack --filter label=com.docker.compose.service=mosquitto)
+T=$(mktemp -d); tar -C "$T" -xf "$B/mosquitto-data.tar" passwd
+docker cp "$T/passwd" "$M:/mosquitto/data/passwd.restore"
+docker exec "$M" sh -c 'chown 1883:1883 /mosquitto/data/passwd.restore && chmod 600 /mosquitto/data/passwd.restore && mv /mosquitto/data/passwd.restore /mosquitto/data/passwd'
+docker kill -s HUP "$M"; shred -u "$T/passwd"; rmdir "$T"
+sudo /usr/local/sbin/mqtt-user.sh list      # confere os usuários
+```
+
 ### 16. Proteção de branch na `main` — ANTES do merge
 
 Junto com o 6b, antes do merge desta branch: a confiança do deploy (R15, "Riscos residuais") é a
@@ -1481,8 +1516,8 @@ do compose). Mitigações: senhas aleatórias de 32+ caracteres, Cloudflare na f
 no broker e rotação com `mqtt-user.sh add` (rotação) se houver suspeita de vazamento.
 
 **Backup:** o volume é o único lugar das credenciais. Perder o volume = reprovisionar todas as
-credenciais (boias incluídas). Incluir `sentinela-mosquitto-data` no backup da VM (o timer do
-passo 15 cobre só o InfluxDB). O `passwd` guarda só hashes, mas é segredo: mesmo cuidado de um `.env`.
+credenciais (boias incluídas). Backup diário pelo timer do passo 15b (`mosquitto-backup.timer`,
+03:40, 14 cópias). O `passwd` guarda só hashes, mas é segredo: mesmo cuidado de um `.env`.
 
 ### Exposição: túnel Cloudflare e DNS
 

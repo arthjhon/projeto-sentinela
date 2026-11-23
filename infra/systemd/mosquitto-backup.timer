@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Sentinela MQTT broker backup at 03:40 (local time)
+
+[Timer]
+OnCalendar=*-*-* 03:40:00
+Persistent=true
+AccuracySec=1min
+Unit=mosquitto-backup.service
+
+[Install]
+WantedBy=timers.target
