@@ -60,6 +60,9 @@ def make(url, user, password):
         protocol=mqtt.MQTTv5,
         transport="websockets" if ws else "tcp",
     )
+    if ws:
+        # The tunnel picks the listener by path (/mqtt -> 9001, /dev -> 9002): honour it.
+        c.ws_set_options(path=u.path or "/mqtt")
     if user:
         c.username_pw_set(user, password)
     if u.scheme in ("wss", "mqtts"):
