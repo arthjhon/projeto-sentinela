@@ -109,11 +109,6 @@ const AdminDashboard = () => {
 
   return (
     <div className="dashboard-content-area">
-      <div className="page-header">
-        <h1>Visão geral</h1>
-        <p>A frota e, abaixo, tudo da bóia selecionada: sensores, histórico, eventos e sistema.</p>
-      </div>
-
       {aviso && buoys.length > 0 && (
         <p className={`dash-broker dash-broker-${aviso}`} role="status">
           {aviso === 'conectando'

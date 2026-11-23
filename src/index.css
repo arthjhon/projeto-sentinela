@@ -11,6 +11,42 @@
   --success: #10b981;
   --danger: #ef4444;
   --warning: #f59e0b;
+
+  /* Painel admin "slim" (Onda 2): escala única de espaço, tipo, raio e controle.
+     Estes tokens são globais, mas só o CSS do admin os usa. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.9375rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.5rem;
+  --fs-num: 1.5rem;
+  --radius-card: 12px;
+  --radius-ctl: 8px;
+  --radius-pill: 999px;
+  --card-pad: 16px;
+  --ctl-h: 36px;
+  --text-subtle: #8795a8;
+  --border: rgba(255, 255, 255, 0.08);
+  --surface-2: rgba(255, 255, 255, 0.04);
+}
+
+@media (max-width: 768px) {
+  :root { --fs-xl: 1.25rem; }
+}
+
+@media (max-width: 640px) {
+  :root { --card-pad: 12px; }
+}
+
+/* Alvo de toque: celular ou ponteiro grosso */
+@media (max-width: 768px), (pointer: coarse) {
+  :root { --ctl-h: 44px; }
 }
 
 * {

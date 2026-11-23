@@ -8,32 +8,119 @@
    Classes globais do site todo ficam em shared.css.
    ═══════════════════════════════════════════════════════════════ */
 
-/* ── Cabeçalho de página: título + ações ─────────────────────── */
+/* ── Controles: fonte, altura e foco ─────────────────────────────
+   Inclui os portais do admin (Modal, detalhes da bóia), que ficam fora de
+   .admin-container. :where() zera a especificidade: qualquer classe da tela
+   ajusta tamanho/peso por cima; só o padrão do navegador (Arial, 13 px) perde. */
+:where(.admin-container, .crud-modal-overlay, .bdm-overlay) :where(button, input, select, textarea) {
+  font: inherit;
+}
+
+/* Altura mínima de toque/densidade (36 px no desktop, 44 px no celular). */
+:where(.admin-content) :where(button, select, input:not([type='checkbox'], [type='radio'], [type='range'])) {
+  min-height: var(--ctl-h);
+}
+
+:is(.admin-container, .crud-modal-overlay, .bdm-overlay) :is(.btn-primary, .btn-table, .btn-sm) {
+  min-height: var(--ctl-h);
+}
+
+:is(.admin-container, .crud-modal-overlay, .bdm-overlay) .btn-primary {
+  justify-content: center;
+  padding: 0 var(--sp-4);
+  white-space: nowrap;
+}
+
+/* Foco do teclado sempre visível. Telas não removem este contorno sem pôr outro. */
+:is(.admin-container, .crud-modal-overlay, .bdm-overlay) :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Títulos compactos: o body tem line-height 1.6 (texto corrido). */
+:where(.admin-container, .crud-modal-overlay, .bdm-overlay) :where(h1, h2, h3, h4, h5, h6) {
+  line-height: 1.25;
+}
+
+/* ── Cartões dentro do conteúdo ──────────────────────────────────
+   .glass é global (o site público também usa). No painel: raio de cartão e
+   borda do token; o blur sai em AdminLayout.css (fica só na sidebar e no Modal). */
+.admin-content .glass {
+  border-radius: var(--radius-card);
+  border-color: var(--border);
+}
+
+/* ── Faixa da página: informação curta + ações (PageToolbar.jsx) ── */
+.page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.page-toolbar-inicio {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.page-toolbar-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+
+/* Celular: as ações ocupam a linha toda e a busca encolhe ao lado do botão,
+   em vez de cada uma ir para uma linha própria. */
+@media (max-width: 768px) {
+  .page-toolbar-acoes {
+    flex: 1 1 100%;
+  }
+
+  .page-toolbar-acoes .search-bar {
+    flex: 1 1 120px;
+    min-width: 0;
+  }
+}
+
+/* ── Linha título + ações dentro de um bloco (ex.: MaintenancePanel) ── */
 .d-flex-between {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.header-actions {
-  display: flex;
   align-items: center;
-  gap: 0.75rem;
   flex-wrap: wrap;
+  gap: var(--sp-3);
 }
 
 .search-bar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.55rem 0.9rem;
-  border-radius: 8px;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  min-height: var(--ctl-h);
+  border-radius: var(--radius-ctl);
   min-width: 220px;
   max-width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
 }
+
+/* .search-bar também é .glass: o raio de controle vence o de cartão */
+.admin-content .search-bar { border-radius: var(--radius-ctl); }
+
+/* O contorno de foco vai na caixa inteira, não no <input> sem borda dentro dela */
+.search-bar:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.search-bar input:focus-visible { outline: none; }
 
 .search-bar input {
   background: transparent;
@@ -41,17 +128,17 @@
   outline: none;
   color: #e2e8f0;
   font-family: inherit;
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
   width: 100%;
 }
 
-.search-bar input::placeholder { color: #64748b; }
+.search-bar input::placeholder { color: var(--text-subtle); }
 
 /* ── Formulários (usados dentro de Modal e nas páginas) ──────── */
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
+  gap: var(--sp-5);
 }
 
 @media (max-width: 560px) {
@@ -61,25 +148,26 @@
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--sp-2);
 }
 
 .form-group label {
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
-  color: #64748b;
+  color: var(--text-subtle);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .form-group input,
 .form-group select {
-  padding: 0.6rem 0.9rem;
+  min-height: var(--ctl-h);
+  padding: 0 var(--sp-3);
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: var(--radius-ctl);
   color: #e2e8f0;
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -120,7 +208,7 @@
 .status-indicator.online { color: var(--success); background: var(--success); }
 .status-indicator.warning { color: var(--warning); background: var(--warning); }
 .status-indicator.offline { color: var(--danger); background: var(--danger); box-shadow: none; }
-.status-indicator.planejada { color: #94a3b8; background: #64748b; box-shadow: none; }
+.status-indicator.planejada { color: #94a3b8; background: var(--text-subtle); box-shadow: none; }
 
 .spin { animation: admin-spin 1s linear infinite; }
 @keyframes admin-spin {
@@ -152,7 +240,7 @@
   padding: 0 1rem 1rem;
   color: var(--text-muted);
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -169,10 +257,10 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-ctl);
   padding: 0.6rem 1rem;
   margin-bottom: 1rem;
 }
 
 /* Motivo visível de ações desabilitadas (components/admin/AcaoAviso.jsx) */
-.acao-aviso { margin: 0.5rem 0 0; font-size: 0.8rem; }
+.acao-aviso { margin: 0.5rem 0 0; font-size: var(--fs-sm); }

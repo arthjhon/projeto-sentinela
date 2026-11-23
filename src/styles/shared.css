@@ -18,9 +18,13 @@
    .btn + .btn-primary  -> composicional (publico/login): .btn da a base
    .btn-primary sozinho -> autossuficiente (admin)
    O seletor composto .btn.btn-primary tem especificidade maior, entao
-   vence sempre — sem depender da ordem das regras. */
+   vence sempre — sem depender da ordem das regras.
+   Fonte: font-family: inherit (Outfit, nunca o Arial do <button>). O atalho
+   `font: inherit` aqui mudaria também tamanho e line-height dos botões públicos
+   e do login; no painel ele vale inteiro, via admin-shared.css. */
 
 .btn {
+  font-family: inherit;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -33,6 +37,7 @@
 }
 
 .btn-primary {
+  font-family: inherit;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;

@@ -12,6 +12,7 @@ import BuoyFormModal from '../../components/admin/boias/BuoyFormModal';
 import { logAcao, AUDIT } from '../../services/auditLog';
 import { getBuoyRegistry, saveBuoyRegistry, normalizeModo } from '../../services/buoyRegistry';
 import { FORM_VAZIO, permissaoAcao } from '../../utils/boiasView';
+import PageToolbar from '../../components/admin/PageToolbar';
 import './SensorsPage.css';
 
 // Casca da página Bóias: busca, cadastro/remoção e a tabela. Os dados vêm de
@@ -95,42 +96,40 @@ const SensorsPage = () => {
 
   return (
     <div className="dashboard-content-area">
-      <div className="page-header d-flex-between">
-        <div>
-          <h1>Gerenciamento de Bóias e Sensores</h1>
-          <p>Visão detalhada do hardware alocado nas margens das lagoas.</p>
+      <PageToolbar
+        inicio={
+          <>
+            <CollectionHealth jobs={workerJobs} unavailable={healthError} />
+            <span className={`badge badge-${connected ? 'online' : 'offline'}`} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
+              MQTT {connected ? 'Online' : 'Offline'}
+            </span>
+          </>
+        }
+      >
+        <div className="search-bar glass">
+          <Search size={18} className="text-muted" />
+          <input
+            type="text"
+            aria-label="Buscar bóia"
+            placeholder="Buscar bóia..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
-
-        <div className="header-actions">
-          <CollectionHealth jobs={workerJobs} unavailable={healthError} />
-          <span className={`badge badge-${connected ? 'online' : 'offline'}`} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
-            MQTT {connected ? 'Online' : 'Offline'}
-          </span>
-          <div className="search-bar glass">
-            <Search size={18} className="text-muted" />
-            <input
-              type="text"
-              aria-label="Buscar bóia"
-              placeholder="Buscar bóia..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          {/* A RLS de app_settings (map_buoys) só aceita escrita de admin; os demais
-              perfis veem o botão desabilitado, com a explicação. */}
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={abrirCadastro}
-            aria-describedby={cadastro.permitido ? undefined : 'aviso-cadastro'}
-            disabled={!cadastro.permitido || Boolean(registryError)}
-            title={cadastro.motivo ?? (registryError ? 'Cadastro indisponível: não dá para cadastrar com o registro ilegível.' : undefined)}
-          >
-            <Plus size={18} /> Nova Bóia
-          </button>
-        </div>
-      </div>
+        {/* A RLS de app_settings (map_buoys) só aceita escrita de admin; os demais
+            perfis veem o botão desabilitado, com a explicação. */}
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={abrirCadastro}
+          aria-describedby={cadastro.permitido ? undefined : 'aviso-cadastro'}
+          disabled={!cadastro.permitido || Boolean(registryError)}
+          title={cadastro.motivo ?? (registryError ? 'Cadastro indisponível: não dá para cadastrar com o registro ilegível.' : undefined)}
+        >
+          <Plus size={18} /> Nova Bóia
+        </button>
+      </PageToolbar>
 
       {!cadastro.permitido && <p className="acao-aviso text-muted" id="aviso-cadastro">Nova Bóia, Editar e Remover desabilitados: {cadastro.motivo}</p>}
 

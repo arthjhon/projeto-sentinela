@@ -15,6 +15,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import AcessoNegado from '../../components/admin/AcessoNegado';
 import { ehPerfilGestao } from '../../config/adminNav';
 import { formatData } from '../../utils/format';
+import PageToolbar from '../../components/admin/PageToolbar';
 import './ChangelogPage.css';
 
 const initialFormData = { titulo: '', descricao: '', categoria: 'Hardware', data: '' };
@@ -202,11 +203,7 @@ const ChangelogPageConteudo = () => {
 
   return (
     <div className="dashboard-content-area">
-      <div className="page-header changelog-page-header">
-        <div>
-          <h1>Changelog Público</h1>
-          <p>Marcos e novidades exibidos na página pública "Evolução".</p>
-        </div>
+      <PageToolbar>
         <button
           ref={novaEntradaRef}
           className="btn-primary"
@@ -217,12 +214,12 @@ const ChangelogPageConteudo = () => {
         >
           <Plus size={18} /> Nova Entrada
         </button>
-      </div>
+      </PageToolbar>
 
       <AcaoAviso id="aviso-changelog">{readOnly && `Ações desabilitadas: ${MOTIVO_DEMO}`}</AcaoAviso>
 
       {/* Data oficial — ancora o contador e os marcos automáticos de dias */}
-      <div className="changelog-config-card glass mt-4">
+      <div className="changelog-config-card glass">
         <h3>Data Oficial de Início do Monitoramento</h3>
         <p>Define o contador "N dias monitorando" e os marcos automáticos (100 dias, 1 ano, ...) na página pública.</p>
         <div className="changelog-config-row">
@@ -252,7 +249,7 @@ const ChangelogPageConteudo = () => {
       </div>
 
       {/* Lista de entradas */}
-      <div className="changelog-list-wrapper glass mt-4">
+      <div className="changelog-list-wrapper glass">
         {loading ? (
           <p className="changelog-empty">Carregando entradas...</p>
         ) : loadError ? (

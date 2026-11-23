@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SlidersHorizontal, FlaskConical, Radio, Target, Radar, CircleHelp } from 'lucide-react';
+import { FlaskConical, Radio, Target, Radar, CircleHelp } from 'lucide-react';
 import { useMockMode } from '../../config/mockData';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -125,15 +125,10 @@ const SettingsPageConteudo = () => {
 
   return (
     <div className="dashboard-content-area">
-      <div className="page-header">
-        <h1><SlidersHorizontal size={22} /> Configurações</h1>
-        <p>Ajustes gerais da plataforma.</p>
-      </div>
-
       <AcaoAviso id="aviso-config">{readOnly && `Ações desabilitadas: ${MOTIVO_DEMO}`}</AcaoAviso>
 
       {/* Dados simulados */}
-      <div className="settings-card glass mt-4">
+      <div className="settings-card glass">
         <div className="settings-card-icon" data-on={mockEnabled}>
           {mockEnabled ? <FlaskConical size={22} /> : mockDesconhecido ? <CircleHelp size={22} /> : <Radio size={22} />}
         </div>
@@ -174,7 +169,7 @@ const SettingsPageConteudo = () => {
       </div>
 
       {/* 5.4 — Meta de financiamento */}
-      <div className="settings-card glass mt-4">
+      <div className="settings-card glass">
         <div className="settings-card-icon" data-on="true">
           <Target size={22} />
         </div>
@@ -227,7 +222,7 @@ const SettingsPageConteudo = () => {
       </div>
 
       {/* Raio de coleta no mapa público */}
-      <div className="settings-card glass mt-4">
+      <div className="settings-card glass">
         <div className="settings-card-icon" data-on="true">
           <Radar size={22} />
         </div>

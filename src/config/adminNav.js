@@ -37,6 +37,8 @@ const SECOES = Object.freeze([
         perfis: PERFIS_CONFIG,
         // operador só tem a aba Auditoria: o menu leva direto a ela
         toPorPerfil: { operador: '/admin/config/auditoria' },
+        // ...e o título da topbar diz o que ele vê ali
+        tituloPorPerfil: { operador: 'Auditoria' },
       },
     ],
   },
@@ -65,6 +67,29 @@ export function navParaPerfil(role) {
       .filter(visivel(role))
       .map(({ to, label, icon, toPorPerfil }) => ({ to: toPorPerfil?.[role] ?? to, label, icon })),
   })).filter((s) => s.itens.length > 0);
+}
+
+const TITULO_DESCONHECIDO = 'Página não encontrada';
+
+// `to` é o caminho ou um prefixo dele em fronteira de segmento
+// ('/admin/boias' casa '/admin/boias/frota', não '/admin/boiasx').
+const ehPrefixo = (to, pathname) => pathname === to || pathname.startsWith(`${to}/`);
+
+/**
+ * Título da topbar para a rota: o item do menu de `to` mais longo que é prefixo
+ * do caminho. Busca em todos os itens, não só nos visíveis para o perfil: quem
+ * barra o acesso são as guardas de rota, e a tela de acesso negado também tem título.
+ */
+export function tituloDaRota(pathname, role) {
+  let achado = null;
+  for (const s of SECOES) {
+    for (const item of s.itens) {
+      if (ehPrefixo(item.to, pathname) && (!achado || item.to.length > achado.to.length)) achado = item;
+    }
+  }
+  if (!achado) return TITULO_DESCONHECIDO;
+  const porPerfil = achado.tituloPorPerfil;
+  return porPerfil && Object.hasOwn(porPerfil, role) ? porPerfil[role] : achado.label;
 }
 
 /** Abas da seção visíveis para o perfil; `to` é relativo à seção. */

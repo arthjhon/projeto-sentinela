@@ -1,21 +1,26 @@
 /* Faixa de abas das seções do admin (Bóias, Configurações) */
 .section-tabs {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--sp-3);
   flex-wrap: wrap;
   display: flex;
-  gap: 0.5rem;
+  gap: var(--sp-2);
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .section-tab {
+  display: inline-flex;
+  align-items: center;
+  /* 44 px em qualquer largura (alvo de toque; >= --ctl-h) */
+  min-height: 44px;
   background: transparent;
   border: 0;
   border-bottom: 2px solid transparent;
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
   font-weight: 600;
-  padding: 0.6rem 0.9rem;
+  padding: 0 0.9rem;
+  white-space: nowrap;
   cursor: pointer;
   text-decoration: none;
   transition: color 0.2s, border-color 0.2s;
@@ -28,7 +33,22 @@
   border-bottom-color: var(--primary);
 }
 
-.section-tab:focus-visible {
+/* Contorno para dentro: no celular a faixa rola na horizontal e cortaria o de fora.
+   Seletor mais específico que a regra comum de foco (admin-shared.css). */
+.section-tabs .section-tab:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
+}
+
+/* Celular: uma linha só (44 px), com rolagem horizontal em vez de quebrar */
+@media (max-width: 768px) {
+  .section-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .section-tabs::-webkit-scrollbar { display: none; }
+
+  .section-tab { flex-shrink: 0; }
 }

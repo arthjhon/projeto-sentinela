@@ -13,6 +13,7 @@ import { ehPerfilGestao } from '../../config/adminNav';
 import {
   mascararOperadores, validarMudancaRole, validarExclusao, criarGuardaEnvio, descricaoOperador,
 } from './usersRules';
+import PageToolbar from '../../components/admin/PageToolbar';
 import './UsersPage.css';
 
 const UsersPage = () => {
@@ -235,43 +236,36 @@ const UsersPage = () => {
 
   return (
     <div className="dashboard-content-area">
-      <div className="page-header d-flex-between">
-        <div>
-          <h1>Operadores</h1>
-          <p>Supervisão segura das contas com acesso local à Plataforma Sentinela.</p>
+      <PageToolbar>
+        <div className="search-bar glass">
+          <Search size={18} className="text-muted" />
+          <input
+            type="text"
+            ref={buscaRef}
+            aria-label="Buscar operador"
+            placeholder="Buscar operador..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
-        
-        <div className="header-actions">
-            <div className="search-bar glass">
-              <Search size={18} className="text-muted" />
-              <input
-                type="text"
-                ref={buscaRef}
-                aria-label="Buscar operador"
-                placeholder="Buscar operador..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <button
-              className="btn-primary"
-              onClick={handleOpenCreate}
-              disabled={readOnly}
-              aria-describedby={readOnly ? 'aviso-operadores' : undefined}
-              title={readOnly ? MOTIVO_DEMO : undefined}
-            >
-              <Plus size={18} /> Novo Usuário
-            </button>
-          </div>
-      </div>
+        <button
+          className="btn-primary"
+          onClick={handleOpenCreate}
+          disabled={readOnly}
+          aria-describedby={readOnly ? 'aviso-operadores' : undefined}
+          title={readOnly ? MOTIVO_DEMO : undefined}
+        >
+          <Plus size={18} /> Novo Usuário
+        </button>
+      </PageToolbar>
 
       {usersError && (
-        <p className="text-muted mt-4" role="alert">Lista de operadores indisponível: não foi possível ler os dados agora. Tente recarregar a página.</p>
+        <p className="text-muted" role="alert">Lista de operadores indisponível: não foi possível ler os dados agora. Tente recarregar a página.</p>
       )}
 
       <AcaoAviso id="aviso-operadores">{aviso && `Ações desabilitadas: ${aviso}`}</AcaoAviso>
 
-      <div className="users-list-wrapper glass mt-4">
+      <div className="users-list-wrapper glass">
         <table className="users-table">
           <thead>
             <tr>

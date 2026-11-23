@@ -15,10 +15,6 @@ const AuditoriaPage = () => {
 
   return (
     <div className="dashboard-content-area">
-      <div className="page-header">
-        <h1>Log de Auditoria</h1>
-        <p>Quem fez o quê no painel, com data e detalhes.</p>
-      </div>
       <AuditLogPanel operadores={users} operadoresIndisponiveis={usersError} />
     </div>
   );

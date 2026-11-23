@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { LogOut, Eye, Menu } from 'lucide-react';
-import { navParaPerfil } from '../../config/adminNav';
+import { navParaPerfil, tituloDaRota } from '../../config/adminNav';
 import { SystemStatusProvider } from '../../contexts/SystemStatusContext';
 import { menuInerte, focoDoMenu } from '../../utils/menuMobile';
 import StatusBadge from '../../components/admin/StatusBadge';
@@ -132,11 +132,14 @@ const AdminLayout = () => {
             >
               <Menu size={22} />
             </button>
-            <h2>Centro de Comando</h2>
+            {/* O único <h1> do painel: as páginas não repetem o título */}
+            <h1>{tituloDaRota(location.pathname, currentUser?.role)}</h1>
             <div className="admin-header-status">
               {currentUser?.role === 'visualizador' && (
-                <span className="badge badge-warning">
-                  <Eye size={14} /> Modo Demonstração<span className="badge-demo-extra"> — Somente Leitura</span>
+                <span className="badge badge-warning" title="Modo Demonstração — Somente Leitura">
+                  <Eye size={14} aria-hidden="true" />
+                  <span className="badge-demo-longo">Modo Demonstração — Somente Leitura</span>
+                  <span className="badge-demo-curto">Demo</span>
                 </span>
               )}
               <StatusBadge />

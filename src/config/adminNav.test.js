@@ -8,6 +8,7 @@ import {
   ehPerfilGestao,
   PERFIS_AUDITORIA,
   ehPerfilAuditoria,
+  tituloDaRota,
 } from './adminNav.js';
 
 const resumo = (secoes) =>
@@ -133,5 +134,46 @@ describe('PERFIS_AUDITORIA', () => {
     expect(ehPerfilAuditoria('operador')).toBe(true);
     expect(ehPerfilAuditoria('visualizador')).toBe(false);
     expect(ehPerfilAuditoria(undefined)).toBe(false);
+  });
+});
+
+describe('tituloDaRota', () => {
+  it('rota de item do menu usa o rótulo do item', () => {
+    expect(tituloDaRota('/admin/dashboard', 'admin')).toBe('Visão geral');
+    expect(tituloDaRota('/admin/status', 'demo-inexistente')).toBe('Status do sistema');
+  });
+
+  it('subrota (aba) usa o rótulo da seção', () => {
+    expect(tituloDaRota('/admin/boias/frota', 'admin')).toBe('Bóias');
+    expect(tituloDaRota('/admin/boias/firmware', 'visualizador')).toBe('Bóias');
+    expect(tituloDaRota('/admin/boias/frota', 'operador')).toBe('Bóias');
+    expect(tituloDaRota('/admin/config/operadores', 'admin')).toBe('Configurações');
+  });
+
+  it('índice da seção, antes do redirect, já tem título', () => {
+    expect(tituloDaRota('/admin/boias', 'admin')).toBe('Bóias');
+    expect(tituloDaRota('/admin/boias/', 'admin')).toBe('Bóias');
+  });
+
+  it('operador em Configurações vê "Auditoria" (a única aba dele)', () => {
+    expect(tituloDaRota('/admin/config/auditoria', 'operador')).toBe('Auditoria');
+  });
+
+  it('casa só em fronteira de segmento', () => {
+    expect(tituloDaRota('/admin/boiasx', 'admin')).toBe('Página não encontrada');
+    expect(tituloDaRota('/admin/dashboardx', 'admin')).toBe('Página não encontrada');
+  });
+
+  it('rota desconhecida', () => {
+    expect(tituloDaRota('/admin/xyz', 'admin')).toBe('Página não encontrada');
+    expect(tituloDaRota('/admin', 'admin')).toBe('Página não encontrada');
+  });
+
+  it('perfil com nome de propriedade de Object não vaza para o título', () => {
+    expect(tituloDaRota('/admin/config/site', 'constructor')).toBe('Configurações');
+  });
+
+  it('navParaPerfil não expõe tituloPorPerfil', () => {
+    for (const s of navParaPerfil('operador')) for (const i of s.itens) expect(i).not.toHaveProperty('tituloPorPerfil');
   });
 });

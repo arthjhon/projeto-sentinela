@@ -16,6 +16,7 @@ import { conexaoDoRegistro } from '../../utils/conexaoFrota';
 import { formatIdade, formatUptime, formatRssi } from '../../utils/format';
 import { rotuloConexao, TOM_CLASSE } from '../../utils/dashboardView';
 import RegistryErrorBanner from '../../components/admin/RegistryErrorBanner';
+import PageToolbar from '../../components/admin/PageToolbar';
 import './StatusPage.css';
 
 const STATE_LABEL = {
@@ -133,20 +134,17 @@ const StatusPage = () => {
 
   return (
     <div className="dashboard-content-area">
-      <div className="page-header d-flex-between">
-        <div>
-          <h1>Status do Sistema</h1>
-          <p>Saúde da plataforma, da coleta e das bóias. Somente leitura.</p>
-        </div>
-        <div className="header-actions">
+      <PageToolbar
+        inicio={
           <span className={`badge ${BADGE_CLASS[badgeMeta.tone]}`} title="Pior estado entre Plataforma (sem MQTT) e Coleta">
             {badgeMeta.label}
           </span>
-          <button type="button" className="btn-table" onClick={handleRefresh} disabled={sys.loading}>
-            <RefreshCw size={14} /> Atualizar
-          </button>
-        </div>
-      </div>
+        }
+      >
+        <button type="button" className="btn-table" onClick={handleRefresh} disabled={sys.loading}>
+          <RefreshCw size={14} /> Atualizar
+        </button>
+      </PageToolbar>
 
       <RegistryErrorBanner error={isFallback ? registryError : null} onRetry={reloadRegistry} />
 

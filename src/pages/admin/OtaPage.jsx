@@ -212,11 +212,6 @@ const OtaPageConteudo = () => {
 
   return (
     <div className="dashboard-content-area">
-      <div className="page-header">
-        <h1>Atualização de Firmware (OTA)</h1>
-        <p>Atualize o firmware das bóias remotamente, sem precisar ir ao campo.</p>
-      </div>
-
       <RegistryErrorBanner error={isFallback ? (registryError || 'erro desconhecido') : null} onRetry={reload}>
         Deploy bloqueado até o cadastro voltar.
       </RegistryErrorBanner>

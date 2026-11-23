@@ -13,6 +13,7 @@ import { WATER_PARAMS } from '../../config/waterQuality';
 import { CONTEXTO_REFRESH_MS, CONTEXTO_ESPERA_DATA_MS } from '../../config/adminTimings';
 import RegistryErrorBanner from '../../components/admin/RegistryErrorBanner';
 import ContextoChart from '../../components/admin/ContextoChart';
+import PageToolbar from '../../components/admin/PageToolbar';
 import './ContextoPage.css';
 
 const ATALHOS = [7, 30, 90];
@@ -105,13 +106,13 @@ export default function ContextoPage() {
 
   return (
     <div className="dashboard-content-area">
-      <div className="page-header">
-        <h1>Contexto ambiental</h1>
-        <p>Turbidez da bóia sobre chuva, vazão e nível da ANA, no mesmo eixo de tempo. Comparação visual: não indica causa.</p>
-        <p className="text-muted ctx-atualizado">
-          Atualizado às {horaMaceio(janela.agora)} (Maceió); renova a cada {CONTEXTO_REFRESH_MS / 60000} min com a aba aberta.
-        </p>
-      </div>
+      <PageToolbar
+        inicio={
+          <span>
+            Atualizado às {horaMaceio(janela.agora)} (Maceió); renova a cada {CONTEXTO_REFRESH_MS / 60000} min com a aba aberta.
+          </span>
+        }
+      />
 
       <RegistryErrorBanner error={isFallback ? erroRegistro : null} onRetry={reload} />
 
