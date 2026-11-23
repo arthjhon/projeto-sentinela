@@ -8,29 +8,18 @@ import { supabase } from '../../../lib/supabase';
 import { listarManutencoes, ultimasCalibracoes, manutencaoAberta } from '../../../services/maintenance';
 import { ultimoDeploy } from '../../../services/otaCommand';
 import { normalizeModo } from '../../../services/buoyRegistry';
-import {
-  formatUptime, formatMemoria, formatRssi, blocosDetalhes, estadoFirmware, estadoManutencao, rotuloRecebido,
-} from '../../../utils/buoyDetails';
+import { blocosDetalhes, estadoManutencao } from '../../../utils/buoyDetails';
+import DeviceInfoList, { Row, Muted } from './DeviceInfoList';
 import { formatDataHora } from '../../../utils/format';
 import { serialValido } from '../../../utils/deviceIds';
 import { destinoTab } from '../../../utils/focusTrap';
 import './BuoyDetailsModal.css';
 
-const SEM_LEITURA = 'sem leitura desde que o painel abriu';
 const FALHA = 'indisponível (falha na leitura)';
 const NAO_MEDIDO = ['Bateria', 'Temperatura interna', 'GPS', 'Sinal de gateway'];
 const SENSOR_LABEL = { temperatura: 'Temperatura', ph: 'pH', turbidez: 'Turbidez' };
 
 const fmtData = formatDataHora;
-
-const Row = ({ label, children }) => (
-  <div className="bdm-row">
-    <dt>{label}</dt>
-    <dd>{children}</dd>
-  </div>
-);
-
-const Muted = ({ children, title }) => <span className="bdm-muted" title={title}>{children}</span>;
 
 export default function BuoyDetailsModal({ buoy, statusMsg, agoraMs, onClose }) {
   const titleRef = useRef(null);
@@ -83,19 +72,10 @@ export default function BuoyDetailsModal({ buoy, statusMsg, agoraMs, onClose }) 
   }, [buoy.codigo]);
 
   const temCoord = Number.isFinite(buoy.lat) && Number.isFinite(buoy.lng);
-  const fw = estadoFirmware(statusMsg, blocos.deploy);
   const manut = estadoManutencao(blocos.aberta);
-  const rssi = formatRssi(statusMsg?.rssi);
-  const memoria = formatMemoria(statusMsg?.free_heap, statusMsg?.total_heap);
-  const uptime = formatUptime(statusMsg?.uptime);
-  const latencia = Number.isFinite(statusMsg?.mqtt_latency) ? `${Math.round(statusMsg.mqtt_latency)} ms` : null;
-  // idade do /status: o valor não é "agora", é o da última mensagem recebida
-  const recebido = rotuloRecebido(statusMsg?._recebidoEm, agoraMs);
-  const comIdade = (valor) => (valor && <>{valor}{recebido && <Muted> · {recebido}</Muted>}</>);
   const serial = serialValido(buoy);
   const anteriores = buoy.deviceIdsAnteriores ?? [];
 
-  const ausente = <Muted>{SEM_LEITURA}</Muted>;
   const { fallback, ...tile } = TILES; // `fallback` é só da config; não vai ao TileLayer
 
   return createPortal(
@@ -148,20 +128,7 @@ export default function BuoyDetailsModal({ buoy, statusMsg, agoraMs, onClose }) 
 
           <section className="bdm-sec">
             <h3>Dispositivo</h3>
-            <dl>
-              <Row label="Placa">{statusMsg?.board ?? ausente}</Row>
-              <Row label="Firmware">
-                {fw.tipo === 'valor' ? <>{fw.texto}{fw.fonte === 'deploy' && <Muted> segundo o último deploy</Muted>}</>
-                  : fw.tipo === 'carregando' ? <Muted>carregando…</Muted>
-                    : fw.tipo === 'falha' ? <Muted>sem /status nesta sessão; leitura do último deploy falhou</Muted>
-                      : ausente}
-              </Row>
-              <Row label="Calibrada">{typeof statusMsg?.calibrated === 'boolean' ? (statusMsg.calibrated ? 'Sim' : 'Não') : ausente}</Row>
-              <Row label="Tempo ligada">{comIdade(uptime) || ausente}</Row>
-              <Row label="Sinal Wi-Fi">{comIdade(rssi) || ausente}</Row>
-              <Row label="Memória">{comIdade(memoria) || ausente}</Row>
-              <Row label="Latência MQTT">{comIdade(latencia) || ausente}</Row>
-            </dl>
+            <DeviceInfoList statusMsg={statusMsg} agoraMs={agoraMs} deployBloco={blocos.deploy} />
           </section>
 
           <section className="bdm-sec">

@@ -4,7 +4,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { logAcao, AUDIT } from '../../../services/auditLog';
 import { DEVICE_ID_RE, mergeRegistryEdit } from '../../../utils/deviceIds';
 import {
-  getBuoyRegistry, saveBuoyRegistry, codigoEmUso, upsertRegistryEntry, withModo,
+  getBuoyRegistry, saveBuoyRegistry, codigoEmUso, upsertRegistryEntry, withModo, motivoCodigoInvalido,
 } from '../../../services/buoyRegistry';
 
 // Grava a entrada no registro dinâmico (map_buoys) a partir de uma cópia FRESCA do
@@ -61,6 +61,12 @@ export default function BuoyFormModal({ inicial, editando, codigosExistentes, on
       addToast(`Já existe uma bóia com o código ${codigo}.`, 'error');
       return;
     }
+    const motivoCodigo = motivoCodigoInvalido(codigo);
+    if (motivoCodigo) {
+      setErros({ id: true });
+      addToast(motivoCodigo, 'error');
+      return;
+    }
     const deviceId = form.deviceId.trim();
     const nome = form.name.trim();
     if (deviceId && !DEVICE_ID_RE.test(deviceId)) {
@@ -87,7 +93,7 @@ export default function BuoyFormModal({ inicial, editando, codigosExistentes, on
       addToast('Bóia cadastrada.', 'success');
       logAcao(AUDIT.BOIA_CRIAR, codigo, { nome, deviceId, modo: form.modo });
     }
-    onSaved();
+    onSaved(codigo);
     onClose();
   };
 

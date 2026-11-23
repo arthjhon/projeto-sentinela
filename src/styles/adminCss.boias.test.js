@@ -9,7 +9,7 @@ import { verificarCssAdmin } from './adminCssRules.js';
 // token e nenhum JSX da área usa a cor reprovada em contraste.
 const SRC = fileURLToPath(new URL('..', import.meta.url));
 
-const DIRS = ['components/admin/boias', 'components/admin/firmware'];
+const DIRS = ['components/admin/boias', 'components/admin/firmware', 'components/admin/ficha'];
 
 const arquivosEm = (dir, ext) =>
   fs.readdirSync(path.join(SRC, dir), { recursive: true })
@@ -21,6 +21,7 @@ const arquivosEm = (dir, ext) =>
 const CSS_BOIAS = [
   'pages/admin/SensorsPage.css',
   'pages/admin/OtaPage.css',
+  'pages/admin/BuoyFichaPage.css',
   'components/admin/SensorHealth.css',
   ...DIRS.flatMap((d) => arquivosEm(d, '.css')),
 ];
@@ -28,6 +29,7 @@ const CSS_BOIAS = [
 const JSX_BOIAS = [
   'pages/admin/SensorsPage.jsx',
   'pages/admin/OtaPage.jsx',
+  'pages/admin/BuoyFichaPage.jsx',
   ...DIRS.flatMap((d) => arquivosEm(d, '.jsx')),
 ];
 

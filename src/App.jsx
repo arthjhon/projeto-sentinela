@@ -18,6 +18,7 @@ const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const SensorsPage = lazy(() => import('./pages/admin/SensorsPage'));
+const BuoyFichaPage = lazy(() => import('./pages/admin/BuoyFichaPage'));
 const StatusPage = lazy(() => import('./pages/admin/StatusPage'));
 const ContextoPage = lazy(() => import('./pages/admin/ContextoPage'));
 const UsersPage = lazy(() => import('./pages/admin/UsersPage'));
@@ -75,6 +76,7 @@ function App() {
                 <Route element={lazyElement(RequireGestao)}>
                   <Route path="firmware" element={lazyElement(OtaPage)} />
                 </Route>
+                <Route path=":codigo" element={lazyElement(BuoyFichaPage)} />
               </Route>
               <Route path="status" element={lazyElement(StatusPage)} />
               <Route path="contexto" element={lazyElement(ContextoPage)} />

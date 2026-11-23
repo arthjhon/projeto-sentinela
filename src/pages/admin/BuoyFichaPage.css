@@ -1,0 +1,10 @@
+.ficha-grade { display: grid; gap: var(--sp-4); align-items: start; }
+@media (max-width: 768px) { .ficha-grade { gap: var(--sp-3); } }
+@media (min-width: 1100px) { .ficha-grade { grid-template-columns: 1fr 1fr; } }
+.ficha-bloco { padding: var(--card-pad); min-width: 0; }
+.ficha-bloco h2 { font-size: var(--fs-md); font-weight: 600; margin: 0 0 var(--sp-2); }
+.ficha-bloco p { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); }
+.ficha-bloco dl { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.ficha-conexao { display: flex; align-items: center; gap: var(--sp-2); }
+.ficha-titulo { font-weight: 600; overflow-wrap: anywhere; }
+@media (max-width: 479px) { .ficha-bloco .bdm-row { grid-template-columns: minmax(0, 1fr); gap: 0; } }
