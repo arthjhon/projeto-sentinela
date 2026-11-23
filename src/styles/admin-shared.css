@@ -21,18 +21,25 @@
   min-height: var(--ctl-h);
 }
 
-:is(.admin-container, .crud-modal-overlay, .bdm-overlay) :is(.btn-primary, .btn-table, .btn-sm) {
+/* Tamanho dos botões do painel. O escopo fica em :where() e só a classe conta
+   (0,1,0): vence o .btn-primary de shared.css (carregado antes; sem isso o
+   padding 0.6rem dele + line-height herdado dariam 45 px) e perde para
+   qualquer variante de página (.ota-form .btn-primary, .settings-save-btn...). */
+:where(.admin-container, .crud-modal-overlay, .bdm-overlay) :is(.btn-primary, .btn-table, .btn-sm) {
   min-height: var(--ctl-h);
 }
 
-:is(.admin-container, .crud-modal-overlay, .bdm-overlay) .btn-primary {
+:where(.admin-container, .crud-modal-overlay, .bdm-overlay) .btn-primary {
   justify-content: center;
   padding: 0 var(--sp-4);
   white-space: nowrap;
 }
 
-/* Foco do teclado sempre visível. Telas não removem este contorno sem pôr outro. */
-:is(.admin-container, .crud-modal-overlay, .bdm-overlay) :is(button, a, input, select, textarea):focus-visible {
+/* Foco do teclado sempre visível. Telas não removem este contorno sem pôr outro.
+   Os alvos ficam em :where() para [tabindex] não inflar a especificidade: (0,2,0)
+   vence os `outline: none` de classe das telas e perde para quem põe outro contorno. */
+:is(.admin-container, .crud-modal-overlay, .bdm-overlay)
+  :where(button, a, input, select, textarea, summary, [tabindex]:not([tabindex='-1'])):focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }

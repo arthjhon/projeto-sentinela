@@ -206,7 +206,7 @@
   white-space: nowrap;
 }
 
-/* Selo demo: "Modo Demonstração — Somente Leitura" no desktop, "Demo" no celular */
+/* Selo demo: texto inteiro no desktop, "Demo" até 768 px, só o ícone até 480 px */
 .badge-demo-curto {
   display: none;
 }
@@ -392,6 +392,17 @@ a.header-status {
 
   .dashboard-content-area {
     gap: var(--sp-3);
+  }
+}
+
+/* 375 px: o selo demo vira só o ícone e o título da rota fica com o espaço */
+@media (max-width: 480px) {
+  .badge-demo-curto {
+    display: none;
+  }
+
+  .admin-header-status .badge-demo {
+    padding: var(--sp-1);
   }
 }
 

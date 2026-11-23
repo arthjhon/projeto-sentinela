@@ -10,7 +10,26 @@ describe('PageToolbar', () => {
   it('sem início nem ações não renderiza nada', () => {
     expect(PageToolbar({})).toBeNull();
     expect(PageToolbar({ inicio: null, children: [false, null] })).toBeNull();
-    expect(PageToolbar({ inicio: '' })).toBeNull();
+  });
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['false', false],
+    ["''", ''],
+  ])('início %s sem ações não renderiza nada', (_, inicio) => {
+    expect(PageToolbar({ inicio })).toBeNull();
+    expect(PageToolbar({ inicio, children: [] })).toBeNull();
+  });
+
+  it("ações vazias (null, false, '') não contam como ação", () => {
+    expect(PageToolbar({ children: '' })).toBeNull();
+    expect(PageToolbar({ children: [null, false, undefined, ''] })).toBeNull();
+  });
+
+  it('0 é conteúdo: renderiza no início e nas ações', () => {
+    expect(classes(PageToolbar({ inicio: 0 }))).toEqual(['page-toolbar-inicio']);
+    expect(classes(PageToolbar({ children: 0 }))).toEqual(['page-toolbar-acoes']);
   });
 
   it('só início', () => {

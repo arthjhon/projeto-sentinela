@@ -136,10 +136,17 @@ const AdminLayout = () => {
             <h1>{tituloDaRota(location.pathname, currentUser?.role)}</h1>
             <div className="admin-header-status">
               {currentUser?.role === 'visualizador' && (
-                <span className="badge badge-warning" title="Modo Demonstração — Somente Leitura">
+                // role="img": o nome acessível é o mesmo em qualquer largura, inclusive
+                // em <= 480 px, onde o selo fica só com o ícone
+                <span
+                  className="badge badge-warning badge-demo"
+                  role="img"
+                  aria-label="Modo demonstração — somente leitura"
+                  title="Modo demonstração — somente leitura"
+                >
                   <Eye size={14} aria-hidden="true" />
-                  <span className="badge-demo-longo">Modo Demonstração — Somente Leitura</span>
-                  <span className="badge-demo-curto">Demo</span>
+                  <span className="badge-demo-longo" aria-hidden="true">Modo Demonstração — Somente Leitura</span>
+                  <span className="badge-demo-curto" aria-hidden="true">Demo</span>
                 </span>
               )}
               <StatusBadge />

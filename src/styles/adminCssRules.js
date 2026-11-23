@@ -1,6 +1,7 @@
 // Regras de CSS do painel admin (Onda 2, "slim"): tamanhos e raios só pelos
 // tokens de src/index.css, nada da cor muda reprovada em contraste nem do
-// amarelo duplicado, e blur só na sidebar/topbar (AdminLayout.css) e no Modal.
+// amarelo duplicado, e backdrop-filter só em AdminLayout.css (blur da sidebar;
+// a topbar e os cartões do conteúdo o zeram ali) e em Modal.css.
 // Módulo puro: os testes leem os arquivos e chamam verificarCssAdmin.
 
 const CORES_PROIBIDAS = ['#64748b', '#eab308'];
@@ -35,7 +36,7 @@ export function verificarCssAdmin(conteudo, nome) {
     if (!/^var\(--radius-[\w-]+\)$/.test(valor) && valor !== '50%' && valor !== '0') add(indice, `border-radius: ${valor} (use var(--radius-*), 50% ou 0)`);
   }
   if (!BLUR_PERMITIDO.some((arq) => nome.endsWith(arq))) {
-    for (const m of css.matchAll(/backdrop-filter\s*:/gi)) add(m.index, 'backdrop-filter fora da sidebar/topbar e do Modal');
+    for (const m of css.matchAll(/backdrop-filter\s*:/gi)) add(m.index, 'backdrop-filter fora de AdminLayout.css (sidebar) e Modal.css');
   }
 
   return violacoes.sort((a, b) => a.indice - b.indice).map((v) => v.msg);

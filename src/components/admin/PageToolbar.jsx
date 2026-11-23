@@ -1,5 +1,6 @@
 import React from 'react';
 
+// null, undefined, false e '' não são conteúdo; 0 é (um contador zerado aparece).
 const vazio = (no) => no === null || no === undefined || no === false || no === '';
 
 /**
@@ -9,7 +10,7 @@ const vazio = (no) => no === null || no === undefined || no === false || no === 
  */
 const PageToolbar = ({ inicio, children }) => {
   const semInicio = vazio(inicio);
-  const semAcoes = React.Children.toArray(children).length === 0;
+  const semAcoes = React.Children.toArray(children).every(vazio);
   if (semInicio && semAcoes) return null;
   return (
     <div className="page-toolbar">
