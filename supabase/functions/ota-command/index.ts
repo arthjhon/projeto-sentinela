@@ -16,7 +16,12 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import mqtt from 'npm:mqtt@5.10.3';
-import { buildOtaCommand, findDeviceId, OtaCommandError } from './command.ts';
+import {
+  buildOtaCommand,
+  buildRebootCommand,
+  findDeviceId,
+  OtaCommandError,
+} from './command.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -81,17 +86,99 @@ async function publishOnce(topic: string, payload: string): Promise<void> {
   }
 }
 
+// Caller JWT -> admin check. Returns the service_role client, or the error Response.
+type AdminClient = ReturnType<typeof createClient>;
+
+async function authenticateAdmin(
+  authHeader: string,
+): Promise<{ response: Response; admin?: undefined } | { admin: AdminClient; response?: undefined }> {
+  // Caller session: only used to identify who is calling.
+  const callerClient = createClient(SUPABASE_URL, ANON_KEY, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user: caller }, error: callerError } = await callerClient.auth.getUser();
+  if (callerError || !caller) return { response: json({ error: 'invalid_session' }, 401) };
+
+  // service_role only after the caller is identified.
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+  const { data: profile, error: profileError } = await admin
+    .from('profiles')
+    .select('role')
+    .eq('id', caller.id)
+    .single();
+  if (profileError || profile?.role !== 'admin') return { response: json({ error: 'forbidden' }, 403) };
+  return { admin };
+}
+
+// The buoy registry lives in app_settings.map_buoys (array of {codigo, deviceId}).
+async function lookupDeviceId(
+  admin: AdminClient,
+  codigo: string,
+): Promise<{ response: Response; deviceId?: undefined } | { deviceId: string | null; response?: undefined }> {
+  const { data: setting, error: settingError } = await admin
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'map_buoys')
+    .maybeSingle();
+  if (settingError) {
+    console.error('ota-command: registry lookup failed', settingError.message);
+    return { response: json({ error: 'lookup_failed' }, 500) };
+  }
+  return { deviceId: findDeviceId(setting?.value, codigo) };
+}
+
+// Remote reboot: admin only, QoS 1, no retain (a retained command would replay
+// on every reconnect). `ts` is integer epoch seconds, as the firmware requires.
+async function handleReboot(authHeader: string, boiaId: unknown) {
+  if (typeof boiaId !== 'string' || boiaId.length === 0 || boiaId.length > 40) {
+    return json({ error: 'invalid_boia_id' }, 400);
+  }
+  if (!MQTT_OTA_URL || !MQTT_OTA_USER || !MQTT_OTA_PASS) {
+    console.error('ota-command: missing MQTT_OTA_* env');
+    return json({ error: 'not_configured' }, 500);
+  }
+
+  const auth = await authenticateAdmin(authHeader);
+  if (auth.response) return auth.response;
+
+  const lookup = await lookupDeviceId(auth.admin, boiaId);
+  if (lookup.response) return lookup.response;
+  if (!lookup.deviceId) return json({ error: 'no_device' }, 422);
+
+  const sentAt = Math.floor(Date.now() / 1000);
+  let command: { topic: string; payload: string };
+  try {
+    command = buildRebootCommand(lookup.deviceId, sentAt, crypto.randomUUID());
+  } catch (e) {
+    if (e instanceof OtaCommandError) return json({ error: e.code }, 422);
+    throw e;
+  }
+
+  try {
+    await publishOnce(command.topic, command.payload);
+  } catch (e) {
+    console.error('ota-command: broker failure', e instanceof Error ? e.message : 'unknown');
+    return json({ error: 'broker_unavailable' }, 502);
+  }
+  return json({ ok: true, sent_at: sentAt });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
 
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return json({ error: 'unauthenticated' }, 401);
 
-  let body: { deploy_id?: unknown };
+  let body: { deploy_id?: unknown; action?: unknown; boia_id?: unknown };
   try {
     body = await req.json();
   } catch {
     return json({ error: 'invalid_body' }, 400);
+  }
+  if (body.action !== undefined) {
+    if (body.action === 'reboot') return await handleReboot(authHeader, body.boia_id);
+    return json({ error: 'invalid_action' }, 400);
   }
   const deployId = body.deploy_id;
   if (typeof deployId !== 'string' || !UUID_RE.test(deployId)) {
@@ -103,22 +190,9 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'not_configured' }, 500);
   }
 
-  // Caller session: only used to identify who is calling.
-  const callerClient = createClient(SUPABASE_URL, ANON_KEY, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data: { user: caller }, error: callerError } = await callerClient.auth.getUser();
-  if (callerError || !caller) return json({ error: 'invalid_session' }, 401);
-
-  // service_role only after the caller is identified.
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-
-  const { data: profile, error: profileError } = await admin
-    .from('profiles')
-    .select('role')
-    .eq('id', caller.id)
-    .single();
-  if (profileError || profile?.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  const auth = await authenticateAdmin(authHeader);
+  if (auth.response) return auth.response;
+  const admin = auth.admin;
 
   const { data: deploy, error: deployError } = await admin
     .from('firmware_deploys')
@@ -131,17 +205,9 @@ Deno.serve(async (req: Request) => {
   }
   if (!deploy) return json({ error: 'deploy_not_found' }, 404);
 
-  // The buoy registry lives in app_settings.map_buoys (array of {codigo, deviceId}).
-  const { data: setting, error: settingError } = await admin
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'map_buoys')
-    .maybeSingle();
-  if (settingError) {
-    console.error('ota-command: registry lookup failed', settingError.message);
-    return json({ error: 'lookup_failed' }, 500);
-  }
-  const deviceId = findDeviceId(setting?.value, deploy.boia_id);
+  const lookup = await lookupDeviceId(admin, deploy.boia_id);
+  if (lookup.response) return lookup.response;
+  const deviceId = lookup.deviceId;
 
   let command: { topic: string; payload: string };
   try {

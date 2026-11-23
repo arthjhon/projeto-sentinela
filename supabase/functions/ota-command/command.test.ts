@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildOtaCommand, findDeviceId, OtaCommandError } from './command';
+import { buildOtaCommand, buildRebootCommand, findDeviceId, OtaCommandError } from './command';
 
 const BASE = 'https://supabase.arthlabs.dev';
 const SHA = 'a'.repeat(64);
@@ -113,5 +113,32 @@ describe('findDeviceId', () => {
     expect(findDeviceId({}, 'SM-01')).toBeNull();
     expect(findDeviceId([null, 3, 'x', { codigo: 'SM-01', deviceId: 7 }], 'SM-01')).toBeNull();
     expect(findDeviceId([null, { codigo: 'SM-01', deviceId: 'esp_a' }], 'SM-01')).toBe('esp_a');
+  });
+});
+
+describe('buildRebootCommand', () => {
+  it('builds topic and payload with integer ts and id', () => {
+    const { topic, payload } = buildRebootCommand('snt-0001', 1795460000, 'abc');
+    expect(topic).toBe('snt-0001/ota/command');
+    expect(JSON.parse(payload)).toEqual({ action: 'reboot', ts: 1795460000, id: 'abc' });
+  });
+
+  it('refuses a malformed device id', () => {
+    expect(() => buildRebootCommand('a/b', 1795460000, 'abc')).toThrow(OtaCommandError);
+    try {
+      buildRebootCommand('a/b', 1795460000, 'abc');
+    } catch (e) {
+      expect((e as OtaCommandError).code).toBe('bad_device');
+    }
+  });
+
+  it('refuses an oversized payload', () => {
+    try {
+      buildRebootCommand('snt-0001', 1795460000, 'x'.repeat(600));
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(OtaCommandError);
+      expect((e as OtaCommandError).code).toBe('too_large');
+    }
   });
 });

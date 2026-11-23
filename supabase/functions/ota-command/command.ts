@@ -66,6 +66,25 @@ export function buildOtaCommand(
 }
 
 /**
+ * Remote reboot command. `nowEpochS` must be an integer number of seconds: the
+ * firmware rejects floats and milliseconds as stale.
+ */
+export function buildRebootCommand(
+  deviceId: string,
+  nowEpochS: number,
+  id: string,
+): { topic: string; payload: string } {
+  if (typeof deviceId !== 'string' || !DEVICE_RE.test(deviceId)) {
+    throw new OtaCommandError('bad_device');
+  }
+  const payload = JSON.stringify({ action: 'reboot', ts: nowEpochS, id });
+  if (new TextEncoder().encode(payload).length > MAX_PAYLOAD_BYTES) {
+    throw new OtaCommandError('too_large');
+  }
+  return { topic: `${deviceId}/ota/command`, payload };
+}
+
+/**
  * Device id of buoy `codigo` in the `map_buoys` registry value. Tolerates any
  * garbage in the JSON (non-array, null entries, non-string ids) and returns null.
  */
