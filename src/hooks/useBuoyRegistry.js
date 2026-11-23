@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getBuoyRegistry, SEED_BUOYS } from '../services/buoyRegistry';
 
 /**
- * Registro de bóias (`map_buoys`) para a UI: `{ buoys, loading, error, reload }`.
+ * Registro de bóias (`map_buoys`) para a UI: `{ buoys, loading, error, isFallback, reload }`.
  *
  * - Antes da primeira leitura: `buoys = []` com `loading = true` — "ainda não
  *   carregou" nunca se confunde com "registro vazio" (`[]`, `loading = false`,
@@ -13,6 +13,9 @@ import { getBuoyRegistry, SEED_BUOYS } from '../services/buoyRegistry';
  *   vazios. Com `error` preenchido, `buoys` NÃO é o registro: não reconciliar
  *   nem apagar nada a partir dela; escritas releem com getBuoyRegistry(), que
  *   lança erro nesse caso.
+ * - `isFallback` = `error !== null`: `buoys` NÃO é o registro (última lista ou
+ *   semente). Toda tela que lista bóias deve mostrar <RegistryErrorBanner> e
+ *   bloquear ações que dependam do cadastro real (ex.: deploy OTA).
  * - `reload()` refaz a leitura; só a resposta da chamada mais recente é aplicada.
  */
 export function useBuoyRegistry() {
@@ -43,5 +46,5 @@ export function useBuoyRegistry() {
 
   useEffect(() => { load(); }, [load]);
 
-  return { buoys, loading, error, reload: load };
+  return { buoys, loading, error, isFallback: error !== null, reload: load };
 }

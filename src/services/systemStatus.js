@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { jobStaleness, jobTitle } from './sensorHealth';
+import { createPollGuard } from '../utils/pollGuard';
 
 // Modelo de estado da página/selo de status. Funções puras no topo; fetchers no fim.
 // `nao_monitorado` é só de frontend (itens sem sonda) e nunca entra no pior estado.
@@ -55,7 +56,11 @@ export function jobsToStatus(jobs, now = new Date()) {
 
 const MIN = 60_000;
 
-/** Estado de uma bóia (só na página, depende de MQTT). Bancada nunca é falha. */
+/**
+ * Estado de uma bóia (só na página, depende de MQTT). Bancada nunca é falha.
+ * @deprecated Regra de conexão própria (limiares 1/5 min): substituída por estadoConexao
+ * (utils/buoyConnection.js). Sai do StatusPage na Task 4/5 do plano admin-ondas.
+ */
 export function buoyStatus({ modo, deviceId, availability, lastMessageAt, now = new Date() }) {
   if (!deviceId) return { estado: 'desconhecido', detalhe: 'sem hardware' };
   const t = lastMessageAt ? toMs(lastMessageAt) : NaN;
@@ -189,16 +194,8 @@ export function inMqttGrace(connected, connectedSinceMs, now = Date.now()) {
   return toMs(now) - connectedSinceMs < MQTT_GRACE_MS;
 }
 
-/** Uma rodada por vez; só o resultado da rodada mais recente vale. */
-export function createPollGuard() {
-  let seq = 0;
-  let inFlight = false;
-  return {
-    start() { if (inFlight) return null; inFlight = true; return ++seq; },
-    isLatest(token) { return token === seq; },
-    finish() { inFlight = false; },
-  };
-}
+// createPollGuard vive em utils/pollGuard.js (compartilhada com usePolling); reexportada aqui.
+export { createPollGuard };
 
 export async function checkSupabaseAuth(timeoutMs = 5000) {
   const ctrl = new AbortController();

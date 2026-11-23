@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import mqtt from 'mqtt';
 import { parseMqttPayload } from '../utils/mqttPayload';
 import { newTopicsOnly } from '../utils/mqttTopics';
@@ -97,9 +97,10 @@ export function useMqtt(topics = []) {
    * Se o cliente ainda não estiver conectado, os tópicos só ficam
    * registrados aqui; o handler 'connect' os subscreve quando a conexão
    * (ou reconexão) acontecer.
+   * A identidade da função é estável entre renders (useCallback sem deps).
    * @param {string[]} newTopics
    */
-  const addTopics = (newTopics) => {
+  const addTopics = useCallback((newTopics) => {
     if (!newTopics?.length) return;
     const toAdd = newTopicsOnly(extraTopicsRef.current, newTopics);
     if (toAdd.length === 0) return;
@@ -109,7 +110,7 @@ export function useMqtt(topics = []) {
         if (err) console.error('MQTT: erro ao subscrever novos tópicos', err);
       });
     }
-  };
+  }, []); // só usa refs: identidade estável, segura como dependência de effect
 
   return { messages, receivedAt, connected, addTopics };
 }
