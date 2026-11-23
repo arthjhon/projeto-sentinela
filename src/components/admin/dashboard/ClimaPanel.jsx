@@ -4,6 +4,7 @@ import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Cart
 import { fetchPrevisao, fetchAnaRecente } from '../../../hooks/useClima';
 import { LIMITE_CHUVA_FORTE_MM } from '../../../utils/clima';
 import { formatMm, formatNum, formatTick, modeloClima } from '../../../utils/climaView';
+import { COR_GRADE, COR_TEXTO_SUTIL } from '../../../config/adminTheme';
 import './dashboard.css';
 import './ClimaPanel.css';
 
@@ -83,8 +84,8 @@ function TooltipHora({ active, payload }) {
   );
 }
 
-const eixoX = { dataKey: 'hora', tick: { fill: '#64748b', fontSize: 10 }, tickLine: false, interval: 'preserveStartEnd', minTickGap: 18, axisLine: { stroke: 'rgba(255,255,255,0.06)' } };
-const eixoY = { tick: { fill: '#64748b', fontSize: 10 }, axisLine: false, tickLine: false, width: 40, tickFormatter: formatTick };
+const eixoX = { dataKey: 'hora', tick: { fill: COR_TEXTO_SUTIL, fontSize: 10 }, tickLine: false, interval: 'preserveStartEnd', minTickGap: 18, axisLine: { stroke: COR_GRADE } };
+const eixoY = { tick: { fill: COR_TEXTO_SUTIL, fontSize: 10 }, axisLine: false, tickLine: false, width: 40, tickFormatter: formatTick };
 
 function HorasDeHoje({ horas }) {
   if (!horas.length) return <p className="text-muted clima-vazio">sem dado: nenhuma hora prevista para hoje.</p>;
@@ -95,7 +96,7 @@ function HorasDeHoje({ horas }) {
         <div className="clima-grafico-corpo">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={horas} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={COR_GRADE} vertical={false} />
               <XAxis {...eixoX} />
               <YAxis {...eixoY} allowDecimals />
               <Tooltip content={<TooltipHora />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
@@ -109,7 +110,7 @@ function HorasDeHoje({ horas }) {
         <div className="clima-grafico-corpo">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={horas} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={COR_GRADE} vertical={false} />
               <XAxis {...eixoX} />
               <YAxis {...eixoY} domain={['auto', 'auto']} />
               <Tooltip content={<TooltipHora />} />
@@ -243,7 +244,7 @@ export default function ClimaPanel({ fila, jobs, agoraMs }) {
         </div>
 
         <div className="clima-bloco">
-          <h4><Waves size={14} aria-hidden="true" /> Rio Mundaú agora · <span className="clima-tag is-medido">medido</span></h4>
+          <h4><Waves size={14} aria-hidden="true" /> Rio Mundaú agora<span className="clima-tag-rep"> · <span className="clima-tag is-medido">medido</span></span></h4>
           {rio.estado === 'ok' ? (
             <>
               <p className="clima-rio">

@@ -23,7 +23,12 @@ function ValorLinha({ campo, atual, agoraMs }) {
   );
 }
 
-/** Um card por bóia do cadastro; clicar seleciona, "Detalhes" abre o modal. */
+/**
+ * Um card por bóia do cadastro; clicar seleciona, "Detalhes" abre o modal.
+ * Cabeçalho numa linha (nome, código, selos; "Detalhes" posicionado à direita,
+ * irmão do botão de seleção: botão dentro de botão não vale), uma linha com os
+ * três valores e um rodapé curto (última leitura, saúde dos sensores).
+ */
 export default function FleetStrip({
   itens, selecionada, onSelecionar, onDetalhes, detalhesCodigo, saudeIndisponivel, agoraMs,
 }) {
@@ -46,8 +51,6 @@ export default function FleetStrip({
               <span className="fc-head">
                 <span className="fc-nome">{buoy.nome}</span>
                 <span className="fc-codigo">{buoy.codigo}</span>
-              </span>
-              <span className="fc-chips">
                 <span className={`badge ${TOM_CLASSE[conexao.tom]}`}>
                   <span className={`fc-dot tom-${conexao.tom}`} aria-hidden="true" />{conexao.texto}
                 </span>
@@ -58,19 +61,19 @@ export default function FleetStrip({
                   </span>
                 )}
               </span>
-              <span className="fc-ultima text-muted">
-                {idade ? `última leitura ${idade}` : 'sem leitura'}
-              </span>
               <span className="fc-valores">
                 {CAMPOS.map((c) => <ValorLinha key={c} campo={c} atual={resumo.valores[c]} agoraMs={agoraMs} />)}
               </span>
-              <span className="fc-saude text-muted">
-                Sensores:{' '}
-                {saude ? (
-                  <span className={`badge ${TOM_CLASSE[saude.tone]}`}>{saude.label}</span>
-                ) : (
-                  <span>{textoSemSaude(saudeIndisponivel)}</span>
-                )}
+              <span className="fc-rodape text-muted">
+                <span className="fc-ultima">{idade ? `última leitura ${idade}` : 'sem leitura'}</span>
+                <span className="fc-saude">
+                  Sensores:{' '}
+                  {saude ? (
+                    <span className={`badge ${TOM_CLASSE[saude.tone]}`}>{saude.label}</span>
+                  ) : (
+                    <span>{textoSemSaude(saudeIndisponivel)}</span>
+                  )}
+                </span>
               </span>
             </button>
             <button

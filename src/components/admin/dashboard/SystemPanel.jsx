@@ -5,6 +5,7 @@ import { Cpu } from 'lucide-react';
 import { fetchStatusHistory, chaveHistorico, PERIODS } from '../../../hooks/useInfluxHistory';
 import { disponibilidadeDoPeriodo } from '../../../utils/dashboard';
 import { estadoColeta, formatIdade, formatTick } from '../../../utils/dashboardView';
+import { COR_GRADE, COR_TEXTO_SUTIL } from '../../../config/adminTheme';
 import ChartTooltip from './ChartTooltip';
 
 const SERIES = [
@@ -32,11 +33,11 @@ function MiniGrafico({ serie, dados, periodo }) {
         <div className="sys-chart-body">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={pontos} margin={{ top: 5, right: 8, left: -8, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <CartesianGrid strokeDasharray="3 3" stroke={COR_GRADE} />
               <XAxis dataKey="time" type="number" scale="time" domain={['dataMin', 'dataMax']}
-                tickFormatter={(t) => formatTick(t, periodo)} tick={{ fill: '#64748b', fontSize: 10 }}
-                axisLine={{ stroke: 'rgba(255,255,255,0.06)' }} tickLine={false} minTickGap={24} />
-              <YAxis domain={['auto', 'auto']} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false}
+                tickFormatter={(t) => formatTick(t, periodo)} tick={{ fill: COR_TEXTO_SUTIL, fontSize: 10 }}
+                axisLine={{ stroke: COR_GRADE }} tickLine={false} minTickGap={24} />
+              <YAxis domain={['auto', 'auto']} tick={{ fill: COR_TEXTO_SUTIL, fontSize: 10 }} axisLine={false}
                 tickLine={false} width={44} tickFormatter={serie.tick} />
               <Tooltip content={<ChartTooltip formatar={serie.fmt} />} />
               <Line type="monotone" dataKey={serie.key} stroke={serie.cor} strokeWidth={2} dot={false}

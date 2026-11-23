@@ -1,26 +1,25 @@
-/* .dashboard-content-area e .page-header vivem em AdminLayout.css (comuns a
-   todas as páginas admin). Os componentes da visão geral usam
-   components/admin/dashboard/dashboard.css. */
+/* .dashboard-content-area vive em AdminLayout.css (comum a todas as páginas
+   admin). Os componentes da visão geral usam components/admin/dashboard/dashboard.css. */
 
+/* Nenhuma bóia cadastrada: estado vazio curto (uma linha + ação) */
 .dash-empty {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1.5rem;
-  border-radius: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  min-height: 72px;
+  padding: var(--sp-3) var(--card-pad);
+  border-radius: var(--radius-card);
 }
-.dash-empty h3 { margin: 0; }
-.dash-empty p { margin: 0; }
+.dash-empty h3 { margin: 0; font-size: var(--fs-md); }
+.dash-empty p { margin: 0; font-size: var(--fs-sm); }
+.dash-empty .btn-table { margin-left: auto; }
 
-/* Aviso de conexão do PAINEL com o broker (não é estado de bóia) */
-.dash-broker {
-  margin: 0;
-  padding: 0.55rem 0.9rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  color: var(--text);
-  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--text-muted) 30%, transparent);
+/* Conexão do PAINEL com o broker (não é estado de bóia): selo no PageToolbar.
+   O texto de "desconectado" é uma frase: pode quebrar no celular, então o selo
+   usa o raio de controle em vez da pílula. */
+.badge.dash-broker {
+  font-size: var(--fs-xs);
+  border-radius: var(--radius-ctl);
+  white-space: normal;
 }
-.dash-broker-conectando { color: var(--text-muted); }

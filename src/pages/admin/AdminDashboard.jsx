@@ -13,6 +13,7 @@ import { serialValido } from '../../utils/deviceIds';
 import { avisoBroker, mensagemDaSessao, resumoBoia } from '../../utils/dashboardView';
 import { criarFilaSerial } from '../../utils/filaSerial';
 import RegistryErrorBanner from '../../components/admin/RegistryErrorBanner';
+import PageToolbar from '../../components/admin/PageToolbar';
 import FleetStrip from '../../components/admin/dashboard/FleetStrip';
 import BuoyPanel from '../../components/admin/dashboard/BuoyPanel';
 import BuoyDetailsModal from '../../components/admin/dashboard/BuoyDetailsModal';
@@ -109,13 +110,20 @@ const AdminDashboard = () => {
 
   return (
     <div className="dashboard-content-area">
-      {aviso && buoys.length > 0 && (
-        <p className={`dash-broker dash-broker-${aviso}`} role="status">
-          {aviso === 'conectando'
-            ? 'Conectando ao broker MQTT…'
-            : 'Painel sem conexão com o broker MQTT: o estado das bóias e os valores ao vivo ficam parados até reconectar.'}
-        </p>
-      )}
+      {/* Conexão do painel com o broker: selo no início da faixa da página
+          (some quando conectado; sem bóia cadastrada não há o que assinar). */}
+      <PageToolbar
+        inicio={aviso && buoys.length > 0 && (
+          <span
+            className={`badge dash-broker ${aviso === 'conectando' ? 'badge-planejada' : 'badge-warning'}`}
+            role="status"
+          >
+            {aviso === 'conectando'
+              ? 'Conectando ao broker MQTT…'
+              : 'Painel sem conexão com o broker MQTT: o estado das bóias e os valores ao vivo ficam parados até reconectar.'}
+          </span>
+        )}
+      />
 
       <RegistryErrorBanner error={registryError} onRetry={reloadRegistry} />
 

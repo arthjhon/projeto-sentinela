@@ -1,9 +1,9 @@
 .bdm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  /* sem blur: só a sidebar e o Modal comum têm (regra do admin); fundo um
+     pouco mais escuro no lugar */
+  background: rgba(0, 0, 0, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -15,7 +15,7 @@
   background: #0a1628;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-top: 3px solid var(--primary);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   width: 100%;
   max-width: 720px;
   max-height: calc(100vh - 2rem);
@@ -28,21 +28,26 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
-.bdm-head h2 { margin: 0; font-size: 1.15rem; outline: none; }
-.bdm-sub { margin: 0.25rem 0 0; color: var(--text-muted); font-size: 0.9rem; }
+.bdm-head h2 { margin: 0; font-size: var(--fs-lg); outline: none; }
+.bdm-sub { margin: 2px 0 0; color: var(--text-muted); font-size: var(--fs-sm); }
 .bdm-code { margin-left: 0.4rem; color: var(--primary); font-weight: 600; }
 
 .bdm-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--ctl-h);
+  min-height: var(--ctl-h);
   background: transparent;
   border: 0;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 0.25rem;
-  border-radius: 6px;
+  padding: var(--sp-1);
+  border-radius: var(--radius-ctl);
   flex-shrink: 0;
 }
 .bdm-close:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
@@ -50,45 +55,60 @@
 
 .bdm-body {
   overflow-y: auto;
-  padding: 0.5rem 1.25rem 1.25rem;
+  padding: 0 var(--sp-5) var(--sp-5);
+  container-type: inline-size;
   display: grid;
-  gap: 0.25rem;
+  gap: var(--sp-1);
 }
 
 .bdm-sec h3 {
-  margin: 1rem 0 0.5rem;
-  font-size: 0.8rem;
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
-.bdm-sec h4 { margin: 0.75rem 0 0.35rem; font-size: 0.9rem; }
-.bdm-sec dl { margin: 0; }
+.bdm-sec h4 { margin: var(--sp-3) 0 var(--sp-1); font-size: var(--fs-sm); }
+/* Rótulo | valor numa linha de ~32 px em qualquer largura (antes, abaixo de
+   480 px, o rótulo ia para cima do valor: ~46 px por linha). Com o corpo do
+   modal largo o bastante para dois pares lado a lado (>= 600 px, contêiner),
+   os pares correm em duas colunas. */
+.bdm-sec dl { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
 .bdm-row {
   display: grid;
-  grid-template-columns: 11rem 1fr;
-  gap: 0.75rem;
-  padding: 0.35rem 0;
+  grid-template-columns: minmax(6.5rem, 40%) minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: 6px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
 }
 .bdm-row dt { color: var(--text-muted); }
 .bdm-row dd { margin: 0; overflow-wrap: anywhere; }
-.bdm-muted { color: var(--text-muted); font-size: 0.85em; }
-.bdm-chip { margin-right: 0.4rem; }
+.bdm-muted { color: var(--text-muted); font-size: var(--fs-xs); }
+.bdm-chip { margin-right: var(--sp-1); }
 
 .bdm-map {
   height: 200px;
-  border-radius: 8px;
+  border-radius: var(--radius-ctl);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 .bdm-tiles-fallback { filter: brightness(0.55); }
-.bdm-coord { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--text-muted); }
+.bdm-coord { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); color: var(--text-muted); }
 
-.bdm-list { margin: 0; padding-left: 1.1rem; font-size: 0.88rem; display: grid; gap: 0.4rem; }
-.bdm-nao-medido ul { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
+.bdm-list { margin: 0; padding-left: var(--sp-4); font-size: var(--fs-sm); display: grid; gap: var(--sp-1); }
+.bdm-nao-medido ul { margin: 0; padding-left: var(--sp-4); font-size: var(--fs-sm); }
 
-@media (max-width: 480px) {
-  .bdm-row { grid-template-columns: 1fr; gap: 0.1rem; }
+@container (min-width: 600px) {
+  .bdm-sec dl { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-5); }
+  .bdm-row { grid-template-columns: 7.5rem minmax(0, 1fr); }
+}
+
+@media (max-width: 479px) {
+  .bdm-head { padding: var(--sp-3); }
+  .bdm-body { padding: 0 var(--sp-3) var(--sp-3); }
+  .bdm-map { height: 160px; }
 }

@@ -10,6 +10,7 @@ import { formatDataHoraSeg } from '../../../utils/format';
 import { healthForDevice } from '../../../services/sensorHealth';
 import { HealthEvents } from '../SensorHealth';
 import { WATER_PARAMS } from '../../../config/waterQuality';
+import { COR_GRADE, COR_TEXTO_SUTIL } from '../../../config/adminTheme';
 import {
   CAMPOS, TOM_CLASSE, extremos24h, formatIdade, formatTick, formatValor, rotuloConexao, serieGrafico,
 } from '../../../utils/dashboardView';
@@ -76,6 +77,9 @@ export default function BuoyPanel({
   const conexao = rotuloConexao(resumo.conexao, idade);
   const param = PARAM[campo];
   const paramTexto = campo === 'ph' ? param.label : param.label.toLowerCase(); // "pH" não vira "ph"
+  // Sem gráfico para desenhar (sem serial, erro ou sem leituras): o bloco encolhe.
+  // Carregando mantém a altura, para o gráfico não empurrar a página ao chegar.
+  const graficoVazio = !ids.length || Boolean(historico.error) || (!historico.loading && serie.length === 0);
 
   // ── Export CSV do período do gráfico (como antes) ───────────────────────────
   const [exportando, setExportando] = useState(false);
@@ -152,7 +156,7 @@ export default function BuoyPanel({
         </div>
         {exportMsg && <p className="chart-export-error" role="status">{exportMsg}</p>}
 
-        <div className="chart-body">
+        <div className={`chart-body${graficoVazio ? ' is-vazio' : ''}`}>
           {!ids.length ? (
             <div className="chart-empty"><span>Bóia sem serial cadastrado: não há histórico.</span></div>
           ) : historico.error ? (
@@ -169,11 +173,11 @@ export default function BuoyPanel({
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={serie} margin={{ top: 5, right: 16, left: -10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <CartesianGrid strokeDasharray="3 3" stroke={COR_GRADE} />
                 <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']}
-                  tickFormatter={(t) => formatTick(t, periodo)} tick={{ fill: '#64748b', fontSize: 10 }}
-                  axisLine={{ stroke: 'rgba(255,255,255,0.06)' }} tickLine={false} minTickGap={28} />
-                <YAxis domain={['auto', 'auto']} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false}
+                  tickFormatter={(t) => formatTick(t, periodo)} tick={{ fill: COR_TEXTO_SUTIL, fontSize: 10 }}
+                  axisLine={{ stroke: COR_GRADE }} tickLine={false} minTickGap={28} />
+                <YAxis domain={['auto', 'auto']} tick={{ fill: COR_TEXTO_SUTIL, fontSize: 10 }} axisLine={false}
                   tickLine={false} width={42} />
                 <Tooltip content={<ChartTooltip formatar={(v) => formatValor(v, campo)} />} />
                 <Line type="monotone" dataKey="value" stroke={param.color} strokeWidth={2} dot={false}
@@ -216,10 +220,10 @@ export default function BuoyPanel({
                 <tbody>
                   {ultimas.slice(0, 10).map((r, i) => (
                     <tr key={`${+r.time}-${i}`}>
-                      <td>{formatDataHoraSeg(r.time)}</td>
-                      <td>{celula(r.temperatura, 'temperatura')}</td>
-                      <td>{celula(r.ph, 'ph')}</td>
-                      <td>{celula(r.turbidez, 'turbidez')}</td>
+                      <td data-label="Data/hora">{formatDataHoraSeg(r.time)}</td>
+                      <td data-label="Temp.">{celula(r.temperatura, 'temperatura')}</td>
+                      <td data-label="pH">{celula(r.ph, 'ph')}</td>
+                      <td data-label="Turbidez">{celula(r.turbidez, 'turbidez')}</td>
                     </tr>
                   ))}
                 </tbody>
