@@ -7,7 +7,7 @@
 export const SEM_LEITURA_MS = 60000;
 
 export const ESTADOS_CONEXAO = Object.freeze([
-  'online', 'sem-leitura', 'offline', 'bancada-offline', 'sem-broker', 'sem-hardware', 'desconhecido',
+  'online', 'sem-leitura', 'offline', 'bancada-offline', 'bancada-sem-leitura', 'sem-broker', 'sem-hardware', 'desconhecido',
 ]);
 
 /** Texto curto de cada estado (o de 'sem-leitura' pode ganhar a idade, ver dashboardView.rotuloConexao). */
@@ -16,6 +16,7 @@ export const ROTULO_CONEXAO = Object.freeze({
   'sem-leitura': 'online, sem leitura',
   offline: 'offline',
   'bancada-offline': 'bancada, offline é normal',
+  'bancada-sem-leitura': 'bancada, online, sem leitura',
   'sem-broker': 'painel sem conexão com o broker',
   'sem-hardware': 'sem hardware',
   desconhecido: 'sem sinal',
@@ -27,6 +28,7 @@ export const TOM_CONEXAO = Object.freeze({
   'sem-leitura': 'warn',
   offline: 'bad',
   'bancada-offline': 'neutral',
+  'bancada-sem-leitura': 'neutral',
   'sem-broker': 'neutral',
   'sem-hardware': 'neutral',
   desconhecido: 'neutral',
@@ -50,8 +52,10 @@ export function leituraMsDaChegada(chegada) {
  *  3. campo: LWT 'offline' -> 'offline'; LWT 'online' -> 'online' se houve leitura
  *     há <= SEM_LEITURA_MS, senão 'sem-leitura'; sem LWT -> 'online' com leitura
  *     recente, senão 'desconhecido'
- *  4. bancada (`modo === 'bancada'`): vale o mesmo cálculo, mas tudo que não é
- *     'online' vira 'bancada-offline' (offline é o estado normal de bancada).
+ *  4. bancada (`modo === 'bancada'`): mesmo cálculo, mas sem vermelho: 'offline' e
+ *     'desconhecido' viram 'bancada-offline' (offline é normal em bancada) e
+ *     'sem-leitura' (LWT diz online, placa muda) vira 'bancada-sem-leitura' — nunca
+ *     rotulado como offline, porque o LWT diz o contrário.
  * `ultimaLeituraMs` deve vir de leituraMsDaChegada / ultimaLeituraMs (retida não conta).
  * `temHardware` e `brokerConectado` omitidos valem true.
  */
@@ -65,6 +69,9 @@ export function estadoConexao({
   if (lwt === 'offline') estado = 'offline';
   else if (lwt === 'online') estado = recente ? 'online' : 'sem-leitura';
   else estado = recente ? 'online' : 'desconhecido';
-  if (modo === 'bancada' && estado !== 'online') return 'bancada-offline';
+  if (modo === 'bancada') {
+    if (estado === 'sem-leitura') return 'bancada-sem-leitura';
+    if (estado !== 'online') return 'bancada-offline';
+  }
   return estado;
 }

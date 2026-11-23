@@ -66,11 +66,28 @@ describe('estadoConexao — bancada', () => {
   it('recent reading without LWT is online too (same rule as campo)', () => {
     expect(estadoConexao({ ...b, ultimaLeituraMs: recente })).toBe('online');
   });
-  it('offline is normal: LWT offline, stale, or unknown all become bancada-offline', () => {
+  it('offline is normal: LWT offline, or no LWT and no recent reading, is bancada-offline', () => {
     expect(estadoConexao({ ...b, lwt: 'offline', ultimaLeituraMs: recente })).toBe('bancada-offline');
-    expect(estadoConexao({ ...b, lwt: 'online', ultimaLeituraMs: velha })).toBe('bancada-offline');
-    expect(estadoConexao({ ...b, lwt: 'online' })).toBe('bancada-offline');
+    expect(estadoConexao({ ...b, lwt: 'offline' })).toBe('bancada-offline');
+    expect(estadoConexao({ ...b, lwt: undefined, ultimaLeituraMs: velha })).toBe('bancada-offline');
     expect(estadoConexao({ ...b })).toBe('bancada-offline');
+  });
+  it('LWT says online but the board is quiet: bancada-sem-leitura, never "offline é normal"', () => {
+    expect(estadoConexao({ ...b, lwt: 'online', ultimaLeituraMs: velha })).toBe('bancada-sem-leitura');
+    expect(estadoConexao({ ...b, lwt: 'online' })).toBe('bancada-sem-leitura');
+    expect(estadoConexao({ ...b, lwt: 'online', ultimaLeituraMs: null })).toBe('bancada-sem-leitura');
+  });
+  it('bench x LWT x reading matrix', () => {
+    const esperado = {
+      'online|recente': 'online', 'online|quieta': 'bancada-sem-leitura',
+      'offline|recente': 'bancada-offline', 'offline|quieta': 'bancada-offline',
+      'undefined|recente': 'online', 'undefined|quieta': 'bancada-offline',
+    };
+    for (const lwt of ['online', 'offline', undefined]) {
+      for (const [nome, ultimaLeituraMs] of [['recente', recente], ['quieta', velha]]) {
+        expect(estadoConexao({ ...b, lwt, ultimaLeituraMs })).toBe(esperado[`${lwt}|${nome}`]);
+      }
+    }
   });
   it('panel without broker still wins over bancada', () => {
     expect(estadoConexao({ ...b, lwt: 'offline', brokerConectado: false })).toBe('sem-broker');
@@ -128,12 +145,14 @@ describe('rótulos e tons', () => {
     expect(ROTULO_CONEXAO['sem-hardware']).toBe('sem hardware');
     expect(ROTULO_CONEXAO['sem-broker']).toBe('painel sem conexão com o broker');
     expect(ROTULO_CONEXAO['bancada-offline']).toBe('bancada, offline é normal');
+    expect(ROTULO_CONEXAO['bancada-sem-leitura']).toBe('bancada, online, sem leitura');
   });
   it('tones: offline is the only bad one; bancada-offline is neutral', () => {
     expect(TOM_CONEXAO.online).toBe('ok');
     expect(TOM_CONEXAO.offline).toBe('bad');
     expect(TOM_CONEXAO['sem-leitura']).toBe('warn');
     expect(TOM_CONEXAO['bancada-offline']).toBe('neutral');
+    expect(TOM_CONEXAO['bancada-sem-leitura']).toBe('neutral');
     expect(TOM_CONEXAO['sem-broker']).toBe('neutral');
   });
 });

@@ -59,7 +59,7 @@ export function rotuloConexao(estado, idade) {
   const chave = estado in ROTULO_CONEXAO ? estado : 'desconhecido';
   const texto = ROTULO_CONEXAO[chave];
   return {
-    texto: chave === 'sem-leitura' && idade ? `${texto} ${idade}` : texto,
+    texto: (chave === 'sem-leitura' || chave === 'bancada-sem-leitura') && idade ? `${texto} ${idade}` : texto,
     tom: TOM_CONEXAO[chave],
   };
 }

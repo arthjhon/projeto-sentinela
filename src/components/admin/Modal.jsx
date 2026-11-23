@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { destinoTab } from '../../utils/focusTrap';
@@ -16,7 +16,9 @@ const FOCAVEIS = 'button:not([disabled]), [href], input:not([disabled]):not([typ
  * ficam dentro, o foco nasce no título (a menos que um filho já tenha o foco, ex.
  * `autoFocus`) e volta ao elemento que abriu quando o diálogo fecha.
  *
- * Renderize condicionalmente (`{aberto && <Modal ...>}`) ou passe `open={false}`.
+ * Renderize condicionalmente (`{aberto && <Modal ...>}`): o abridor é capturado na
+ * montagem do componente. `open={false}` só serve para quem mantém o Modal montado
+ * sem nunca reabri-lo no mesmo ciclo de vida.
  *
  * @param {object}  props
  * @param {React.ReactNode} props.title        título (vira o <h3 id> do diálogo)
@@ -33,6 +35,9 @@ export default function Modal({
   title, onClose, children, footer, size = 'md', open = true, dismissible = true, className = '', onSubmit,
 }) {
   const tituloId = useId();
+  // Quem abriu o diálogo, capturado NA RENDERIZAÇÃO: antes do commit, portanto antes
+  // de um filho com `autoFocus` roubar o foco (o effect passivo já veria o filho).
+  const [abridor] = useState(() => (typeof document === 'undefined' ? null : document.activeElement));
   const dialogRef = useRef(null);
   const tituloRef = useRef(null);
   const onCloseRef = useRef(onClose);
@@ -41,7 +46,7 @@ export default function Modal({
 
   useEffect(() => {
     if (!open) return undefined;
-    const anterior = document.activeElement;
+    const anterior = abridor;
     if (!dialogRef.current?.contains(document.activeElement)) tituloRef.current?.focus();
     const meu = {};
     pilha.push(meu);
@@ -73,6 +78,7 @@ export default function Modal({
       if (i >= 0) pilha.splice(i, 1);
       if (anterior && typeof anterior.focus === 'function' && document.contains(anterior)) anterior.focus();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   if (!open) return null;

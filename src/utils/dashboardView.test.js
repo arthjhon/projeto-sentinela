@@ -390,6 +390,10 @@ describe('conexão de bóia de bancada (mesma regra de buoyConnection)', () => {
     const mqtt = { lwt: 'online', sensores: { ph: 7, _recebidoEm: agoraMs - 3000 } };
     expect(resumoBoia({ buoy, mqtt, ultimas: [], healthRows: [], agoraMs }).conexao).toBe('online');
   });
+  it('LWT online sem leitura recente: bancada-sem-leitura', () => {
+    expect(resumoBoia({ buoy, mqtt: { lwt: 'online' }, ultimas: [], healthRows: [], agoraMs }).conexao).toBe('bancada-sem-leitura');
+    expect(rotuloConexao('bancada-sem-leitura', 'há 5 min')).toEqual({ texto: 'bancada, online, sem leitura há 5 min', tom: 'neutral' });
+  });
   it('rotuloConexao: neutro com texto próprio', () => {
     expect(rotuloConexao('bancada-offline', 'há 3 min')).toEqual({ texto: 'bancada, offline é normal', tom: 'neutral' });
   });
