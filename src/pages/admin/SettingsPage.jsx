@@ -1,20 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { SlidersHorizontal, FlaskConical, Radio, Target, Radar } from 'lucide-react';
+import { SlidersHorizontal, FlaskConical, Radio, Target, Radar, CircleHelp } from 'lucide-react';
 import { useMockMode } from '../../config/mockData';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useReadOnly } from '../../hooks/useReadOnly';
 import { getSetting, saveSetting, FUNDING_GOAL_KEY, MAP_COLLECTION_RADIUS_KEY } from '../../services/settings';
 import {
-  collectionRings, normalizeCollectionRadius,
+  collectionRings,
   DEFAULT_COLLECTION_RADIUS_M, MIN_COLLECTION_RADIUS_M, MAX_COLLECTION_RADIUS_M,
 } from '../../utils/collectionRadius';
+import { carregarConfiguracoes } from '../../utils/settingsLoad';
 import AcessoNegado from '../../components/admin/AcessoNegado';
 import { ehPerfilGestao } from '../../config/adminNav';
 import './SettingsPage.css';
 
+const MOEDA = 'BRL';
+
 const SettingsPageConteudo = () => {
-  const [mockEnabled, setMockEnabled] = useMockMode();
+  const [mockEnabled, setMockEnabled, mockEstado, recarregarMock] = useMockMode();
+  const mockDesconhecido = mockEstado === 'desconhecido';
+  const mockCarregando = mockEstado === 'carregando';
   const [salvandoMock, setSalvandoMock] = useState(false);
   const { addToast } = useToast();
   const readOnly = useReadOnly();
@@ -43,33 +48,33 @@ const SettingsPageConteudo = () => {
   const [salvando, setSalvando] = useState(false);
 
   // Raio de coleta desenhado ao redor das bóias no mapa público
-  const [raio, setRaio] = useState(String(DEFAULT_COLLECTION_RADIUS_M));
+  const [raio, setRaio] = useState('');
   const [salvandoRaio, setSalvandoRaio] = useState(false);
 
+  // Falha de leitura NÃO preenche defaults: o campo fica vazio e o "Salvar" bloqueado
+  // (salvar gravaria o default por cima do valor real).
+  const [erroMeta, setErroMeta] = useState(null);
+  const [erroRaio, setErroRaio] = useState(null);
+  const [tentativa, setTentativa] = useState(0);
+
   useEffect(() => {
-    // função interna: setState direto no corpo do effect dispara render em cascata
     let ativo = true;
     (async () => {
-      try {
-        const atual = await getSetting(FUNDING_GOAL_KEY, { meta: 0, arrecadado: 0 });
-        if (!ativo) return;
-        setMeta(String(atual.meta ?? 0));
-        setArrecadado(String(atual.arrecadado ?? 0));
-      } catch (err) {
-        if (ativo) addToast(`Não foi possível carregar a meta: ${err.message}`, 'error');
+      const r = await carregarConfiguracoes(getSetting, { metaKey: FUNDING_GOAL_KEY, raioKey: MAP_COLLECTION_RADIUS_KEY });
+      if (!ativo) return;
+      if (r.meta.ok) {
+        setMeta(String(r.meta.valor.meta ?? 0));
+        setArrecadado(String(r.meta.valor.arrecadado ?? 0));
       }
-      try {
-        const r = await getSetting(MAP_COLLECTION_RADIUS_KEY, { raio_m: DEFAULT_COLLECTION_RADIUS_M });
-        if (!ativo) return;
-        setRaio(String(normalizeCollectionRadius(r?.raio_m)));
-      } catch (err) {
-        if (ativo) addToast(`Não foi possível carregar o raio de coleta: ${err.message}`, 'error');
-      } finally {
-        if (ativo) setCarregando(false);
-      }
+      if (r.raio.ok) setRaio(String(r.raio.valor));
+      setErroMeta(r.meta.ok ? null : r.meta.erro);
+      setErroRaio(r.raio.ok ? null : r.raio.erro);
+      setCarregando(false);
     })();
     return () => { ativo = false; };
-  }, [addToast]);
+  }, [tentativa]);
+
+  const recarregar = () => { setCarregando(true); setTentativa((n) => n + 1); };
 
   const handleSalvarRaio = async () => {
     const n = Number(raio);
@@ -103,7 +108,7 @@ const SettingsPageConteudo = () => {
     }
     setSalvando(true);
     try {
-      await saveSetting(FUNDING_GOAL_KEY, { meta: metaNum, arrecadado: arrecNum, moeda: 'BRL' });
+      await saveSetting(FUNDING_GOAL_KEY, { meta: metaNum, arrecadado: arrecNum, moeda: MOEDA });
       addToast('Meta atualizada. A página de apoio já reflete os novos valores.', 'success');
     } catch (err) {
       addToast(`Falha ao salvar: ${err.message}`, 'error');
@@ -126,16 +131,21 @@ const SettingsPageConteudo = () => {
       {/* Dados simulados */}
       <div className="settings-card glass mt-4">
         <div className="settings-card-icon" data-on={mockEnabled}>
-          {mockEnabled ? <FlaskConical size={22} /> : <Radio size={22} />}
+          {mockEnabled ? <FlaskConical size={22} /> : mockDesconhecido ? <CircleHelp size={22} /> : <Radio size={22} />}
         </div>
 
         <div className="settings-card-body">
           <h3>Dados Simulados (Mock)</h3>
           <p>
-            {mockEnabled
-              ? 'A dashboard de monitoramento exibe dados simulados enquanto a bóia não está em operação.'
-              : 'A dashboard usa os dados reais da bóia via MQTT.'}
+            {mockDesconhecido
+              ? 'Não foi possível ler o estado atual. O site público pode estar mostrando dados simulados: o interruptor fica bloqueado até a leitura funcionar.'
+              : mockEnabled
+                ? 'A dashboard de monitoramento exibe dados simulados enquanto a bóia não está em operação.'
+                : 'A dashboard usa os dados reais da bóia via MQTT.'}
           </p>
+          {mockDesconhecido && (
+            <button type="button" className="btn-table" onClick={recarregarMock}>Tentar de novo</button>
+          )}
           <p className="settings-hint">
             Vale para <strong>todos os visitantes</strong> do site, não só para este navegador.
             Deixe desligado com a bóia em operação; ligue só para demonstrações. O histórico
@@ -145,16 +155,16 @@ const SettingsPageConteudo = () => {
 
         <label
           className="settings-switch"
-          title={podeEditarMock ? 'Ligar/desligar dados simulados' : 'Só administradores alteram esta opção'}
+          title={mockDesconhecido ? 'Estado desconhecido: leitura falhou' : podeEditarMock ? 'Ligar/desligar dados simulados' : 'Só administradores alteram esta opção'}
         >
           <input
             type="checkbox"
-            checked={mockEnabled}
-            disabled={!podeEditarMock || salvandoMock}
+            checked={mockEnabled && !mockDesconhecido}
+            disabled={!podeEditarMock || salvandoMock || mockDesconhecido || mockCarregando}
             onChange={(e) => handleToggleMock(e.target.checked)}
           />
           <span className="settings-slider" />
-          <span className="settings-switch-label">{mockEnabled ? 'Ligado' : 'Desligado'}</span>
+          <span className="settings-switch-label">{mockDesconhecido ? 'Desconhecido' : mockCarregando ? '…' : mockEnabled ? 'Ligado' : 'Desligado'}</span>
         </label>
       </div>
 
@@ -167,6 +177,12 @@ const SettingsPageConteudo = () => {
         <div className="settings-card-body">
           <h3>Meta de Financiamento</h3>
           <p>Valores exibidos na barra de progresso da página <strong>Apoie a Causa</strong>.</p>
+          {erroMeta && (
+            <p className="settings-hint text-danger" role="alert">
+              Não foi possível ler a meta atual ({erroMeta}); salvar fica bloqueado para não gravar valores em branco por cima.{' '}
+              <button type="button" className="btn-table" onClick={recarregar}>Tentar de novo</button>
+            </p>
+          )}
 
           <div className="settings-field-row">
             <label className="settings-field">
@@ -174,7 +190,7 @@ const SettingsPageConteudo = () => {
               <input
                 type="number" min="0" step="100"
                 value={meta}
-                disabled={carregando}
+                disabled={carregando || Boolean(erroMeta)}
                 onChange={(e) => setMeta(e.target.value)}
                 placeholder="Ex: 20000"
               />
@@ -184,7 +200,7 @@ const SettingsPageConteudo = () => {
               <input
                 type="number" min="0" step="100"
                 value={arrecadado}
-                disabled={carregando}
+                disabled={carregando || Boolean(erroMeta)}
                 onChange={(e) => setArrecadado(e.target.value)}
                 placeholder="Ex: 7500"
               />
@@ -199,7 +215,7 @@ const SettingsPageConteudo = () => {
             <span className="settings-meta-pct">{pct}%</span>
           </div>
 
-          <button className="btn-primary settings-save-btn" onClick={handleSalvarMeta} disabled={salvando || carregando || readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
+          <button className="btn-primary settings-save-btn" onClick={handleSalvarMeta} disabled={salvando || carregando || readOnly || Boolean(erroMeta)} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
             {salvando ? 'Salvando...' : 'Salvar Meta'}
           </button>
         </div>
@@ -214,6 +230,12 @@ const SettingsPageConteudo = () => {
         <div className="settings-card-body">
           <h3>Raio de Coleta no Mapa</h3>
           <p>Tamanho da área de cobertura desenhada ao redor de cada bóia no mapa de <strong>Monitoramento</strong>.</p>
+          {erroRaio && (
+            <p className="settings-hint text-danger" role="alert">
+              Não foi possível ler o raio atual ({erroRaio}); salvar fica bloqueado para não gravar o padrão por cima.{' '}
+              <button type="button" className="btn-table" onClick={recarregar}>Tentar de novo</button>
+            </p>
+          )}
 
           <div className="settings-field-row">
             <label className="settings-field">
@@ -221,7 +243,7 @@ const SettingsPageConteudo = () => {
               <input
                 type="number" min={MIN_COLLECTION_RADIUS_M} max={MAX_COLLECTION_RADIUS_M} step="50"
                 value={raio}
-                disabled={carregando}
+                disabled={carregando || Boolean(erroRaio)}
                 onChange={(e) => setRaio(e.target.value)}
                 placeholder={`Ex: ${DEFAULT_COLLECTION_RADIUS_M}`}
               />
@@ -229,10 +251,10 @@ const SettingsPageConteudo = () => {
           </div>
 
           <p className="settings-hint">
-            Entre {MIN_COLLECTION_RADIUS_M} e {MAX_COLLECTION_RADIUS_M} m. Anéis desenhados: {aneis.map(r => `${r.radius} m`).join(' · ')}.
+            Entre {MIN_COLLECTION_RADIUS_M} e {MAX_COLLECTION_RADIUS_M} m.{raio !== '' && ` Anéis desenhados: ${aneis.map(r => `${r.radius} m`).join(' · ')}.`}
           </p>
 
-          <button className="btn-primary settings-save-btn" onClick={handleSalvarRaio} disabled={salvandoRaio || carregando || readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
+          <button className="btn-primary settings-save-btn" onClick={handleSalvarRaio} disabled={salvandoRaio || carregando || readOnly || Boolean(erroRaio)} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
             {salvandoRaio ? 'Salvando...' : 'Salvar Raio'}
           </button>
         </div>
