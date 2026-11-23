@@ -152,8 +152,6 @@
   gap: var(--sp-3);
 }
 
-.ota-form .acao-aviso { margin: 0; }
-
 .ota-field {
   display: flex;
   flex-direction: column;
@@ -216,6 +214,22 @@
   font-size: var(--fs-sm);
   transition: all 0.2s;
   text-align: center;
+}
+.ota-file-drop input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.ota-file-drop { position: relative; }
+.ota-file-drop:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 .ota-file-drop:hover:not(.disabled) {
   border-color: rgba(0, 240, 255, 0.3);

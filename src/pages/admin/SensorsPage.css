@@ -5,7 +5,6 @@
    CSS continua carregado depois de visitar a página (não pode vazar para Status). */
 
 /* ── Página: blocos separados só pelo gap do contêiner ───────── */
-.boias-frota > .acao-aviso { margin: 0; }
 
 .mqtt-badge {
   display: inline-flex;
@@ -169,8 +168,6 @@
   flex-direction: column;
   gap: var(--sp-3);
 }
-
-.details-container .acao-aviso { margin: 0; }
 
 /* Saúde dos sensores: rótulo e "sem eventos" numa linha; a lista, quando há, embaixo. */
 .details-health {

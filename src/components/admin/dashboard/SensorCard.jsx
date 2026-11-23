@@ -30,6 +30,7 @@ export default function SensorCard({ campo, atual, saude, saudeIndisponivel, ext
             24 h: {formatValor(extremos.min, campo)} / {formatValor(extremos.max, campo)}
           </span>
         )}
+        {extremos === 'erro' && <span className="sc-vazio-extra text-muted">24 h: indisponível</span>}
         {meta
           ? <span className={`badge ${TOM_CLASSE[meta.tone]}`} title={saude.motivo ?? undefined}>{meta.label}</span>
           : saudeIndisponivel && <span className="sc-vazio-extra text-muted">{textoSemSaude(true)}</span>}

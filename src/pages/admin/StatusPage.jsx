@@ -191,23 +191,23 @@ const StatusPage = () => {
                 const stIdade = Number.isFinite(stAt) ? formatIdade(now - stAt) : null;
                 return (
                   <tr key={b.r.codigo}>
-                    <td>{b.r.codigo}</td>
-                    <td>{b.r.nome}</td>
-                    <td><span className={`badge ${b.modo === 'campo' ? 'badge-online' : 'badge-planejada'}`}>{b.modo === 'campo' ? 'Campo' : 'Bancada'}</span></td>
-                    <td>
+                    <td data-label="Código">{b.r.codigo}</td>
+                    <td data-label="Nome">{b.r.nome}</td>
+                    <td data-label="Modo"><span className={`badge ${b.modo === 'campo' ? 'badge-online' : 'badge-planejada'}`}>{b.modo === 'campo' ? 'Campo' : 'Bancada'}</span></td>
+                    <td data-label="Conexão">
                       <span className={`badge ${TOM_CLASSE[conexao.tom]}`}>{conexao.texto}</span>
                       <div className="status-item-detail text-muted">{b.d ? lwtTexto(b) : 'sem serial cadastrado'}</div>
                     </td>
-                    <td>{b.lastAt ? formatIdade(now - b.lastAt) : '—'}</td>
-                    <td title={writeIso ? fmtDate(writeIso) : undefined}>{writeIso ? ageOf(writeIso, now) : '—'}</td>
-                    <td title="Idade da última mensagem /status; RSSI, uptime e firmware abaixo são dela">
+                    <td data-label="Última leitura">{b.lastAt ? formatIdade(now - b.lastAt) : '—'}</td>
+                    <td data-label="Última gravação Influx" title={writeIso ? fmtDate(writeIso) : undefined}>{writeIso ? ageOf(writeIso, now) : '—'}</td>
+                    <td data-label="Status recebido" title="Idade da última mensagem /status; RSSI, uptime e firmware abaixo são dela">
                       {stIdade ? `${stIdade}${b.statusChegada.retained ? ' (retida)' : ''}` : '—'}
                     </td>
-                    <td>{formatRssi(health.rssi) ?? '—'}</td>
-                    <td>{formatUptime(health.uptime) ?? '—'}</td>
-                    <td>{health.firmware ?? '—'}</td>
-                    <td>{typeof health.calibrated === 'boolean' ? (health.calibrated ? 'Sim' : 'Não') : '—'}</td>
-                    <td>{b.d
+                    <td data-label="RSSI">{formatRssi(health.rssi) ?? '—'}</td>
+                    <td data-label="Uptime">{formatUptime(health.uptime) ?? '—'}</td>
+                    <td data-label="Firmware">{health.firmware ?? '—'}</td>
+                    <td data-label="Calibrado">{typeof health.calibrated === 'boolean' ? (health.calibrated ? 'Sim' : 'Não') : '—'}</td>
+                    <td data-label="Sensores">{b.d
                       ? <span className={`badge ${TOM_CLASSE[tone]}`}>{estadoMeta(b.sh.pior).label}</span>
                       : '—'}</td>
                   </tr>

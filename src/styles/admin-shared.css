@@ -56,6 +56,7 @@
   border-radius: var(--radius-card);
   border-color: var(--border);
 }
+.admin-content .alert-permission { border-color: rgba(239, 68, 68, 0.3); }
 
 /* ── Faixa da página: informação curta + ações (PageToolbar.jsx) ── */
 .page-toolbar {
@@ -115,11 +116,15 @@
   border-radius: var(--radius-ctl);
   min-width: 220px;
   max-width: 100%;
-  border: 1px solid var(--border);
 }
 
-/* .search-bar também é .glass: o raio de controle vence o de cartão */
-.admin-content .search-bar { border-radius: var(--radius-ctl); }
+/* .search-bar também é .glass: o raio de controle vence o de cartão. A borda é desenhada
+   por dentro (box-shadow): o total fecha em --ctl-h, já que o <input> interno também tem --ctl-h. */
+.admin-content .search-bar {
+  border-radius: var(--radius-ctl);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
 
 /* O contorno de foco vai na caixa inteira, não no <input> sem borda dentro dela */
 .search-bar:focus-within {
@@ -194,7 +199,6 @@
   border: 1px solid var(--danger) !important;
   background: rgba(239, 68, 68, 0.05) !important;
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
-  outline: none !important;
 }
 
 /* ── Indicadores de status e animação ────────────────────────── */
@@ -239,22 +243,24 @@
 .sensors-table {
   width: 100%;
   border-collapse: separate;
-  border-spacing: 0 0.5rem;
+  border-spacing: 0 var(--sp-1);
+  font-variant-numeric: tabular-nums;
 }
 
 .sensors-table th {
   text-align: left;
-  padding: 0 1rem 1rem;
+  padding: 6px var(--sp-3);
   color: var(--text-muted);
   font-weight: 500;
-  font-size: var(--fs-md);
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .sensors-table td {
-  padding: 1rem;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
   background: rgba(0, 0, 0, 0.2);
   transition: background 0.2s;
 }
@@ -266,8 +272,8 @@
   align-items: center;
   border-radius: var(--radius-ctl);
   padding: 0.6rem 1rem;
-  margin-bottom: 1rem;
+  margin: 0;
 }
 
 /* Motivo visível de ações desabilitadas (components/admin/AcaoAviso.jsx) */
-.acao-aviso { margin: 0.5rem 0 0; font-size: var(--fs-sm); }
+.acao-aviso { margin: 0; font-size: var(--fs-sm); }

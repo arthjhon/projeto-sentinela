@@ -325,7 +325,6 @@ const OtaPageConteudo = () => {
                   accept=".bin,.BIN"
                   onChange={handleFileChange}
                   disabled={!idle}
-                  style={{ display: 'none' }}
                 />
                 {firmwareFile ? (
                   <>

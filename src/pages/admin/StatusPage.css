@@ -18,9 +18,16 @@
 .status-item-checked { font-size: var(--fs-xs); white-space: nowrap; min-width: 6.5rem; text-align: right; }
 .status-empty { margin: var(--sp-1) 0; font-size: var(--fs-sm); }
 .status-table-wrap { overflow-x: auto; }
-.status-buoys td, .status-buoys th { white-space: nowrap; }
-.status-buoys td:nth-child(4) { white-space: normal; min-width: 180px; }
+.status-buoys td:nth-child(4) { min-width: 160px; }
+.status-buoys .badge { white-space: nowrap; }
 @media (max-width: 640px) {
+  .status-buoys, .status-buoys tbody, .status-buoys tr, .status-buoys td { display: block; width: 100%; }
+  .status-buoys thead { display: none; }
+  .status-buoys tr { padding: var(--sp-2) 0; margin-bottom: var(--sp-2); background: rgba(0, 0, 0, 0.2); border-radius: var(--radius-ctl); }
+  .status-buoys tr:last-child { margin-bottom: 0; }
+  .status-buoys td { padding: 2px var(--sp-3); background: transparent; overflow-wrap: anywhere; }
+  .status-buoys td:nth-child(4) { min-width: 0; }
+  .status-buoys td[data-label]::before { content: attr(data-label) ': '; color: var(--text-muted); font-size: var(--fs-xs); }
   .status-item {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: 'name pill' 'detail detail' 'checked checked';

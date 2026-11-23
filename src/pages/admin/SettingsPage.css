@@ -49,7 +49,7 @@
 .settings-card-body { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
 .settings-card-head h3 { margin: 0; font-size: var(--fs-md); line-height: 1.25; color: #e6f0fa; }
 .settings-card-body p { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; }
-.settings-card-body p.settings-hint { font-size: var(--fs-xs); color: var(--text-subtle); }
+.settings-card-body p.settings-hint:not(.text-danger) { font-size: var(--fs-xs); color: var(--text-subtle); }
 .settings-hint strong { color: var(--warning); }
 
 /* Toggle switch */
