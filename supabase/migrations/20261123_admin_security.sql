@@ -23,7 +23,8 @@
 --      from auth.users, i.e. what the Edge Function does). Triggers 5 and 6 take the same
 --      pg_advisory_xact_lock, so two concurrent demotions/deletions cannot both pass.
 --   7. maintenance_logs, sensor_calibrations, firmware_deploys: BEFORE INSERT trigger sets
---      operador_nome from profiles.name of operador_id (client value ignored; username/e-mail
+--      operador_id := auth.uid() and operador_nome := profiles.name of that user (client values
+--      ignored; BEFORE UPDATE keeps OLD values for client sessions; service role unaffected; username/e-mail
 --      are credentials and the demo account can SELECT these tables). Existing rows with an
 --      operador_id are backfilled from profiles.name. NOTE: the backfill is not reversible
 --      (old usernames are lost); take a dump of those 3 tables first if you want rollback.
@@ -53,6 +54,10 @@
 --   DROP TRIGGER IF EXISTS maintenance_logs_set_operador ON public.maintenance_logs;
 --   DROP TRIGGER IF EXISTS sensor_calibrations_set_operador ON public.sensor_calibrations;
 --   DROP TRIGGER IF EXISTS firmware_deploys_set_operador ON public.firmware_deploys;
+--   DROP TRIGGER IF EXISTS maintenance_logs_keep_operador ON public.maintenance_logs;
+--   DROP TRIGGER IF EXISTS sensor_calibrations_keep_operador ON public.sensor_calibrations;
+--   DROP TRIGGER IF EXISTS firmware_deploys_keep_operador ON public.firmware_deploys;
+--   DROP FUNCTION IF EXISTS public.keep_operador_on_update();
 --   DROP FUNCTION IF EXISTS public.set_operador_nome_from_profile();
 --   (restore operador_nome of the 3 tables from the pre-migration dump if needed)
 --   DROP FUNCTION IF EXISTS public.current_user_role();
@@ -192,7 +197,10 @@ CREATE TRIGGER profiles_admin_delete_guard
   BEFORE DELETE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.profiles_admin_delete_guard();
 
--- 7. operador_nome from profiles.name on the operational tables.
+-- 7. Attribution bound to the session user. For client sessions (auth.uid() IS NOT NULL) INSERT
+--    forces operador_id = auth.uid() and operador_nome = profiles.name of that user, ignoring
+--    whatever the client sent; UPDATE keeps OLD.operador_id/operador_nome. Service-role writes
+--    (auth.uid() IS NULL, e.g. ota-command closing deploys) are left as sent.
 CREATE OR REPLACE FUNCTION public.set_operador_nome_from_profile()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -200,7 +208,13 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  IF NEW.operador_id IS NOT NULL THEN
+  IF auth.uid() IS NOT NULL THEN
+    NEW.operador_id := auth.uid();
+    SELECT name INTO NEW.operador_nome FROM public.profiles WHERE id = auth.uid();
+    IF NEW.operador_nome IS NULL THEN
+      NEW.operador_nome := 'desconhecido';
+    END IF;
+  ELSIF NEW.operador_id IS NOT NULL THEN
     SELECT name INTO NEW.operador_nome FROM public.profiles WHERE id = NEW.operador_id;
   END IF;
   IF NEW.operador_nome IS NULL AND TG_TABLE_NAME <> 'firmware_deploys' THEN
@@ -210,6 +224,22 @@ BEGIN
 END;
 $$;
 REVOKE ALL ON FUNCTION public.set_operador_nome_from_profile() FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.keep_operador_on_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.uid() IS NOT NULL THEN
+    NEW.operador_id := OLD.operador_id;
+    NEW.operador_nome := OLD.operador_nome;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.keep_operador_on_update() FROM PUBLIC, anon, authenticated;
 
 DROP TRIGGER IF EXISTS maintenance_logs_set_operador ON public.maintenance_logs;
 CREATE TRIGGER maintenance_logs_set_operador
@@ -225,6 +255,21 @@ DROP TRIGGER IF EXISTS firmware_deploys_set_operador ON public.firmware_deploys;
 CREATE TRIGGER firmware_deploys_set_operador
   BEFORE INSERT ON public.firmware_deploys
   FOR EACH ROW EXECUTE FUNCTION public.set_operador_nome_from_profile();
+
+DROP TRIGGER IF EXISTS maintenance_logs_keep_operador ON public.maintenance_logs;
+CREATE TRIGGER maintenance_logs_keep_operador
+  BEFORE UPDATE ON public.maintenance_logs
+  FOR EACH ROW EXECUTE FUNCTION public.keep_operador_on_update();
+
+DROP TRIGGER IF EXISTS sensor_calibrations_keep_operador ON public.sensor_calibrations;
+CREATE TRIGGER sensor_calibrations_keep_operador
+  BEFORE UPDATE ON public.sensor_calibrations
+  FOR EACH ROW EXECUTE FUNCTION public.keep_operador_on_update();
+
+DROP TRIGGER IF EXISTS firmware_deploys_keep_operador ON public.firmware_deploys;
+CREATE TRIGGER firmware_deploys_keep_operador
+  BEFORE UPDATE ON public.firmware_deploys
+  FOR EACH ROW EXECUTE FUNCTION public.keep_operador_on_update();
 
 -- Backfill: replace stored usernames by display names where the operator still exists.
 UPDATE public.maintenance_logs t SET operador_nome = p.name

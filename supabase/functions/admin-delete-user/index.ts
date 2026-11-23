@@ -109,7 +109,11 @@ Deno.serve(async (req: Request) => {
   if (deleteError) {
     // Conta inexistente em auth.users: nada a revogar. Se sobrou profile, limpa.
     if (deleteError.status === 404) {
-      await admin.from('profiles').delete().eq('id', userId);
+      const { error: cleanupError } = await admin.from('profiles').delete().eq('id', userId);
+      if (cleanupError) {
+        // Last-admin guard (or any other refusal): the profile is still there.
+        return json({ error: 'Não é possível excluir o último administrador.' }, 409);
+      }
       return json({ success: true, alreadyGone: true });
     }
     // Perdeu a corrida pelo último admin (o trigger recusou o cascade)?
