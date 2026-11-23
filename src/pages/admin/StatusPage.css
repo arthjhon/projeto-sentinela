@@ -1,25 +1,37 @@
-.status-section { padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; }
-.status-section h2 { font-size: 1rem; font-weight: 600; margin: 0 0 0.75rem; }
+.status-pair { display: grid; gap: var(--sp-4); align-items: start; }
+@media (max-width: 768px) { .status-pair { gap: var(--sp-3); } }
+@media (min-width: 1100px) { .status-pair { grid-template-columns: 1fr 1fr; } }
+.status-section { padding: var(--card-pad); }
+.status-section h2 { font-size: var(--fs-md); font-weight: 600; margin: 0 0 var(--sp-2); }
 .status-item {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(120px, 11rem) minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 1rem;
-  padding: 0.6rem 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0;
+  border-top: 1px solid var(--border);
 }
 .status-item:first-of-type { border-top: 0; }
-.status-item-main { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
-.status-item-name { font-weight: 600; }
-.status-item-detail { font-size: 0.8rem; overflow-wrap: anywhere; }
-.status-item-checked { font-size: 0.8rem; white-space: nowrap; }
-.status-empty { margin: 0.25rem 0; }
+.status-item-name { font-weight: 600; font-size: var(--fs-sm); }
+.status-item-detail { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.status-item-pill { justify-self: end; }
+.status-item-checked { font-size: var(--fs-xs); white-space: nowrap; min-width: 6.5rem; text-align: right; }
+.status-empty { margin: var(--sp-1) 0; font-size: var(--fs-sm); }
 .status-table-wrap { overflow-x: auto; }
 .status-buoys td, .status-buoys th { white-space: nowrap; }
 .status-buoys td:nth-child(4) { white-space: normal; min-width: 180px; }
 @media (max-width: 640px) {
-  .status-item { grid-template-columns: 1fr auto; }
-  .status-item-checked { grid-column: 1 / -1; order: 3; }
+  .status-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'name pill' 'detail detail' 'checked checked';
+    gap: 0 var(--sp-2);
+    padding: var(--sp-2) 0;
+  }
+  .status-item-name { grid-area: name; }
+  .status-item-pill { grid-area: pill; }
+  .status-item-detail { grid-area: detail; }
+  .status-item-checked { grid-area: checked; text-align: left; min-width: 0; }
+  .status-item-detail:empty, .status-item-checked:empty { display: none; }
 }
-.status-sem-sonda summary { cursor: pointer; font-weight: 600; font-size: 1rem; }
-.status-sem-sonda ul { margin: 0.25rem 0 0; padding-left: 1.25rem; font-size: 0.9rem; }
+.status-sem-sonda summary { cursor: pointer; font-weight: 600; font-size: var(--fs-md); }
+.status-sem-sonda ul { margin: var(--sp-1) 0 0; padding-left: var(--sp-5); font-size: var(--fs-sm); }

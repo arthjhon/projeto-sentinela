@@ -17,6 +17,7 @@ import PageToolbar from '../../components/admin/PageToolbar';
 import './ContextoPage.css';
 
 const ATALHOS = [7, 30, 90];
+const DICA = 'Arraste sobre um gráfico para ampliar o período em todos.';
 const COR_TURBIDEZ = WATER_PARAMS.find(p => p.key === 'turbidez').color;
 
 export default function ContextoPage() {
@@ -110,6 +111,7 @@ export default function ContextoPage() {
         inicio={
           <span>
             Atualizado às {horaMaceio(janela.agora)} (Maceió); renova a cada {CONTEXTO_REFRESH_MS / 60000} min com a aba aberta.
+            {' '}Comparação visual: não indica causa.
           </span>
         }
       />
@@ -165,15 +167,14 @@ export default function ContextoPage() {
       />
       <ContextoChart
         id="vazao" title={`Vazão em ${nomeEstacao} (m³/s)`} unit="m³/s" color="#10b981"
-        state={vazao} {...dragProps}
+        state={vazao} {...dragProps} rodape={mostrarNivel ? null : DICA}
       />
       {mostrarNivel && (
         <ContextoChart
           id="nivel" title={`Nível em ${nomeEstacao} (cm)`} unit="cm" color="#f59e0b"
-          state={nivel} {...dragProps}
+          state={nivel} {...dragProps} rodape={DICA}
         />
       )}
-      <p className="text-muted ctx-hint">Arraste sobre um gráfico para ampliar o período em todos.</p>
     </div>
   );
 }

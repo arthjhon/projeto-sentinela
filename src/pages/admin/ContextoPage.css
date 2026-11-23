@@ -1,19 +1,23 @@
 .ctx-controls {
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;
-  padding: 1rem 1.25rem; margin-bottom: 1.25rem;
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2);
+  padding: var(--card-pad);
 }
-.ctx-controls label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8rem; color: var(--text-muted); }
+.ctx-controls label { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-muted); }
 .ctx-controls select, .ctx-controls input[type='date'] {
   background: rgba(2, 8, 21, 0.6); color: var(--text); border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 6px; padding: 0.4rem 0.6rem; font: inherit; color-scheme: dark;
+  border-radius: var(--radius-ctl); padding: 0 var(--sp-3); font: inherit; color-scheme: dark;
 }
-.ctx-shortcuts { display: flex; gap: 0.4rem; }
-.ctx-controls .ctx-check { flex-direction: row; align-items: center; gap: 0.4rem; color: var(--text); }
-.ctx-chart { padding: 1rem 1.25rem 0.5rem; margin-bottom: 1rem; }
-.ctx-chart h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.5rem; }
+.ctx-shortcuts { display: flex; gap: var(--sp-1); }
+.ctx-shortcuts .btn-table { min-height: var(--ctl-h); }
+.ctx-controls .ctx-check {
+  flex-direction: row; align-items: center; gap: var(--sp-1); color: var(--text);
+  font-size: var(--fs-sm); min-height: var(--ctl-h);
+}
+.ctx-chart { padding: var(--card-pad); margin: 0; }
+.ctx-chart h2 { font-size: var(--fs-md); font-weight: 600; margin: 0 0 var(--sp-2); }
 .ctx-chart .recharts-wrapper { user-select: none; cursor: crosshair; }
-.ctx-state { height: 200px; display: flex; align-items: center; justify-content: center; text-align: center; }
+.ctx-state { min-height: 96px; display: flex; align-items: center; justify-content: center; text-align: center; }
 .ctx-error { color: var(--danger); overflow-wrap: anywhere; }
-.ctx-hint { font-size: 0.8rem; }
-.ctx-legenda { font-size: 0.75rem; margin: 0.25rem 0 0; }
-.ctx-atualizado { font-size: 0.8rem; margin: 0.25rem 0 0; }
+.ctx-hint { font-size: var(--fs-xs); margin: var(--sp-2) 0 0; }
+.ctx-legenda { font-size: var(--fs-xs); margin: var(--sp-1) 0 0; }
+.ctx-atualizado { font-size: var(--fs-xs); margin: var(--sp-1) 0 0; }

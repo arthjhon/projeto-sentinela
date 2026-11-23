@@ -8,7 +8,7 @@ import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { getMqttTopics } from '../../config/fleet';
 import { CLOCK_TICK_MS, STATUS_HEALTH_POLL_MS } from '../../config/adminTimings';
 import { topicsForRegistry } from '../../services/buoyRegistry';
-import { mqttBrokerStatus, brokerDesde, BADGE_META } from '../../services/systemStatus';
+import { mqttBrokerStatus, brokerDesde } from '../../services/systemStatus';
 import {
   fetchSensorHealth, healthForDevice, estadoMeta, eventTone, fmtDate,
 } from '../../services/sensorHealth';
@@ -28,7 +28,6 @@ const STATE_CLASS = {
   ok: 'badge-online', degradado: 'badge-warning', falha: 'badge-offline',
   desconhecido: 'badge-planejada', nao_monitorado: 'badge-planejada',
 };
-const BADGE_CLASS = { green: 'badge-online', amber: 'badge-warning', red: 'badge-offline', neutral: 'badge-planejada' };
 
 const JOB_LABEL = { openmeteo: 'Open-Meteo', ana: 'ANA', detector: 'Detector de saúde dos sensores', status: 'Status (worker)' };
 const WORKER_JOB = 'job_status';
@@ -47,12 +46,10 @@ function StatePill({ estado }) {
 function StatusItem({ name, estado, detalhe, checked }) {
   return (
     <div className="status-item">
-      <div className="status-item-main">
-        <span className="status-item-name">{name}</span>
-        {detalhe && <span className="status-item-detail text-muted">{detalhe}</span>}
-      </div>
+      <span className="status-item-name">{name}</span>
+      <span className="status-item-detail text-muted">{detalhe || ''}</span>
+      <span className="status-item-pill"><StatePill estado={estado} /></span>
       <span className="status-item-checked text-muted">{checked ? `verificado ${checked}` : ''}</span>
-      <StatePill estado={estado} />
     </div>
   );
 }
@@ -128,19 +125,11 @@ const StatusPage = () => {
     return { r, d, modo, lwt, lastAt, health, statusChegada, estado, sh };
   }), [registry, messages, receivedAt, ultimas, healthRows, now, connected]);
 
-  const badgeMeta = BADGE_META[sys.badge] ?? BADGE_META.verificando;
-
   const lwtTexto = (b) => (b.lwt === 'online' || b.lwt === 'offline' ? `LWT: ${b.lwt}` : 'sem LWT');
 
   return (
     <div className="dashboard-content-area">
-      <PageToolbar
-        inicio={
-          <span className={`badge ${BADGE_CLASS[badgeMeta.tone]}`} title="Pior estado entre Plataforma (sem MQTT) e Coleta">
-            {badgeMeta.label}
-          </span>
-        }
-      >
+      <PageToolbar>
         <button type="button" className="btn-table" onClick={handleRefresh} disabled={sys.loading}>
           <RefreshCw size={14} /> Atualizar
         </button>
@@ -148,6 +137,7 @@ const StatusPage = () => {
 
       <RegistryErrorBanner error={isFallback ? registryError : null} onRetry={reloadRegistry} />
 
+      <div className="status-pair">
       <section className="status-section glass">
         <h2>Plataforma</h2>
         <StatusItem name="Supabase — autenticação"
@@ -175,6 +165,7 @@ const StatusPage = () => {
             checked={j.verificado_em ? ageOf(j.verificado_em, now) : null} />
         ))}
       </section>
+      </div>
 
       <section className="status-section glass">
         <h2>Bóias</h2>

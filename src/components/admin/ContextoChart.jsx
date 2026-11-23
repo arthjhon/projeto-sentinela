@@ -1,6 +1,7 @@
 import React, { memo, useMemo, useSyncExternalStore } from 'react';
 import { comLacunas, indiceMaisProximo, intervalosSemLeitura } from '../../services/contextoAmbiental';
 import { CONTEXTO_TICKS } from '../../config/adminTimings';
+import { COR_TEXTO_SUTIL, COR_GRADE } from '../../config/adminTheme';
 import {
   ResponsiveContainer, LineChart, BarChart, Line, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceArea,
@@ -10,7 +11,7 @@ const fmtTick = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Maceio', d
 const fmtFull = new Intl.DateTimeFormat('pt-BR', {
   timeZone: 'America/Maceio', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
 });
-const AXIS_TICK = { fill: '#94a3b8', fontSize: 11 };
+const AXIS_TICK = { fill: COR_TEXTO_SUTIL, fontSize: 11 };
 const TOOLTIP_STYLE = {
   background: '#0D141F', color: '#e6f0fa', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 13,
 };
@@ -44,7 +45,7 @@ function CursorSincronizado({ payloadIndex, points, x, y, width, height, classNa
  * suas próprias linhas, então o índice do vizinho é outra data.
  */
 function ContextoChart({
-  id, title, state, passoMs, kind = 'line', color, unit, domain, zoom, dragStore, onDragEnd,
+  id, title, state, rodape, passoMs, kind = 'line', color, unit, domain, zoom, dragStore, onDragEnd,
 }) {
   // Só o gráfico arrastado assina mudanças: o recorte devolve null (mesma referência)
   // para os outros, que não re-renderizam enquanto o mouse se move.
@@ -77,7 +78,7 @@ function ContextoChart({
     onMouseLeave: dragStore.cancel,
   };
   const axes = [
-    <CartesianGrid key="g" strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />,
+    <CartesianGrid key="g" strokeDasharray="3 3" stroke={COR_GRADE} />,
     <XAxis
       key="x" dataKey="t" type="number" scale="time" domain={xDomain} ticks={ticks} allowDataOverflow
       tick={AXIS_TICK} tickLine={false} tickFormatter={t => fmtTick.format(t)}
@@ -128,6 +129,7 @@ function ContextoChart({
       {kind === 'bar' && hasValue && !state.error && (
         <p className="text-muted ctx-legenda">faixa cinza = sem leitura</p>
       )}
+      {rodape && <p className="text-muted ctx-hint">{rodape}</p>}
     </section>
   );
 }
