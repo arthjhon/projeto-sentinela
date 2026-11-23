@@ -5,13 +5,17 @@ import { useBuoyRegistry } from '../../hooks/useBuoyRegistry';
 import { useFichaBoia } from '../../components/admin/ficha/useFichaBoia';
 import { useFichaAoVivo } from '../../components/admin/ficha/useFichaAoVivo';
 import FichaIdentificacao from '../../components/admin/ficha/FichaIdentificacao';
+import FichaSensores from '../../components/admin/ficha/FichaSensores';
+import FichaLinhaDoTempo from '../../components/admin/ficha/FichaLinhaDoTempo';
 import DeviceInfoList from '../../components/admin/dashboard/DeviceInfoList';
 import BuoyFormModal from '../../components/admin/boias/BuoyFormModal';
 import PageToolbar from '../../components/admin/PageToolbar';
 import AcaoAviso from '../../components/admin/AcaoAviso';
 import RegistryErrorBanner from '../../components/admin/RegistryErrorBanner';
-import { resolverFicha, hrefFicha } from '../../utils/fichaBoia';
+import { resolverFicha, hrefFicha, linhasSensores } from '../../utils/fichaBoia';
 import { formDoRegistro, permissaoAcao, hrefHistorico } from '../../utils/boiasView';
+import { serialValido } from '../../utils/deviceIds';
+import { normalizeModo } from '../../services/buoyRegistry';
 import { TOM_CLASSE } from '../../utils/dashboardView';
 import './BuoyFichaPage.css';
 
@@ -25,6 +29,12 @@ function FichaConteudo({ buoy, registry }) {
   const [editando, setEditando] = useState(false);
   const ficha = useFichaBoia(buoy, role);
   const vivo = useFichaAoVivo(buoy);
+
+  const serial = serialValido(buoy);
+  const modo = normalizeModo(buoy.modo);
+  const sensores = linhasSensores({
+    saudeAtual: ficha.saudeAtual, calibracoes: ficha.fontes.calibracao, serial, modo, firmwareCalibrado: vivo.statusMsg?.calibrated,
+  });
 
   const permissao = permissaoAcao(role, 'cadastro');
   const podeEditar = permissao.permitido && !registry.isFallback;
@@ -78,6 +88,16 @@ function FichaConteudo({ buoy, registry }) {
             <span className={`badge ${TOM_CLASSE[vivo.conexao.tom]}`}>{vivo.conexao.texto}</span>
           </p>
           <DeviceInfoList statusMsg={vivo.statusMsg} agoraMs={vivo.agoraMs} deployBloco={ficha.ultimoDeploySucesso} />
+        </section>
+
+        <section className="ficha-bloco glass" aria-labelledby="ficha-sens">
+          <h2 id="ficha-sens">Sensores</h2>
+          <FichaSensores linhas={sensores} onTentarDeNovo={ficha.recarregar} />
+        </section>
+
+        <section className="ficha-bloco glass" aria-labelledby="ficha-tl">
+          <h2 id="ficha-tl">Linha do tempo</h2>
+          <FichaLinhaDoTempo fontes={ficha.fontes} agoraMs={vivo.agoraMs} serialAtual={serial} modo={modo} onTentarDeNovo={ficha.recarregar} />
         </section>
       </div>
     </div>
