@@ -76,13 +76,13 @@ export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover
   return (
     <div className="details-container animate-fade-in">
       {linha.deviceId && (
-        <div className="mt-2">
+        <div className="details-health">
           <span className="info-label">Saúde dos sensores</span>
           <HealthEvents deviceId={linha.deviceId} modo={linha.modo} />
         </div>
       )}
 
-      <div className="details-info-grid mt-2">
+      <div className="details-info-grid">
         {linha.deviceId && (
           <div className="info-block">
             <span className="info-label">Nº de Série / Device ID</span>
@@ -180,7 +180,7 @@ export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover
         />
       ) : (
         <>
-          <div className="attached-sensors-section mt-2">
+          <div className="attached-sensors-section">
             <h4 className="attached-sensors-title">Sensores Acoplados</h4>
             <div className="attached-sensors-grid">
               {linha.sensores.map((sensor) => {
@@ -220,7 +220,7 @@ export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover
               })}
             </div>
           </div>
-          <div className="details-footer" style={{ flexWrap: 'wrap' }}>
+          <div className="details-footer">
             <BotaoAcao permissao={cadastro} descrito={idAviso} className="btn-table action-btn" onClick={() => onEditar(linha)}>
               <Edit2 size={16} /> Editar
             </BotaoAcao>

@@ -1,8 +1,8 @@
-.sh-badges { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
-.sh-collection { font-size: 0.8rem; color: var(--text-muted, #94a3b8); }
+.sh-badges { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); margin-left: var(--sp-2); vertical-align: middle; }
+.sh-collection { font-size: var(--fs-sm); color: var(--text-muted); }
 .sh-job-late { color: var(--warning); font-weight: 600; }
-.sh-events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; }
-.sh-events li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sh-events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); }
+.sh-events li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .sh-ev-sensor { font-family: monospace; }
 .sh-ev-motivo { flex-basis: 100%; opacity: 0.85; }
-.sh-events-empty { font-size: 0.85rem; margin: 0; }
+.sh-events-empty { font-size: var(--fs-sm); margin: 0; }

@@ -129,7 +129,7 @@ export function MaintenancePanel({ linha, notas, onNotas, onFecharPainel, onEnce
         <div className="maintenance-test-section glass">
           <div className="test-header d-flex-between">
             <span>Diagnóstico ao Vivo</span>
-            <span className="text-muted" style={{ fontSize: '0.8rem' }}>
+            <span className="text-muted test-header-idade">
               {linha.idadeLeitura == null ? 'nenhuma leitura nesta sessão' : `última leitura ${formatIdade(linha.idadeLeitura)}`}
             </span>
           </div>

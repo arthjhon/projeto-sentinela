@@ -106,21 +106,22 @@ export default function BuoyFormModal({ inicial, editando, codigosExistentes, on
         </>
       )}
     >
-      <div className="form-grid">
+      {/* Nome em linha inteira: Lagoa fica ao lado de Modo e Latitude ao lado de Longitude. */}
+      <div className="form-grid boia-form-grid">
         <div className="form-group">
           <label htmlFor="boia-id">Identificação de Frota (ID)</label>
           <input id="boia-id" type="text" className={`w-100 ${erros.id ? 'input-error' : ''}`} value={form.id} onChange={campo('id', true)} placeholder="Ex: SM-09" />
         </div>
         <div className="form-group">
           <label htmlFor="boia-serial">Número de Série do Dispositivo</label>
-          <input id="boia-serial" type="text" className={`w-100 ${erros.deviceId ? 'input-error' : ''}`} value={form.deviceId} onChange={campo('deviceId')} placeholder="Ex: snt-0001" style={{ fontFamily: 'monospace' }} />
+          <input id="boia-serial" type="text" className={`w-100 boia-form-mono ${erros.deviceId ? 'input-error' : ''}`} value={form.deviceId} onChange={campo('deviceId')} placeholder="Ex: snt-0001" />
           {editando && form.deviceIdsAnteriores?.length > 0 && (
-            <small className="text-muted" style={{ fontFamily: 'monospace' }}>
+            <small className="text-muted boia-form-mono">
               Seriais anteriores (histórico preservado): {form.deviceIdsAnteriores.join(', ')}
             </small>
           )}
         </div>
-        <div className="form-group">
+        <div className="form-group form-group-full">
           <label htmlFor="boia-nome">Nome Comercial/Apelido</label>
           <input id="boia-nome" type="text" className={`w-100 ${erros.name ? 'input-error' : ''}`} value={form.name} onChange={campo('name', true)} placeholder="Ponto Canal A" />
         </div>

@@ -38,11 +38,11 @@ export default function DeployHistory({ deploys, error, agoraMs }) {
                 const rotulo = rotuloStatusDeploy(statusEfetivo(d, agoraMs));
                 return (
                   <tr key={d.id}>
-                    <td>{d.versao}</td>
-                    <td>{d.boia_id}</td>
-                    <td><span className={`badge ${TOM_CLASSE[rotulo.tom]}`}>{rotulo.texto}</span></td>
-                    <td>{d.operador_nome || '—'}</td>
-                    <td>{formatDataHora(d.data_deploy)}</td>
+                    <td data-label="Versão">{d.versao}</td>
+                    <td data-label="Bóia">{d.boia_id}</td>
+                    <td data-label="Status"><span className={`badge ${TOM_CLASSE[rotulo.tom]}`}>{rotulo.texto}</span></td>
+                    <td data-label="Operador">{d.operador_nome || '—'}</td>
+                    <td data-label="Quando">{formatDataHora(d.data_deploy)}</td>
                   </tr>
                 );
               })}

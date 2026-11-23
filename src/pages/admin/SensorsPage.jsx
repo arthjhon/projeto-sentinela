@@ -95,12 +95,12 @@ const SensorsPage = () => {
   const filtradas = rows.filter((b) => b.nome.toLowerCase().includes(termo) || b.id.toLowerCase().includes(termo));
 
   return (
-    <div className="dashboard-content-area">
+    <div className="dashboard-content-area boias-frota">
       <PageToolbar
         inicio={
           <>
             <CollectionHealth jobs={workerJobs} unavailable={healthError} />
-            <span className={`badge badge-${connected ? 'online' : 'offline'}`} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span className={`badge mqtt-badge badge-${connected ? 'online' : 'offline'}`}>
               {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
               MQTT {connected ? 'Online' : 'Offline'}
             </span>
@@ -168,7 +168,7 @@ const SensorsPage = () => {
         </Modal>
       )}
 
-      <div className="sensors-list glass">
+      <div className="sensors-list fleet-list glass">
         <table className="sensors-table fleet-table">
           <thead>
             <tr>
@@ -183,7 +183,7 @@ const SensorsPage = () => {
           <tbody>
             {filtradas.length === 0 && (
               <tr>
-                <td colSpan="6" className="text-muted" style={{ textAlign: 'center', padding: '2rem' }}>
+                <td colSpan="6" className="text-muted fleet-vazio">
                   {registryLoading ? 'Carregando bóias...' : searchTerm ? 'Nenhuma bóia encontrada.' : 'Nenhuma bóia cadastrada.'}
                 </td>
               </tr>
