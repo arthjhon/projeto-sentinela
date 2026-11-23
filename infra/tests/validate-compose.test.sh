@@ -77,9 +77,11 @@ fixture secopt_unconfined 1 "security_opt"
 fixture secopt_nnp_false 1 "security_opt"
 fixture secopt_label 1 "security_opt"
 fixture foreign_network 1 "network"
-# Task 3: mosquitto (two exact read-only binds, fixed volume, only 127.0.0.1:9001, no external net).
+# Task 3: mosquitto (two exact read-only binds, fixed volume, only 127.0.0.1:9001 and :9002, no external net).
 fixture mosquitto_ok 0 "OK"
 fixture mosquitto_port_public 1 "mosquitto: port 9001 published on 0.0.0.0"
+fixture mosquitto_port_9002_public 1 "mosquitto: port 9002 published on 0.0.0.0"
+fixture mosquitto_port_remap 1 "mosquitto: port not allowed"
 fixture mosquitto_port_1883 1 "mosquitto: port not allowed"
 fixture mosquitto_extra_mount 1 "mosquitto extra mount"
 fixture mosquitto_rw_mount 1 "mosquitto extra mount"

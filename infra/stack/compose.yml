@@ -68,10 +68,11 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Broker MQTT proprio (substitui o HiveMQ Cloud). Dois listeners (ver mosquitto/mosquitto.conf):
-  # 1883 TCP com autenticacao, so na rede do compose (nao publicado); 9001 WebSocket, publicado
-  # so em 127.0.0.1 e exposto pelo tunel cloudflared (mqtt.arthlabs.dev). Nao entra na rede
-  # externa `pg`: nao tem motivo para alcancar o Postgres.
+  # Broker MQTT proprio (substitui o HiveMQ Cloud). Tres listeners (ver mosquitto/mosquitto.conf):
+  # 1883 TCP com autenticacao, so na rede do compose (nao publicado); 9001 WebSocket publico
+  # (navegadores, anonimo so leitura; tunel mqtt.arthlabs.dev/mqtt) e 9002 WebSocket so com
+  # senha (placas e svc/ota; tunel mqtt.arthlabs.dev/dev), ambos so em 127.0.0.1. Nao entra
+  # na rede externa `pg`: nao tem motivo para alcancar o Postgres.
   mosquitto:
     image: eclipse-mosquitto:2.0.22
     restart: unless-stopped
@@ -79,6 +80,7 @@ services:
       - no-new-privileges:true
     ports:
       - "127.0.0.1:9001:9001"
+      - "127.0.0.1:9002:9002"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./mosquitto/acl:/mosquitto/config/acl:ro

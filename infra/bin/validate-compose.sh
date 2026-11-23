@@ -187,13 +187,15 @@ def under_root($p):
                  "\($n) must not mount mosquitto state: \($m.source // $m.target)"))
        else empty end),
 
-      # R28: mosquitto publishes only the WebSocket listener (9001, behind the tunnel on
-      # the loopback; R7 already forces 127.0.0.1). The TCP listener 1883 is reachable
-      # only inside the compose network, so it must never get a host port.
+      # R28: mosquitto publishes only the WebSocket listeners (9001 public, 9002
+      # authenticated; both behind the tunnel on the loopback, R7 already forces
+      # 127.0.0.1), each on its own port number. The TCP listener 1883 is reachable only
+      # inside the compose network, so it must never get a host port.
       (if $n == "mosquitto" then
          (($v.ports // [])[] as $p
-          | deny(($p.target | tostring) != "9001" or ($p.published | tostring) != "9001";
-                 "port not allowed: \($p.published // $p.target):\($p.target) (only 127.0.0.1:9001:9001)"))
+          | deny((($p.target | tostring) | IN("9001", "9002") | not)
+                 or ($p.published | tostring) != ($p.target | tostring);
+                 "port not allowed: \($p.published // $p.target):\($p.target) (only 127.0.0.1:9001:9001 and 127.0.0.1:9002:9002)"))
        else empty end),
 
       # R15: container_name must be namespaced (no "db"/"kong" impersonation on shared nets).

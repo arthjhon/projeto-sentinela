@@ -76,7 +76,7 @@ wait_broker() { # <log lines to skip>: wait for "running" printed after them
 }
 start_broker || { echo "FAIL: broker did not start"; docker logs "$broker" 2>&1 | tail -n 20; exit 1; }
 
-readonly WS="ws://$broker:9001" TCP="tcp://$broker:1883"
+readonly WS="ws://$broker:9001" WSD="ws://$broker:9002" TCP="tcp://$broker:1883"
 
 # probe <pass-var-user|-> ... : args after env are passed to mqtt_probe.py.
 # Passwords travel via env (name-only -e), never argv.
@@ -112,6 +112,15 @@ test_anonymous_cannot_publish() {
 }
 test_anonymous_tcp_refused() {
   check "anonymous tcp 1883 refused" - --url "$TCP" --sub esp_a/sensores --expect denied
+}
+test_device_listener_requires_auth() {
+  check "anonymous ws 9002 refused" - --url "$WSD" --sub esp_a/sensores --expect denied
+  check "esp_a publishes esp_a/sensores on ws 9002" esp_a --url "$WSD" --pub esp_a/sensores \
+    --observer svc/telegraf --obs-url "$TCP" --expect allowed
+  check "esp_a cannot publish esp_b/sensores on ws 9002" esp_a --url "$WSD" --pub esp_b/sensores \
+    --observer svc/telegraf --obs-url "$TCP" --expect denied
+  check "svc/ota command via ws 9002 reaches esp_a" svc/ota --url "$WSD" --pub esp_a/ota/command \
+    --observer esp_a --obs-url "$TCP" --expect allowed
 }
 test_device_publishes_own_prefix() {
   check "esp_a publishes esp_a/sensores" esp_a --url "$TCP" --pub esp_a/sensores \
@@ -159,7 +168,7 @@ test_retained_survive_restart() {
   check "retained availability survives restart" - --url "$WS" --sub esp_a/availability --receive --expect allowed
 }
 
-for t in test_anonymous_reads_telemetry test_anonymous_cannot_publish test_anonymous_tcp_refused \
+for t in test_anonymous_reads_telemetry test_anonymous_cannot_publish test_anonymous_tcp_refused test_device_listener_requires_auth \
   test_device_publishes_own_prefix test_device_cannot_cross_prefix test_service_accounts_cannot_inject \
   test_ota_publisher_reaches_device test_telegraf_reads_both test_packet_size_limit \
   test_retained_survive_restart; do

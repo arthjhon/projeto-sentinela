@@ -1138,13 +1138,19 @@ pelo CI como parte dos quatro arquivos do deploy).
 
 ```text
 Telegraf --TCP 1883, com senha--> mosquitto (rede interna do compose; sem porta no host)
-boias, navegador, edge function OTA (MQTT_OTA_URL) --WSS--> Cloudflare --túnel cloudflared--> 127.0.0.1:9001
-                                                    (wss://mqtt.arthlabs.dev/mqtt; WebSocket do mosquitto, só no loopback)
+navegador --WSS--> Cloudflare --túnel--> 127.0.0.1:9001  (wss://mqtt.arthlabs.dev/mqtt; anônimo só lê)
+boias, edge function OTA (MQTT_OTA_URL) --WSS--> Cloudflare --túnel--> 127.0.0.1:9002  (wss://mqtt.arthlabs.dev/dev; só com senha)
 ```
 
 - Listener `1883`: só dentro da rede do compose, autenticação obrigatória. Não é publicado no host.
-- Listener `9001` (WebSocket): publicado só em `127.0.0.1` (o validador recusa outra porta ou
-  outro IP). Leitura anônima de telemetria; publicar exige credencial (ACL em `mosquitto/acl`).
+- Listener `9001` (WebSocket público, até 150 conexões): leitura anônima de telemetria; publicar
+  exige credencial (ACL em `mosquitto/acl`).
+- Listener `9002` (WebSocket de dispositivos, até 20 conexões): só com senha (placas `snt-NNNN` e
+  `svc/ota`). Vagas próprias: uma enxurrada de conexões anônimas na 9001 não impede a placa de
+  conectar. Mesma ACL e mesmo `passwd`.
+- `9001` e `9002` são publicados só em `127.0.0.1`, cada um na própria porta (o validador recusa
+  outra porta ou outro IP). O túnel escolhe o listener pelo caminho (`/dev` ou o resto); o
+  mosquitto aceita WebSocket em qualquer caminho.
 - O serviço não entra na rede externa `sentinela-pg`.
 - Healthcheck sem credencial: conexão TCP nos dois listeners. Não prova auth/ACL; isso é o
   `infra/tests/mosquitto.test.sh`.
@@ -1498,7 +1504,7 @@ sudo /usr/local/sbin/mqtt-user.sh list            # só nomes, nunca hashes
 1. `add svc/telegraf` → senha no cofre; ela entra no `.env` da stack (`MQTT_TELEGRAF_PASS`,
    `MQTT_BROKER=tcp://mosquitto:1883`, `MQTT_TELEGRAF_USER=svc/telegraf`) só no passo 10 do
    Rollout, depois que a boia estiver no broker novo.
-2. `add svc/ota` → segredo da Edge Function OTA (`MQTT_OTA_URL` aponta para `wss://mqtt.arthlabs.dev/mqtt`).
+2. `add svc/ota` → segredo da Edge Function OTA (`MQTT_OTA_URL` aponta para `wss://mqtt.arthlabs.dev/dev`).
 3. Boias: **não** usar `add` à mão; `provision-board.py provision` (seção "Provisionar placa") cria o
    usuário `snt-NNNN` e grava a senha direto na NVS da placa. `secrets.h` não leva mais senha.
 
@@ -1510,10 +1516,12 @@ reconectam sozinhas; as retidas persistem em `/mosquitto/data`). Para o `svc/tel
 o `.env` e rodar `stack-deploy.sh none` antes ou logo depois, senão o Telegraf é recusado. Para uma
 **boia** (`snt-NNNN`), `add` sozinho a deixa sem conectar: seguir "Rotação da senha de uma placa".
 
-**Decisão de projeto:** as credenciais das boias e do `svc/ota` autenticam necessariamente pelo
-`wss://mqtt.arthlabs.dev/mqtt` público (a abordagem C não tem outro caminho; o 1883 não sai da rede
-do compose). Mitigações: senhas aleatórias de 32+ caracteres, Cloudflare na frente, `max_connections`
-no broker e rotação com `mqtt-user.sh add` (rotação) se houver suspeita de vazamento.
+**Decisão de projeto:** as credenciais das boias e do `svc/ota` autenticam necessariamente por um
+WSS público (a abordagem C não tem outro caminho; o 1883 não sai da rede do compose): o
+`wss://mqtt.arthlabs.dev/dev` (listener 9002, só com senha, vagas próprias). Mitigações: senhas
+aleatórias de 32+ caracteres, Cloudflare na frente (com regra de rate limiting por IP no hostname
+`mqtt`), `max_connections` separado por listener e rotação com `mqtt-user.sh add` se houver suspeita
+de vazamento.
 
 **Backup:** o volume é o único lugar das credenciais. Perder o volume = reprovisionar todas as
 credenciais (boias incluídas). Backup diário pelo timer do passo 15b (`mosquitto-backup.timer`,
@@ -1521,16 +1529,28 @@ credenciais (boias incluídas). Backup diário pelo timer do passo 15b (`mosquit
 
 ### Exposição: túnel Cloudflare e DNS
 
-O WebSocket chega ao navegador por `wss://mqtt.arthlabs.dev/mqtt`. No `config.yml` do cloudflared
-da VM, adicionar a regra **acima** do catch-all (`service: http_status:404`):
+O WebSocket chega ao navegador por `wss://mqtt.arthlabs.dev/mqtt` e às placas/`svc/ota` por
+`wss://mqtt.arthlabs.dev/dev`. No `config.yml` do cloudflared da VM, as duas regras **acima** do
+catch-all (`service: http_status:404`), a de `/dev` primeiro (a primeira que casa vence):
 
 ```yaml
 ingress:
+  - hostname: mqtt.arthlabs.dev
+    path: ^/dev$
+    service: http://127.0.0.1:9002
   - hostname: mqtt.arthlabs.dev
     service: http://127.0.0.1:9001
   # ...demais regras existentes...
   - service: http_status:404
 ```
+
+Conferir com `cloudflared tunnel --config /etc/cloudflared/config.yml ingress rule https://mqtt.arthlabs.dev/dev`
+(regra da 9002) e `.../mqtt` (regra da 9001) antes do restart.
+
+**Rate limiting na Cloudflare** (painel, Security → WAF → Rate limiting rules; o plano gratuito tem
+uma regra): `http.host eq "mqtt.arthlabs.dev"`, contando por IP, bloqueia por 10 s o IP que abrir
+mais de 20 requisições (conexões WebSocket) em 10 s. Navegador e placa abrem uma conexão e a mantêm;
+reconexões com backoff ficam muito abaixo disso.
 
 Depois `sudo systemctl restart cloudflared` e conferir `sudo journalctl -u cloudflared -n 30`.
 O CNAME `mqtt` para `<id-do-túnel>.cfargotunnel.com` (proxied) é criado pelo Arthur no painel da
@@ -1562,7 +1582,7 @@ SHA-256 válido e a bóia com `deviceId` no registro (`app_settings.map_buoys`).
    (a mesma gravada no `passwd` do broker para `svc/ota`); nunca em argv, log ou repositório:
 
    ```text
-   MQTT_OTA_URL=wss://mqtt.arthlabs.dev/mqtt
+   MQTT_OTA_URL=wss://mqtt.arthlabs.dev/dev
    MQTT_OTA_USER=svc/ota
    MQTT_OTA_PASS=<senha de svc/ota>
    OTA_PUBLIC_BASE_URL=https://supabase.arthlabs.dev
