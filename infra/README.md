@@ -683,14 +683,14 @@ from(bucket: "externos")
 docker exec -e INFLUX_TOKEN "$C" influx query --org sentinela '
 from(bucket: "externos")
   |> range(start: 2024-01-01T00:00:00Z)
-  |> filter(fn: (r) => r._measurement == "previsao" and r._field == "temperature_2m")
+  |> filter(fn: (r) => r._measurement == "previsao" and r._field == "temperature_2m" and r.ponto == "celmm")
   |> group(columns: ["antecedencia_h"])
   |> aggregateWindow(every: 1mo, fn: count, createEmpty: true)
   |> keep(columns: ["antecedencia_h", "_time", "_value"])'
 unset INFLUX_TOKEN; exit
 ```
 
-Esperado: `previsao` com ~24 x dias do mês por antecedência (24, 48, ..., 168); `ana_telemetria`
+Esperado: `previsao` (ponto `celmm`) com ~24 x dias do mês por antecedência (24, 48, ..., 168); `ana_telemetria`
 com ~96 x dias por estação com dados (passo de 15 min; 39800100 hoje sem dados, então vazia).
 
 ### 14. nginx
