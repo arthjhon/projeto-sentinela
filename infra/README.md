@@ -1614,6 +1614,21 @@ ou versão com mais de 32 caracteres: 422 `too_large`, nada é publicado.
 Dependência: `MQTT_OTA_URL` é o WSS público, então o envio de OTA depende do túnel cloudflared e do DNS
 (além da VM e do broker); com o túnel fora, a função responde 502.
 
+#### Ação `reboot` (reinício remoto, firmware >= 5.2.0)
+
+Mesma função, mesmo deploy, sem variável nova (não usa `OTA_PUBLIC_BASE_URL`). Só admin chama.
+
+- Corpo: `{"action":"reboot","boia_id":"<codigo>"}`. `boia_id` não string, vazio ou com mais de
+  40 caracteres -> 400 `invalid_boia_id`; `action` desconhecida -> 400 `invalid_action`.
+- Respostas: 200 `{"ok":true,"sent_at":<epoch s>}`; 401 sem sessão; 403 `forbidden` (não admin);
+  422 `no_device` (bóia sem `deviceId` no registro); 502 `broker_unavailable`.
+- Publica `<deviceId>/ota/command` com `{"action":"reboot","ts":<epoch s>,"id":"<uuid>"}`, QoS 1,
+  **sem retain** (retido reiniciaria a placa a cada reconexão).
+- `ts` é **inteiro em segundos** (`Math.floor(Date.now()/1000)`): float ou milissegundos a placa
+  rejeita como velho (janela de 300 s). Quem chama o painel usa o `sent_at` da resposta.
+- Não toca `firmware_deploys`. Sucesso só prova que o broker aceitou (PUBACK); o reinício se
+  confirma pelo `/status` da placa. Deploy da função: os mesmos passos acima (`index.ts` e `command.ts`).
+
 ### Modo limitado
 
 O broker agora roda na mesma VM da stack. Com a VM fora do ar (ou o broker parado), o painel perde
