@@ -5,6 +5,7 @@ import {
   validarMudancaRole,
   validarExclusao,
   criarGuardaEnvio,
+  descricaoOperador,
 } from './usersRules.js';
 
 const users = [
@@ -117,5 +118,18 @@ describe('criarGuardaEnvio', () => {
     liberar();
     await p;
     expect(guarda.ocupado()).toBe(false);
+  });
+});
+
+describe('descricaoOperador (texto do diálogo de exclusão)', () => {
+  it('admin: nome e login da conta, para não excluir a errada', () => {
+    expect(descricaoOperador({ name: 'Beto', username: 'beto' }, true)).toBe('Beto (login: beto)');
+  });
+  it('sem acesso ao login: só o nome', () => {
+    expect(descricaoOperador({ name: 'Beto' }, false)).toBe('Beto');
+    expect(descricaoOperador({ name: 'Beto', username: 'beto' }, false)).toBe('Beto');
+  });
+  it('conta não encontrada: não inventa nome', () => {
+    expect(descricaoOperador(undefined, true)).toBe('conta selecionada');
   });
 });

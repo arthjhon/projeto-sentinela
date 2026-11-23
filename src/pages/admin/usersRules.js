@@ -52,3 +52,9 @@ export function criarGuardaEnvio() {
   guarda.ocupado = () => ocupado;
   return guarda;
 }
+
+/** Como o diálogo de exclusão nomeia a conta: "Nome (login: x)" para quem vê o login, senão só o nome. */
+export function descricaoOperador(user, verLogin) {
+  if (!user) return 'conta selecionada';
+  return verLogin && user.username ? `${user.name} (login: ${user.username})` : user.name;
+}

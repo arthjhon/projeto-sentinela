@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { Plus, Edit2, Trash2, X, Image as ImageIcon, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Edit2, Trash2, Image as ImageIcon, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useReadOnly } from '../../hooks/useReadOnly';
 import ConfirmModal from '../../components/ConfirmModal';
+import Modal from '../../components/admin/Modal';
+import AcaoAviso from '../../components/admin/AcaoAviso';
+import { MOTIVO_DEMO } from '../../utils/acaoAviso';
 import {
   listarTodas, criarEntrada, atualizarEntrada, removerEntrada, uploadImagem,
   CATEGORIAS, CATEGORIA_COLORS,
@@ -33,6 +35,7 @@ const ChangelogPageConteudo = () => {
   const [saving, setSaving] = useState(false);
   const [formErrors, setFormErrors] = useState({});
 
+  const novaEntradaRef = useRef(null); // alvo estável do foco depois de remover (a linha some)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [entryToDelete, setEntryToDelete] = useState(null);
 
@@ -193,6 +196,7 @@ const ChangelogPageConteudo = () => {
     } finally {
       setConfirmDeleteOpen(false);
       setEntryToDelete(null);
+      novaEntradaRef.current?.focus();
     }
   };
 
@@ -203,12 +207,19 @@ const ChangelogPageConteudo = () => {
           <h1>Changelog Público</h1>
           <p>Marcos e novidades exibidos na página pública "Evolução".</p>
         </div>
-        {!readOnly && (
-          <button className="btn-primary" onClick={handleOpenCreate}>
-            <Plus size={18} /> Nova Entrada
-          </button>
-        )}
+        <button
+          ref={novaEntradaRef}
+          className="btn-primary"
+          onClick={handleOpenCreate}
+          disabled={readOnly}
+          aria-describedby={readOnly ? 'aviso-changelog' : undefined}
+          title={readOnly ? MOTIVO_DEMO : undefined}
+        >
+          <Plus size={18} /> Nova Entrada
+        </button>
       </div>
+
+      <AcaoAviso id="aviso-changelog">{readOnly && `Ações desabilitadas: ${MOTIVO_DEMO}`}</AcaoAviso>
 
       {/* Data oficial — ancora o contador e os marcos automáticos de dias */}
       <div className="changelog-config-card glass mt-4">
@@ -235,7 +246,7 @@ const ChangelogPageConteudo = () => {
             />
           </label>
         </div>
-        <button className="btn-primary" onClick={handleSalvarConfig} disabled={configSaving || configLoading || readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
+        <button className="btn-primary" onClick={handleSalvarConfig} disabled={configSaving || configLoading || readOnly} aria-describedby={readOnly ? 'aviso-changelog' : undefined} title={readOnly ? MOTIVO_DEMO : undefined}>
           {configSaving ? 'Salvando...' : 'Salvar Data Oficial'}
         </button>
       </div>
@@ -274,17 +285,18 @@ const ChangelogPageConteudo = () => {
                       className={`changelog-status-btn ${entry.publicado ? 'publicado' : 'rascunho'}`}
                       onClick={() => handleTogglePublicado(entry)}
                       disabled={readOnly}
-                      title={readOnly ? 'Indisponível no modo demonstração' : (entry.publicado ? 'Clique para despublicar (vira rascunho)' : 'Clique para publicar')}
+                      aria-describedby={readOnly ? 'aviso-changelog' : undefined}
+                      title={readOnly ? MOTIVO_DEMO : (entry.publicado ? 'Clique para despublicar (vira rascunho)' : 'Clique para publicar')}
                     >
                       {entry.publicado ? <Eye size={14} /> : <EyeOff size={14} />}
                       {entry.publicado ? 'Publicado' : 'Rascunho'}
                     </button>
                   </td>
                   <td className="text-right">
-                    <button className="btn-table action-btn" onClick={() => handleOpenEdit(entry)} disabled={readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
+                    <button className="btn-table action-btn" aria-label={`Editar ${entry.titulo}`} onClick={() => handleOpenEdit(entry)} disabled={readOnly} aria-describedby={readOnly ? 'aviso-changelog' : undefined} title={readOnly ? MOTIVO_DEMO : undefined}>
                       <Edit2 size={16} />
                     </button>
-                    <button className="btn-table action-btn danger-btn" onClick={() => requestDelete(entry)} disabled={readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
+                    <button className="btn-table action-btn danger-btn" aria-label={`Remover ${entry.titulo}`} onClick={() => requestDelete(entry)} disabled={readOnly} aria-describedby={readOnly ? 'aviso-changelog' : undefined} title={readOnly ? MOTIVO_DEMO : undefined}>
                       <Trash2 size={16} />
                     </button>
                   </td>
@@ -295,88 +307,89 @@ const ChangelogPageConteudo = () => {
         )}
       </div>
 
-      {isModalOpen && createPortal(
-        <div className="changelog-modal-overlay">
-          <div className="changelog-modal animate-fade-in">
-            <div className="changelog-modal-header">
-              <h3>{editingEntry ? 'Editar Entrada' : 'Nova Entrada do Changelog'}</h3>
-              <button className="changelog-btn-close" onClick={() => setIsModalOpen(false)}>
-                <X size={20} />
+      {isModalOpen && (
+        <Modal
+          title={editingEntry ? 'Editar Entrada' : 'Nova Entrada do Changelog'}
+          onClose={() => setIsModalOpen(false)}
+          dismissible={!saving}
+          onSubmit={handleSaveForm}
+          footer={(
+            <>
+              <button type="button" className="btn-table" onClick={() => setIsModalOpen(false)} disabled={saving}>Cancelar</button>
+              <button type="submit" className="btn-primary" disabled={saving}>
+                {saving ? 'Salvando...' : editingEntry ? 'Salvar Alterações' : 'Publicar Entrada'}
               </button>
-            </div>
-
-            <form onSubmit={handleSaveForm} className="changelog-modal-body" noValidate>
-              <div className="changelog-form-group">
-                <label>Título</label>
-                <input
-                  type="text"
-                  className={formErrors.titulo ? 'changelog-input-error' : ''}
-                  value={formData.titulo}
-                  onChange={(e) => { setFormData({ ...formData, titulo: e.target.value }); setFormErrors({ ...formErrors, titulo: false }); }}
-                  placeholder="Ex: 3ª bóia entrou em operação"
-                />
-              </div>
-
-              <div className="changelog-form-row">
-                <div className="changelog-form-group">
-                  <label>Data do evento</label>
-                  <input
-                    type="date"
-                    className={formErrors.data ? 'changelog-input-error' : ''}
-                    value={formData.data}
-                    onChange={(e) => { setFormData({ ...formData, data: e.target.value }); setFormErrors({ ...formErrors, data: false }); }}
-                  />
-                </div>
-                <div className="changelog-form-group">
-                  <label>Categoria</label>
-                  <select
-                    value={formData.categoria}
-                    onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
-                  >
-                    {CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="changelog-form-group">
-                <label>Descrição</label>
-                <textarea
-                  className={formErrors.descricao ? 'changelog-input-error' : ''}
-                  value={formData.descricao}
-                  onChange={(e) => { setFormData({ ...formData, descricao: e.target.value }); setFormErrors({ ...formErrors, descricao: false }); }}
-                  placeholder="Descrição curta do marco ou novidade"
-                  rows={3}
-                />
-              </div>
-
-              <div className="changelog-form-group">
-                <label>Foto (opcional)</label>
-                <label className="changelog-image-upload">
-                  {imagePreview ? (
-                    <img src={imagePreview} alt="Pré-visualização" className="changelog-image-preview" />
-                  ) : (
-                    <span className="changelog-image-placeholder"><ImageIcon size={24} /> Clique para escolher uma foto</span>
-                  )}
-                  <input type="file" accept="image/*" onChange={handleImageChange} hidden />
-                </label>
-              </div>
-
-              <div className="changelog-modal-footer">
-                <button type="button" className="btn-table" onClick={() => setIsModalOpen(false)}>Cancelar</button>
-                <button type="submit" className="btn-primary" disabled={saving}>
-                  {saving ? 'Salvando...' : editingEntry ? 'Salvar Alterações' : 'Publicar Entrada'}
-                </button>
-              </div>
-            </form>
+            </>
+          )}
+        >
+          <div className="changelog-form-stack">
+          <div className="changelog-form-group">
+            <label>Título</label>
+            <input
+              type="text"
+              className={formErrors.titulo ? 'changelog-input-error' : ''}
+              value={formData.titulo}
+              onChange={(e) => { setFormData({ ...formData, titulo: e.target.value }); setFormErrors({ ...formErrors, titulo: false }); }}
+              placeholder="Ex: 3ª bóia entrou em operação"
+            />
           </div>
-        </div>,
-        document.body,
+
+          <div className="changelog-form-row">
+            <div className="changelog-form-group">
+              <label>Data do evento</label>
+              <input
+                type="date"
+                className={formErrors.data ? 'changelog-input-error' : ''}
+                value={formData.data}
+                onChange={(e) => { setFormData({ ...formData, data: e.target.value }); setFormErrors({ ...formErrors, data: false }); }}
+              />
+            </div>
+            <div className="changelog-form-group">
+              <label>Categoria</label>
+              <select
+                value={formData.categoria}
+                onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
+              >
+                {CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="changelog-form-group">
+            <label>Descrição</label>
+            <textarea
+              className={formErrors.descricao ? 'changelog-input-error' : ''}
+              value={formData.descricao}
+              onChange={(e) => { setFormData({ ...formData, descricao: e.target.value }); setFormErrors({ ...formErrors, descricao: false }); }}
+              placeholder="Descrição curta do marco ou novidade"
+              rows={3}
+            />
+          </div>
+
+          <div className="changelog-form-group">
+            <label>Foto (opcional)</label>
+            <label className="changelog-image-upload">
+              {imagePreview ? (
+                <img src={imagePreview} alt="Pré-visualização" className="changelog-image-preview" />
+              ) : (
+                <span className="changelog-image-placeholder"><ImageIcon size={24} /> Clique para escolher uma foto</span>
+              )}
+              <input type="file" accept="image/*" onChange={handleImageChange} hidden />
+            </label>
+          </div>
+          </div>
+        </Modal>
       )}
 
       <ConfirmModal
         isOpen={confirmDeleteOpen}
         title="Remover Entrada"
-        text="Tem certeza de que deseja remover esta entrada do changelog? Ela some da página pública imediatamente."
+        text={(
+          <>
+            Tem certeza de que deseja remover a entrada <strong>{entryToDelete?.titulo}</strong> do changelog?
+            Ela some da página pública imediatamente.
+          </>
+        )}
         confirmText="Sim, Remover"
         onConfirm={confirmDeleteAction}
         onCancel={() => setConfirmDeleteOpen(false)}

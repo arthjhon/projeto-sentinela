@@ -4,12 +4,14 @@ import { useToast } from './../../contexts/ToastContext';
 import { useReadOnly } from '../../hooks/useReadOnly';
 import { logAcao, AUDIT } from './../../services/auditLog';
 import ConfirmModal from './../../components/ConfirmModal';
-import { Search, Plus, Edit2, Trash2, Shield, User, Eye, KeyRound, X } from 'lucide-react';
-import { createPortal } from 'react-dom';
+import { Search, Plus, Edit2, Trash2, Shield, User, Eye, KeyRound } from 'lucide-react';
 import AcessoNegado from '../../components/admin/AcessoNegado';
+import AcaoAviso from '../../components/admin/AcaoAviso';
+import Modal from '../../components/admin/Modal';
+import { MOTIVO_DEMO, motivosAviso } from '../../utils/acaoAviso';
 import { ehPerfilGestao } from '../../config/adminNav';
 import {
-  mascararOperadores, validarMudancaRole, validarExclusao, criarGuardaEnvio,
+  mascararOperadores, validarMudancaRole, validarExclusao, criarGuardaEnvio, descricaoOperador,
 } from './usersRules';
 import './UsersPage.css';
 
@@ -32,6 +34,8 @@ const UsersPage = () => {
 
   // Validation State
   const [formErrors, setFormErrors] = useState({});
+  // Alvo estável para o foco depois de excluir (a linha do botão some da tabela).
+  const buscaRef = useRef(null);
 
   const initialFormData = {
     name: '',
@@ -115,6 +119,7 @@ const UsersPage = () => {
     }
     setConfirmDeleteOpen(false);
     setUserToDelete(null);
+    buscaRef.current?.focus(); // a linha excluída saiu da tela: o foco não pode cair no body
   });
 
   const handleSaveForm = async (e) => {
@@ -220,6 +225,13 @@ const UsersPage = () => {
     u.name.toLowerCase().includes(termo) ||
     (verCredenciais && u.username.toLowerCase().includes(termo))
   );
+  // Regra de exclusão por conta, uma vez só; os motivos viram um aviso visível (title não aparece no toque).
+  const exclusao = Object.fromEntries(filteredUsers.map(u => [u.id, validarExclusao({ alvoId: u.id, usuarioAtualId: currentUser.id, users })]));
+  const aviso = motivosAviso([
+    readOnly && MOTIVO_DEMO,
+    ...(readOnly ? [] : filteredUsers.map(u => exclusao[u.id].motivo)),
+  ]);
+  const alvoExclusao = users.find(u => u.id === userToDelete);
 
   return (
     <div className="dashboard-content-area">
@@ -234,22 +246,30 @@ const UsersPage = () => {
               <Search size={18} className="text-muted" />
               <input
                 type="text"
+                ref={buscaRef}
+                aria-label="Buscar operador"
                 placeholder="Buscar operador..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            {!readOnly && (
-              <button className="btn-primary" onClick={handleOpenCreate}>
-                <Plus size={18} /> Novo Usuário
-              </button>
-            )}
+            <button
+              className="btn-primary"
+              onClick={handleOpenCreate}
+              disabled={readOnly}
+              aria-describedby={readOnly ? 'aviso-operadores' : undefined}
+              title={readOnly ? MOTIVO_DEMO : undefined}
+            >
+              <Plus size={18} /> Novo Usuário
+            </button>
           </div>
       </div>
 
       {usersError && (
         <p className="text-muted mt-4" role="alert">Lista de operadores indisponível: não foi possível ler os dados agora. Tente recarregar a página.</p>
       )}
+
+      <AcaoAviso id="aviso-operadores">{aviso && `Ações desabilitadas: ${aviso}`}</AcaoAviso>
 
       <div className="users-list-wrapper glass mt-4">
         <table className="users-table">
@@ -289,10 +309,24 @@ const UsersPage = () => {
                   </td>
                 )}
                 <td className="actions-cell">
-                  <button className="btn-table action-btn" onClick={() => handleOpenEdit(user)} disabled={readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
+                  <button
+                    className="btn-table action-btn"
+                    onClick={() => handleOpenEdit(user)}
+                    disabled={readOnly}
+                    aria-label={`Editar ${user.name}`}
+                    aria-describedby={readOnly ? 'aviso-operadores' : undefined}
+                    title={readOnly ? MOTIVO_DEMO : undefined}
+                  >
                     <Edit2 size={16} />
                   </button>
-                  <button className="btn-table action-btn danger-btn" onClick={() => requestDelete(user.id)} disabled={readOnly || !validarExclusao({ alvoId: user.id, usuarioAtualId: currentUser.id, users }).ok} title={readOnly ? 'Indisponível no modo demonstração' : (validarExclusao({ alvoId: user.id, usuarioAtualId: currentUser.id, users }).motivo ?? 'Apagar')}>
+                  <button
+                    className="btn-table action-btn danger-btn"
+                    onClick={() => requestDelete(user.id)}
+                    disabled={readOnly || !exclusao[user.id].ok}
+                    aria-label={`Excluir ${user.name}`}
+                    aria-describedby={readOnly || !exclusao[user.id].ok ? 'aviso-operadores' : undefined}
+                    title={readOnly ? MOTIVO_DEMO : (exclusao[user.id].motivo ?? 'Apagar')}
+                  >
                     <Trash2 size={16} />
                   </button>
                 </td>
@@ -302,74 +336,76 @@ const UsersPage = () => {
         </table>
       </div>
 
-      {isModalOpen && createPortal(
-        <div className="crud-modal-overlay">
-          <div className="crud-modal animate-fade-in" style={{maxWidth: '500px'}}>
-            <div className="crud-modal-header">
-              <h3>{editingUser ? 'Editar Acessos do Operador' : 'Expedir Nova Credencial'}</h3>
-              <button className="btn-close" onClick={() => setIsModalOpen(false)}>
-                <X size={20} />
+      {isModalOpen && (
+        <Modal
+          title={editingUser ? 'Editar Acessos do Operador' : 'Expedir Nova Credencial'}
+          onClose={() => setIsModalOpen(false)}
+          dismissible={!salvando}
+          onSubmit={handleSaveForm}
+          footer={(
+            <>
+              <button type="button" className="btn-table" onClick={() => setIsModalOpen(false)} disabled={salvando}>Cancelar Operação</button>
+              <button type="submit" className="btn-primary" disabled={salvando}>
+                {editingUser ? 'Atualizar Entidade' : 'Ativar e Autorizar Conta'}
               </button>
+            </>
+          )}
+        >
+          <div className="form-group">
+            <label>Nome Completo do Funcionário</label>
+            <input type="text" className={`w-100 ${formErrors.name ? 'input-error' : ''}`} value={formData.name} onChange={e => {setFormData({...formData, name: e.target.value}); setFormErrors({...formErrors, name: false})}} placeholder="Ex: Arthur Lima" />
+          </div>
+          
+          <div className="form-group mt-2">
+            <label>Credencial de Login (Usuário)</label>
+            <input type="text" className={`w-100 ${formErrors.username ? 'input-error' : ''}`} value={formData.username} onChange={e => {setFormData({...formData, username: e.target.value.toLowerCase().replace(/\s/g, '')}); setFormErrors({...formErrors, username: false})}} placeholder="Ex: arthur.lima" />
+          </div>
+
+          <div className="form-group mt-2">
+            <label>Nível Sistêmico de Acesso</label>
+            <select value={formData.role} disabled={editingUser?.id === currentUser.id} title={editingUser?.id === currentUser.id ? 'Você não pode alterar o seu próprio nível de acesso' : undefined} onChange={e => setFormData({...formData, role: e.target.value})}>
+              <option value="admin">Administrador (Total / CRUD Bóias e Usuários)</option>
+              <option value="operador">Operador (Acesso aos Sensores e Testes Manuais)</option>
+              <option value="visualizador">Visualizador (Somente Leitura de Painéis e Gráficos)</option>
+            </select>
+          </div>
+
+          <div className="password-strategy-panel rounded mt-3">
+            <h4 className="mb-2">{editingUser ? 'Reset Físico de Senha Provisória' : 'Senha Provisória'}</h4>
+            <div className="radio-group mb-2">
+              <label><input type="radio" name="ptype" checked={passwordType === 'random'} onChange={() => setPasswordType('random')}/> Aleatória (Base 64)</label>
+              <label><input type="radio" name="ptype" checked={passwordType === 'manual'} onChange={() => setPasswordType('manual')}/> Digitar Manualmente</label>
             </div>
             
-            <form onSubmit={handleSaveForm} className="crud-modal-body" noValidate>
-              <div className="form-group">
-                <label>Nome Completo do Funcionário</label>
-                <input type="text" className={`w-100 ${formErrors.name ? 'input-error' : ''}`} value={formData.name} onChange={e => {setFormData({...formData, name: e.target.value}); setFormErrors({...formErrors, name: false})}} placeholder="Ex: Arthur Lima" />
-              </div>
-              
+            {passwordType === 'random' ? (
+               <div className="d-flex mt-2" style={{gap:'1rem', alignItems:'center'}}>
+                  <button className="btn-table action-btn" type="button" onClick={handleResetGenerate} style={{flexShrink: 0}}>
+                    Gerar Código Único
+                  </button>
+                  <input type="text" className="w-100 font-monospace text-center" style={{padding:'0.6rem', background:'rgba(0,0,0,0.5)', border:'1px solid rgba(0,240,255,0.3)', borderRadius:'6px', color:'var(--success)', letterSpacing:'2px'}} readOnly value={generatedPassword || '######'} placeholder="Clique para gerar" />
+               </div>
+            ) : (
               <div className="form-group mt-2">
-                <label>Credencial de Login (Usuário)</label>
-                <input type="text" className={`w-100 ${formErrors.username ? 'input-error' : ''}`} value={formData.username} onChange={e => {setFormData({...formData, username: e.target.value.toLowerCase().replace(/\s/g, '')}); setFormErrors({...formErrors, username: false})}} placeholder="Ex: arthur.lima" />
+                <input type="text" className={`w-100 ${formErrors.password ? 'input-error' : ''}`} value={formData.password} onChange={e => {setFormData({...formData, password: e.target.value}); setFormErrors({...formErrors, password: false})}} placeholder="Escreva uma senha simples (ex: sentinela123)..." />
               </div>
-
-              <div className="form-group mt-2">
-                <label>Nível Sistêmico de Acesso</label>
-                <select value={formData.role} disabled={editingUser?.id === currentUser.id} title={editingUser?.id === currentUser.id ? 'Você não pode alterar o seu próprio nível de acesso' : undefined} onChange={e => setFormData({...formData, role: e.target.value})}>
-                  <option value="admin">Administrador (Total / CRUD Bóias e Usuários)</option>
-                  <option value="operador">Operador (Acesso aos Sensores e Testes Manuais)</option>
-                  <option value="visualizador">Visualizador (Somente Leitura de Painéis e Gráficos)</option>
-                </select>
-              </div>
-
-              <div className="password-strategy-panel rounded mt-3">
-                <h4 className="mb-2">{editingUser ? 'Reset Físico de Senha Provisória' : 'Senha Provisória'}</h4>
-                <div className="radio-group mb-2">
-                  <label><input type="radio" name="ptype" checked={passwordType === 'random'} onChange={() => setPasswordType('random')}/> Aleatória (Base 64)</label>
-                  <label><input type="radio" name="ptype" checked={passwordType === 'manual'} onChange={() => setPasswordType('manual')}/> Digitar Manualmente</label>
-                </div>
-                
-                {passwordType === 'random' ? (
-                   <div className="d-flex mt-2" style={{gap:'1rem', alignItems:'center'}}>
-                      <button className="btn-table action-btn" type="button" onClick={handleResetGenerate} style={{flexShrink: 0}}>
-                        Gerar Código Único
-                      </button>
-                      <input type="text" className="w-100 font-monospace text-center" style={{padding:'0.6rem', background:'rgba(0,0,0,0.5)', border:'1px solid rgba(0,240,255,0.3)', borderRadius:'6px', color:'var(--success)', letterSpacing:'2px'}} readOnly value={generatedPassword || '######'} placeholder="Clique para gerar" />
-                   </div>
-                ) : (
-                  <div className="form-group mt-2">
-                    <input type="text" className={`w-100 ${formErrors.password ? 'input-error' : ''}`} value={formData.password} onChange={e => {setFormData({...formData, password: e.target.value}); setFormErrors({...formErrors, password: false})}} placeholder="Escreva uma senha simples (ex: sentinela123)..." />
-                  </div>
-                )}
-                {editingUser && <p className="text-muted mt-2" style={{fontSize: '0.8rem'}}>Deixe o form de senha em branco se deseja apenas mudar nome/nível do usuário.</p>}
-              </div>
-
-              <div className="crud-modal-footer mt-4">
-                <button type="button" className="btn-table" onClick={() => setIsModalOpen(false)}>Cancelar Operação</button>
-                <button type="submit" className="btn-primary" disabled={salvando}>
-                  {editingUser ? 'Atualizar Entidade' : 'Ativar e Autorizar Conta'}
-                </button>
-              </div>
-            </form>
+            )}
+            {editingUser && <p className="text-muted mt-2" style={{fontSize: '0.8rem'}}>Deixe o form de senha em branco se deseja apenas mudar nome/nível do usuário.</p>}
           </div>
-        </div>,
-        document.body
+        </Modal>
       )}
 
       <ConfirmModal 
         isOpen={confirmDeleteOpen}
         title="Expurgar Operador"
-        text="Aviso Crítico: a conta será excluída em definitivo e não poderá mais entrar. Uma sessão já aberta pode seguir ativa até o token atual expirar. Esta ação não tem desfazer."
+        text={(
+          <>
+            <p style={{ marginTop: 0 }}>Excluir a conta de <strong>{descricaoOperador(alvoExclusao, verCredenciais)}</strong>?</p>
+            <p>
+              Aviso crítico: a conta será excluída em definitivo e não poderá mais entrar. Uma sessão já aberta pode
+              seguir ativa até o token atual expirar. Esta ação não tem desfazer.
+            </p>
+          </>
+        )}
         confirmText="Sim, Expurgar Perfil"
         onConfirm={confirmDeleteAction}
         onCancel={() => setConfirmDeleteOpen(false)}

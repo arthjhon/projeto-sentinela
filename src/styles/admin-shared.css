@@ -173,3 +173,6 @@
   padding: 0.6rem 1rem;
   margin-bottom: 1rem;
 }
+
+/* Motivo visível de ações desabilitadas (components/admin/AcaoAviso.jsx) */
+.acao-aviso { margin: 0.5rem 0 0; font-size: 0.8rem; }

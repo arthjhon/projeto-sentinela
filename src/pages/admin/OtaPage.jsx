@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import AcessoNegado from '../../components/admin/AcessoNegado';
 import Modal from '../../components/admin/Modal';
+import AcaoAviso from '../../components/admin/AcaoAviso';
+import { MOTIVO_DEMO } from '../../utils/acaoAviso';
 import RegistryErrorBanner from '../../components/admin/RegistryErrorBanner';
 import DeployHistory from '../../components/admin/firmware/DeployHistory';
 import { ehPerfilGestao } from '../../config/adminNav';
@@ -203,9 +205,9 @@ const OtaPageConteudo = () => {
   const canDeploy = isAdmin && !isFallback && !registryLoading && firmwareFile && sha256 && !hashing
     && firmwareVersion.trim() && targetBuoy?.deviceId && idle;
   const deployBlockedReason = readOnly
-    ? 'Indisponível no modo demonstração'
-    : !isAdmin ? 'Apenas administradores podem implantar firmware'
-    : isFallback ? 'Cadastro de bóias indisponível: deploy bloqueado'
+    ? MOTIVO_DEMO
+    : !isAdmin ? 'Apenas administradores podem implantar firmware.'
+    : isFallback ? 'Cadastro de bóias indisponível: deploy bloqueado.'
     : undefined;
 
   return (
@@ -379,6 +381,7 @@ const OtaPageConteudo = () => {
                     className="btn-primary"
                     onClick={() => setConfirmOpen(true)}
                     disabled={!canDeploy || readOnly}
+                    aria-describedby={deployBlockedReason ? 'aviso-deploy' : undefined}
                     title={deployBlockedReason}
                   >
                     <Cpu size={15} /> Implantar Firmware
@@ -408,6 +411,7 @@ const OtaPageConteudo = () => {
                 <span className="ota-field-hint">Sem resposta da bóia em 120 s.</span>
               )}
             </div>
+            <AcaoAviso id="aviso-deploy">{deployBlockedReason && `Implantar Firmware desabilitado: ${deployBlockedReason}`}</AcaoAviso>
           </div>
 
           {/* Coluna direita: log de deploy */}

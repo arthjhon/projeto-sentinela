@@ -143,74 +143,11 @@
 .changelog-status-btn.rascunho { color: var(--text-muted); }
 .changelog-status-btn:hover { background: rgba(255, 255, 255, 0.05); }
 
-/* ── Modal (autocontido — ver nota no topo do arquivo) ─────── */
-.changelog-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  padding: 1rem;
-}
-
-.changelog-modal {
-  width: 100%;
-  max-width: 520px;
-  max-height: 90vh;
-  background: #0d1624;
-  border: 1px solid rgba(0, 240, 255, 0.12);
-  border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.changelog-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.changelog-modal-header h3 {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #e2e8f0;
-  margin: 0;
-}
-
-.changelog-btn-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: transparent;
-  color: #64748b;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.changelog-btn-close:hover {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: var(--danger);
-}
-
-.changelog-modal-body {
-  padding: 1.5rem;
+/* ── Formulário (o diálogo é o Modal compartilhado) ─────── */
+.changelog-form-stack {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  overflow-y: auto;
 }
 
 .changelog-form-row {
@@ -294,10 +231,3 @@
   display: block;
 }
 
-.changelog-modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-}

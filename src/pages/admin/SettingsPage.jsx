@@ -11,6 +11,8 @@ import {
 } from '../../utils/collectionRadius';
 import { carregarConfiguracoes } from '../../utils/settingsLoad';
 import AcessoNegado from '../../components/admin/AcessoNegado';
+import AcaoAviso from '../../components/admin/AcaoAviso';
+import { MOTIVO_DEMO } from '../../utils/acaoAviso';
 import { ehPerfilGestao } from '../../config/adminNav';
 import './SettingsPage.css';
 
@@ -128,6 +130,8 @@ const SettingsPageConteudo = () => {
         <p>Ajustes gerais da plataforma.</p>
       </div>
 
+      <AcaoAviso id="aviso-config">{readOnly && `Ações desabilitadas: ${MOTIVO_DEMO}`}</AcaoAviso>
+
       {/* Dados simulados */}
       <div className="settings-card glass mt-4">
         <div className="settings-card-icon" data-on={mockEnabled}>
@@ -160,6 +164,7 @@ const SettingsPageConteudo = () => {
           <input
             type="checkbox"
             checked={mockEnabled && !mockDesconhecido}
+            aria-describedby={!podeEditarMock && readOnly ? 'aviso-config' : undefined}
             disabled={!podeEditarMock || salvandoMock || mockDesconhecido || mockCarregando}
             onChange={(e) => handleToggleMock(e.target.checked)}
           />
@@ -215,7 +220,7 @@ const SettingsPageConteudo = () => {
             <span className="settings-meta-pct">{pct}%</span>
           </div>
 
-          <button className="btn-primary settings-save-btn" onClick={handleSalvarMeta} disabled={salvando || carregando || readOnly || Boolean(erroMeta)} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
+          <button className="btn-primary settings-save-btn" onClick={handleSalvarMeta} disabled={salvando || carregando || readOnly || Boolean(erroMeta)} aria-describedby={readOnly ? 'aviso-config' : undefined} title={readOnly ? MOTIVO_DEMO : undefined}>
             {salvando ? 'Salvando...' : 'Salvar Meta'}
           </button>
         </div>
@@ -254,7 +259,7 @@ const SettingsPageConteudo = () => {
             Entre {MIN_COLLECTION_RADIUS_M} e {MAX_COLLECTION_RADIUS_M} m.{raio !== '' && ` Anéis desenhados: ${aneis.map(r => `${r.radius} m`).join(' · ')}.`}
           </p>
 
-          <button className="btn-primary settings-save-btn" onClick={handleSalvarRaio} disabled={salvandoRaio || carregando || readOnly || Boolean(erroRaio)} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
+          <button className="btn-primary settings-save-btn" onClick={handleSalvarRaio} disabled={salvandoRaio || carregando || readOnly || Boolean(erroRaio)} aria-describedby={readOnly ? 'aviso-config' : undefined} title={readOnly ? MOTIVO_DEMO : undefined}>
             {salvandoRaio ? 'Salvando...' : 'Salvar Raio'}
           </button>
         </div>

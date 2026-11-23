@@ -561,6 +561,5 @@
   .fleet-table td[data-label]::before { content: attr(data-label) ': '; color: var(--text-muted); font-size: 0.78rem; }
 }
 
-.acao-aviso { margin: 0.5rem 0 0; font-size: 0.8rem; }
 .btn-primary.danger-btn { background: #ef4444; border-color: #ef4444; color: #fff; box-shadow: none; }
 .btn-primary.danger-btn:hover:not(:disabled) { background: #dc2626; }
