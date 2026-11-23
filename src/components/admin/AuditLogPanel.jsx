@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ScrollText, RotateCw } from 'lucide-react';
-import { listarAuditoria, AUDIT_LABELS } from '../../services/auditLog';
+import { listarAuditoria, AUDIT_LABELS, LIMITE_AUDITORIA } from '../../services/auditLog';
 import './AuditLogPanel.css';
 
 // Log de auditoria (backlog 6.1). Aba própria em Configurações
@@ -33,18 +33,24 @@ export default function AuditLogPanel({ operadores = [] }) {
   const [filtroOperador, setFiltroOperador] = useState('');
   const [filtroAcao, setFiltroAcao] = useState('');
 
+  // Token de requisição: trocar o filtro rápido não deixa a resposta antiga
+  // sobrescrever a nova (e o spinner só some quando a última termina).
+  const requisicaoRef = useRef(0);
+
   const carregar = useCallback(async () => {
+    const minha = ++requisicaoRef.current;
     setLoading(true);
     setErro(null);
     try {
-      setLogs(await listarAuditoria({
+      const dados = await listarAuditoria({
         operador: filtroOperador || undefined,
         acao: filtroAcao || undefined,
-      }));
+      });
+      if (minha === requisicaoRef.current) setLogs(dados);
     } catch (err) {
-      setErro(err.message);
+      if (minha === requisicaoRef.current) setErro(err.message);
     } finally {
-      setLoading(false);
+      if (minha === requisicaoRef.current) setLoading(false);
     }
   }, [filtroOperador, filtroAcao]);
 
@@ -67,7 +73,7 @@ export default function AuditLogPanel({ operadores = [] }) {
           >
             <option value="">Todos os operadores</option>
             {operadores.map(o => (
-              <option key={o.id} value={o.id}>{o.username}</option>
+              <option key={o.id} value={o.id}>{o.username ?? o.name}</option>
             ))}
           </select>
 
@@ -88,6 +94,12 @@ export default function AuditLogPanel({ operadores = [] }) {
           </button>
         </div>
       </div>
+
+      {!erro && logs.length >= LIMITE_AUDITORIA && (
+        <p className="audit-empty" role="status">
+          Mostrando os últimos {LIMITE_AUDITORIA} registros. Use os filtros para chegar aos mais antigos.
+        </p>
+      )}
 
       {erro ? (
         <p className="audit-empty">Não foi possível carregar o log: {erro}</p>

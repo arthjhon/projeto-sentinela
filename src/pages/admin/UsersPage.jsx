@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuth } from './../../contexts/AuthContext';
 import { useToast } from './../../contexts/ToastContext';
 import { useReadOnly } from '../../hooks/useReadOnly';
@@ -8,6 +8,9 @@ import { Search, Plus, Edit2, Trash2, Shield, User, Eye, KeyRound, X } from 'luc
 import { createPortal } from 'react-dom';
 import AcessoNegado from '../../components/admin/AcessoNegado';
 import { ehPerfilGestao } from '../../config/adminNav';
+import {
+  mascararOperadores, validarMudancaRole, validarExclusao, criarGuardaEnvio,
+} from './usersRules';
 import './UsersPage.css';
 
 const UsersPage = () => {
@@ -37,6 +40,15 @@ const UsersPage = () => {
     role: 'operador', // 'admin', 'operador', 'visualizador'
   };
   const [formData, setFormData] = useState(initialFormData);
+
+  // Guardas de envio duplo (M3): salvar e excluir não rodam duas vezes ao mesmo tempo.
+  const guardaSalvar = useRef(criarGuardaEnvio()).current;
+  const guardaExcluir = useRef(criarGuardaEnvio()).current;
+  const [salvando, setSalvando] = useState(false);
+
+  // Só admin vê username e estado da senha; os demais perfis recebem a lista sem eles.
+  const verCredenciais = currentUser?.role === 'admin';
+  const visiveis = mascararOperadores(users, currentUser?.role);
 
   if (!ehPerfilGestao(currentUser?.role)) {
     return <AcessoNegado>Você não possui privilégios de Administrador para gerenciar a base de dados de operadores.</AcessoNegado>;
@@ -80,20 +92,21 @@ const UsersPage = () => {
   };
 
   const requestDelete = (id) => {
-    if (id === currentUser.id) {
-      addToast("Segurança: Você não pode deletar o próprio usuário logado.", "error");
+    const regra = validarExclusao({ alvoId: id, usuarioAtualId: currentUser.id, users });
+    if (!regra.ok) {
+      addToast(`Segurança: ${regra.motivo}`, "error");
       return;
     }
     setUserToDelete(id);
     setConfirmDeleteOpen(true);
   };
 
-  const confirmDeleteAction = async () => {
+  const confirmDeleteAction = () => guardaExcluir(async () => {
     // captura antes de deletar: depois o registro some da lista
     const alvo = users.find(u => u.id === userToDelete);
     const res = await deleteAdminUser(userToDelete);
     if(res.success) {
-      addToast("Operador permanentemente excluído da Nuvem.", "success");
+      addToast("Operador excluído: a conta foi removida e não consegue mais entrar.", "success");
       logAcao(AUDIT.USUARIO_REMOVER, alvo?.username ?? userToDelete, {
         nome: alvo?.name, role: alvo?.role,
       });
@@ -102,10 +115,19 @@ const UsersPage = () => {
     }
     setConfirmDeleteOpen(false);
     setUserToDelete(null);
-  };
+  });
 
   const handleSaveForm = async (e) => {
     e.preventDefault();
+    setSalvando(true);
+    try {
+      await guardaSalvar(() => salvarFormulario());
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const salvarFormulario = async () => {
 
     // Custom Validation
     const errors = {};
@@ -131,6 +153,11 @@ const UsersPage = () => {
       // Edit Flow
       const nameCheck = users.find(u => u.username === formData.username && u.id !== editingUser.id);
       if(nameCheck) { addToast("Esse nome de login já existe no sistema!", "warning"); return; }
+
+      const regra = validarMudancaRole({
+        alvoId: editingUser.id, novaRole: formData.role, usuarioAtualId: currentUser.id, users,
+      });
+      if (!regra.ok) { addToast(regra.motivo, "error"); return; }
 
       const res = await editAdminUser(editingUser.id, {
         name: formData.name,
@@ -188,9 +215,10 @@ const UsersPage = () => {
     setIsModalOpen(false);
   };
 
-  const filteredUsers = users.filter(u => 
-    u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    u.username.toLowerCase().includes(searchTerm.toLowerCase())
+  const termo = searchTerm.toLowerCase();
+  const filteredUsers = visiveis.filter(u =>
+    u.name.toLowerCase().includes(termo) ||
+    (verCredenciais && u.username.toLowerCase().includes(termo))
   );
 
   return (
@@ -224,9 +252,9 @@ const UsersPage = () => {
           <thead>
             <tr>
               <th>Nome Completo</th>
-              <th>Credencial (Login)</th>
+              {verCredenciais && <th>Credencial (Login)</th>}
               <th>Nível de Acesso</th>
-              <th>Status Segurança</th>
+              {verCredenciais && <th>Senha</th>}
               <th className="text-right">Ações de Admin</th>
             </tr>
           </thead>
@@ -241,24 +269,26 @@ const UsersPage = () => {
                     <span className="font-medium">{user.name}</span>
                   </div>
                 </td>
-                <td className="monospace">{user.username}</td>
+                {verCredenciais && <td className="monospace">{user.username}</td>}
                 <td>
                   <span className={`role-badge ${user.role}`}>
                     {user.role.toUpperCase()}
                   </span>
                 </td>
-                <td>
-                  {user.must_change_password ? (
-                    <span className="alert-badge warning"><KeyRound size={14}/> Mudança Pendente</span>
-                  ) : (
-                    <span className="alert-badge success">Protegido V2</span>
-                  )}
-                </td>
+                {verCredenciais && (
+                  <td>
+                    {user.must_change_password ? (
+                      <span className="alert-badge warning"><KeyRound size={14}/> Troca pendente</span>
+                    ) : (
+                      <span className="alert-badge success">Senha definida pelo usuário</span>
+                    )}
+                  </td>
+                )}
                 <td className="actions-cell">
                   <button className="btn-table action-btn" onClick={() => handleOpenEdit(user)} disabled={readOnly} title={readOnly ? 'Indisponível no modo demonstração' : undefined}>
                     <Edit2 size={16} />
                   </button>
-                  <button className="btn-table action-btn danger-btn" onClick={() => requestDelete(user.id)} disabled={readOnly || user.id === currentUser.id} title={readOnly ? 'Indisponível no modo demonstração' : (user.id === currentUser.id ? 'Você não pode apagar sua própria conta' : 'Apagar')}>
+                  <button className="btn-table action-btn danger-btn" onClick={() => requestDelete(user.id)} disabled={readOnly || !validarExclusao({ alvoId: user.id, usuarioAtualId: currentUser.id, users }).ok} title={readOnly ? 'Indisponível no modo demonstração' : (validarExclusao({ alvoId: user.id, usuarioAtualId: currentUser.id, users }).motivo ?? 'Apagar')}>
                     <Trash2 size={16} />
                   </button>
                 </td>
@@ -291,7 +321,7 @@ const UsersPage = () => {
 
               <div className="form-group mt-2">
                 <label>Nível Sistêmico de Acesso</label>
-                <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
+                <select value={formData.role} disabled={editingUser?.id === currentUser.id} title={editingUser?.id === currentUser.id ? 'Você não pode alterar o seu próprio nível de acesso' : undefined} onChange={e => setFormData({...formData, role: e.target.value})}>
                   <option value="admin">Administrador (Total / CRUD Bóias e Usuários)</option>
                   <option value="operador">Operador (Acesso aos Sensores e Testes Manuais)</option>
                   <option value="visualizador">Visualizador (Somente Leitura de Painéis e Gráficos)</option>
@@ -322,7 +352,7 @@ const UsersPage = () => {
 
               <div className="crud-modal-footer mt-4">
                 <button type="button" className="btn-table" onClick={() => setIsModalOpen(false)}>Cancelar Operação</button>
-                <button type="submit" className="btn-primary">
+                <button type="submit" className="btn-primary" disabled={salvando}>
                   {editingUser ? 'Atualizar Entidade' : 'Ativar e Autorizar Conta'}
                 </button>
               </div>
@@ -335,7 +365,7 @@ const UsersPage = () => {
       <ConfirmModal 
         isOpen={confirmDeleteOpen}
         title="Expurgar Operador"
-        text="Aviso Crítico: Tem certeza de que deseja apagar permanentemente esse usuário? O acesso dele será revogado em tempo real."
+        text="Aviso Crítico: a conta será excluída em definitivo e não poderá mais entrar. Uma sessão já aberta pode seguir ativa até o token atual expirar. Esta ação não tem desfazer."
         confirmText="Sim, Expurgar Perfil"
         onConfirm={confirmDeleteAction}
         onCancel={() => setConfirmDeleteOpen(false)}

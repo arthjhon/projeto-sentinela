@@ -1,7 +1,18 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
+
+// FunctionsHttpError traz a Response original em `context` — é onde está a
+// mensagem real (ex: "senha muito curta", "não é admin").
+async function mensagemDaFuncao(error) {
+  try {
+    return (await error.context?.json())?.error || error.message;
+  } catch {
+    // corpo não era JSON (ex: timeout, function não encontrada)
+    return error.message;
+  }
+}
 
 export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -11,6 +22,49 @@ export const AuthProvider = ({ children }) => {
 
   // Lista central de usuários
   const [users, setUsers] = useState([]);
+
+  // Admin lê a tabela inteira (RLS: profiles só abre outras linhas para admin).
+  // Operador e visualizador recebem só id, nome e papel pela RPC operadores_lista:
+  // o username é parte da credencial e não sai do servidor para eles.
+  const fetchAdminUsersList = useCallback(async (role) => {
+    const { data } = role === 'admin'
+      ? await supabase.from('profiles').select('*').order('created_at', { ascending: true })
+      : await supabase.rpc('operadores_lista');
+    if (data) setUsers(data);
+  }, []);
+
+  // Busca o profile do usuário com até 4 tentativas (trigger PostgreSQL pode demorar ms após o signup)
+  const fetchUserProfile = useCallback(async (authUser) => {
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .single();
+
+        if (profile) {
+          setCurrentUser(profile);
+          setIsAuthenticated(true);
+          setAuthError(null);
+          fetchAdminUsersList(profile.role);
+          break;
+        }
+        if (!error && attempt < 4) {
+          // Profile ainda não foi criado pela trigger — aguarda e tenta novamente
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+        setAuthError('Não foi possível carregar seu perfil. Tente fazer login novamente.');
+        console.error('fetchUserProfile falhou:', error);
+        break;
+      }
+    } catch (e) {
+      setAuthError('Erro de conexão ao carregar perfil.');
+      console.error('fetchUserProfile exception:', e);
+    }
+    setIsLoading(false);
+  }, [fetchAdminUsersList]);
 
   useEffect(() => {
     // Apenas dois eventos precisam de ação:
@@ -34,41 +88,7 @@ export const AuthProvider = ({ children }) => {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
-
-  // Busca o profile do usuário com até 4 tentativas (trigger PostgreSQL pode demorar ms após o signup)
-  const fetchUserProfile = async (authUser, attempt = 0) => {
-    try {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-
-      if (profile) {
-        setCurrentUser(profile);
-        setIsAuthenticated(true);
-        setAuthError(null);
-        if (profile.role === 'admin' || profile.role === 'visualizador') fetchAdminUsersList();
-      } else if (!error && attempt < 4) {
-        // Profile ainda não foi criado pela trigger — aguarda e tenta novamente
-        setTimeout(() => fetchUserProfile(authUser, attempt + 1), 500);
-        return; // não chama setIsLoading ainda; o retry finaliza
-      } else {
-        setAuthError('Não foi possível carregar seu perfil. Tente fazer login novamente.');
-        console.error('fetchUserProfile falhou:', error);
-      }
-    } catch (e) {
-      setAuthError('Erro de conexão ao carregar perfil.');
-      console.error('fetchUserProfile exception:', e);
-    }
-    setIsLoading(false);
-  };
-
-  const fetchAdminUsersList = async () => {
-    const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: true });
-    if (data) setUsers(data);
-  };
+  }, [fetchUserProfile]);
 
   const login = async (username, password) => {
     const normalizedInput = username.toLowerCase().trim();
@@ -114,7 +134,7 @@ export const AuthProvider = ({ children }) => {
       setCurrentUser(profile);
       setIsAuthenticated(true);
       setAuthError(null);
-      if (profile.role === 'admin' || profile.role === 'visualizador') fetchAdminUsersList();
+      fetchAdminUsersList(profile.role);
     }
 
     setIsLoading(false);
@@ -139,32 +159,25 @@ export const AuthProvider = ({ children }) => {
         role: formData.role,
       },
     });
-    if (error) {
-      let serverMsg = null;
-      try {
-        serverMsg = (await error.context?.json())?.error;
-      } catch {
-        // corpo não era JSON (ex: timeout, function não encontrada) — usa error.message mesmo
-      }
-      return { success: false, error: serverMsg || error.message };
-    }
+    if (error) return { success: false, error: await mensagemDaFuncao(error) };
     if (!data?.success) return { success: false, error: 'Falha ao criar usuário.' };
 
-    fetchAdminUsersList();
+    fetchAdminUsersList(currentUser?.role);
     return { success: true };
   };
 
+  // Exclusão via Edge Function (admin-delete-user): apaga a conta em auth.users
+  // (o cascade remove o profile), o que de fato revoga o acesso. Apagar só a
+  // linha de profiles deixava login e senha válidos. Sem remoção otimista: a
+  // linha só some da tela quando o servidor confirmou.
   const deleteAdminUser = async (userId) => {
-    // Exclusão Otimista: remove da tela imediatamente para UX fluida
+    const { data, error } = await supabase.functions.invoke('admin-delete-user', {
+      body: { userId },
+    });
+    if (error) return { success: false, error: await mensagemDaFuncao(error) };
+    if (!data?.success) return { success: false, error: 'Falha ao excluir usuário.' };
     setUsers(prev => prev.filter(u => u.id !== userId));
-
-    const { error } = await supabase.from('profiles').delete().eq('id', userId);
-
-    if (!error) return { success: true };
-
-    // Falhou no servidor — desfaz o otimismo buscando a lista original
-    await fetchAdminUsersList();
-    return { success: false, error: error.message };
+    return { success: true };
   };
 
   const editAdminUser = async (userId, payload) => {
@@ -174,7 +187,7 @@ export const AuthProvider = ({ children }) => {
     // nada. .single() força um erro real quando nenhuma linha volta.
     const { error } = await supabase.from('profiles').update(updateData).eq('id', userId).select().single();
     if (!error) {
-      fetchAdminUsersList();
+      fetchAdminUsersList(currentUser?.role);
       return { success: true };
     }
     return { success: false, error: error.message };
@@ -187,17 +200,7 @@ export const AuthProvider = ({ children }) => {
     const { data, error } = await supabase.functions.invoke('admin-reset-password', {
       body: { userId, newPassword },
     });
-    if (error) {
-      // FunctionsHttpError traz a Response original em `context` — é onde está
-      // a mensagem de erro real (ex: "senha muito curta", "não é admin").
-      let serverMsg = null;
-      try {
-        serverMsg = (await error.context?.json())?.error;
-      } catch {
-        // corpo não era JSON (ex: timeout, function não encontrada) — usa error.message mesmo
-      }
-      return { success: false, error: serverMsg || error.message };
-    }
+    if (error) return { success: false, error: await mensagemDaFuncao(error) };
     return { success: true, ...data };
   };
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import AuditLogPanel from '../../components/admin/AuditLogPanel';
-import { ehPerfilGestao } from '../../config/adminNav';
+import { ehPerfilAuditoria } from '../../config/adminNav';
 import AcessoNegado from '../../components/admin/AcessoNegado';
 
 // Aba Auditoria de Configurações (/admin/config/auditoria). Mesma guarda de
@@ -9,8 +9,8 @@ import AcessoNegado from '../../components/admin/AcessoNegado';
 const AuditoriaPage = () => {
   const { users, currentUser } = useAuth();
 
-  if (!ehPerfilGestao(currentUser?.role)) {
-    return <AcessoNegado>Você não possui privilégios de Administrador para consultar o log de auditoria.</AcessoNegado>;
+  if (!ehPerfilAuditoria(currentUser?.role)) {
+    return <AcessoNegado>Seu perfil não tem acesso ao log de auditoria.</AcessoNegado>;
   }
 
   return (

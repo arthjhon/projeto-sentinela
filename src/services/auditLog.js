@@ -30,6 +30,9 @@ export const AUDIT = {
   CHANGELOG_REMOVER: 'changelog.remover',
 };
 
+/** Teto de linhas de uma consulta; a tela avisa quando ele é atingido. */
+export const LIMITE_AUDITORIA = 200;
+
 /** Rótulos legíveis para a UI de filtro. */
 export const AUDIT_LABELS = {
   [AUDIT.BOIA_CRIAR]:        'Bóia criada',
@@ -50,6 +53,22 @@ export const AUDIT_LABELS = {
 };
 
 /**
+ * Monta a linha de audit_logs. NÃO leva `operador_nome`: o servidor (trigger
+ * audit_logs_set_operador) preenche a partir de profiles, e a policy exige
+ * operador_id = auth.uid(). Nome vindo do cliente seria forjável.
+ * Devolve null sem usuário logado.
+ */
+export function montarRegistro(user, acao, entidadeAfetada, detalhes) {
+  if (!user) return null;
+  return {
+    operador_id: user.id,
+    acao,
+    entidade_afetada: entidadeAfetada ?? null,
+    detalhes: detalhes ?? {},
+  };
+}
+
+/**
  * Registra uma ação. Nunca lança.
  * @param {string} acao              uma das constantes AUDIT
  * @param {string} entidadeAfetada   alvo da ação (ex: 'SM-01')
@@ -59,20 +78,10 @@ export const AUDIT_LABELS = {
 export async function logAcao(acao, entidadeAfetada, detalhes = {}) {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    let nome = 'desconhecido';
-    if (user) {
-      const { data: perfil } = await supabase
-        .from('profiles').select('username').eq('id', user.id).single();
-      nome = perfil?.username ?? user.email ?? 'desconhecido';
-    }
+    const registro = montarRegistro(user, acao, entidadeAfetada, detalhes);
+    if (!registro) throw new Error('sem sessão');
 
-    const { error } = await supabase.from('audit_logs').insert({
-      operador_id: user?.id ?? null,
-      operador_nome: nome,
-      acao,
-      entidade_afetada: entidadeAfetada ?? null,
-      detalhes,
-    });
+    const { error } = await supabase.from('audit_logs').insert(registro);
     if (error) throw error;
     return true;
   } catch (err) {
@@ -85,7 +94,7 @@ export async function logAcao(acao, entidadeAfetada, detalhes = {}) {
  * Lista o log, mais recente primeiro.
  * @param {{operador?: string, acao?: string, limite?: number}} filtros
  */
-export async function listarAuditoria({ operador, acao, limite = 200 } = {}) {
+export async function listarAuditoria({ operador, acao, limite = LIMITE_AUDITORIA } = {}) {
   let q = supabase
     .from('audit_logs')
     .select('*')

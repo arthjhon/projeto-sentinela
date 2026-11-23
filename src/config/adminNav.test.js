@@ -6,6 +6,8 @@ import {
   REDIRECTS_LEGADOS,
   legacyTarget,
   ehPerfilGestao,
+  PERFIS_AUDITORIA,
+  ehPerfilAuditoria,
 } from './adminNav.js';
 
 const resumo = (secoes) =>
@@ -37,11 +39,14 @@ describe('navParaPerfil', () => {
     expect(resumo(navParaPerfil('visualizador'))).toEqual([MONITORAMENTO, ADMINISTRACAO]);
   });
 
-  it('operador vê só Monitoramento', () => {
-    expect(resumo(navParaPerfil('operador'))).toEqual([MONITORAMENTO]);
+  it('operador vê Monitoramento e Configurações apontando direto para a Auditoria', () => {
+    expect(resumo(navParaPerfil('operador'))).toEqual([
+      MONITORAMENTO,
+      { titulo: 'Administração', itens: [['/admin/config/auditoria', 'Configurações']] },
+    ]);
   });
 
-  it('perfil ausente ou desconhecido é tratado como operador', () => {
+  it('perfil ausente ou desconhecido vê só Monitoramento (fail closed)', () => {
     expect(resumo(navParaPerfil(undefined))).toEqual([MONITORAMENTO]);
     expect(resumo(navParaPerfil('qualquer'))).toEqual([MONITORAMENTO]);
   });
@@ -72,9 +77,17 @@ describe('abasDaSecao', () => {
     ]);
   });
 
-  it('Configurações: operador e perfil desconhecido não veem aba', () => {
-    expect(abasDaSecao('config', 'operador')).toEqual([]);
+  it('Configurações: visualizador não vê a aba Auditoria', () => {
+    expect(abasDaSecao('config', 'visualizador').map((a) => a.to)).toEqual(['site', 'changelog', 'operadores']);
+  });
+
+  it('Configurações: operador vê só Auditoria', () => {
+    expect(abasDaSecao('config', 'operador')).toEqual([{ to: 'auditoria', label: 'Auditoria' }]);
+  });
+
+  it('Configurações: perfil desconhecido não vê aba', () => {
     expect(abasDaSecao('config', undefined)).toEqual([]);
+    expect(abasDaSecao('config', 'qualquer')).toEqual([]);
   });
 });
 
@@ -110,5 +123,15 @@ describe('ehPerfilGestao', () => {
     expect(ehPerfilGestao('operador')).toBe(false);
     expect(ehPerfilGestao(undefined)).toBe(false);
     expect(ehPerfilGestao('qualquer')).toBe(false);
+  });
+});
+
+describe('PERFIS_AUDITORIA', () => {
+  it('são admin e operador (a demo não lê o log)', () => {
+    expect([...PERFIS_AUDITORIA]).toEqual(['admin', 'operador']);
+    expect(ehPerfilAuditoria('admin')).toBe(true);
+    expect(ehPerfilAuditoria('operador')).toBe(true);
+    expect(ehPerfilAuditoria('visualizador')).toBe(false);
+    expect(ehPerfilAuditoria(undefined)).toBe(false);
   });
 });

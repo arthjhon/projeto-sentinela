@@ -10,6 +10,13 @@ export const PERFIS_GESTAO = Object.freeze(['admin', 'visualizador']);
 /** Fail closed: perfil ausente ou desconhecido vale como operador. */
 export const ehPerfilGestao = (role) => PERFIS_GESTAO.includes(role);
 
+/** Perfis que leem o log de auditoria (a conta demo, visualizador, não lê). */
+export const PERFIS_AUDITORIA = Object.freeze(['admin', 'operador']);
+
+export const ehPerfilAuditoria = (role) => PERFIS_AUDITORIA.includes(role);
+
+const PERFIS_CONFIG = Object.freeze([...new Set([...PERFIS_GESTAO, ...PERFIS_AUDITORIA])]);
+
 const SECOES = Object.freeze([
   {
     titulo: 'Monitoramento',
@@ -22,30 +29,41 @@ const SECOES = Object.freeze([
   },
   {
     titulo: 'Administração',
-    itens: [{ to: '/admin/config', label: 'Configurações', icon: SlidersHorizontal, gestao: true }],
+    itens: [
+      {
+        to: '/admin/config',
+        label: 'Configurações',
+        icon: SlidersHorizontal,
+        perfis: PERFIS_CONFIG,
+        // operador só tem a aba Auditoria: o menu leva direto a ela
+        toPorPerfil: { operador: '/admin/config/auditoria' },
+      },
+    ],
   },
 ]);
 
 const ABAS = Object.freeze({
   boias: [
     { to: 'frota', label: 'Frota' },
-    { to: 'firmware', label: 'Firmware', gestao: true },
+    { to: 'firmware', label: 'Firmware', perfis: PERFIS_GESTAO },
   ],
   config: [
-    { to: 'site', label: 'Site público', gestao: true },
-    { to: 'changelog', label: 'Changelog', gestao: true },
-    { to: 'operadores', label: 'Operadores', gestao: true },
-    { to: 'auditoria', label: 'Auditoria', gestao: true },
+    { to: 'site', label: 'Site público', perfis: PERFIS_GESTAO },
+    { to: 'changelog', label: 'Changelog', perfis: PERFIS_GESTAO },
+    { to: 'operadores', label: 'Operadores', perfis: PERFIS_GESTAO },
+    { to: 'auditoria', label: 'Auditoria', perfis: PERFIS_AUDITORIA },
   ],
 });
 
-const visivel = (role) => (x) => !x.gestao || ehPerfilGestao(role);
+const visivel = (role) => (x) => !x.perfis || x.perfis.includes(role);
 
 /** Seções do menu lateral visíveis para o perfil; seções vazias são omitidas. */
 export function navParaPerfil(role) {
   return SECOES.map((s) => ({
     titulo: s.titulo,
-    itens: s.itens.filter(visivel(role)).map(({ to, label, icon }) => ({ to, label, icon })),
+    itens: s.itens
+      .filter(visivel(role))
+      .map(({ to, label, icon, toPorPerfil }) => ({ to: toPorPerfil?.[role] ?? to, label, icon })),
   })).filter((s) => s.itens.length > 0);
 }
 
