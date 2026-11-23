@@ -6,6 +6,7 @@ import { fetchHistoryCsv, downloadCsv } from '../../../utils/exportHistoryCsv';
 import { deviceIdsOf } from '../../../services/buoyRegistry';
 import { serialValido } from '../../../utils/deviceIds';
 import { num } from '../../../utils/dashboard';
+import { formatDataHoraSeg } from '../../../utils/format';
 import { healthForDevice } from '../../../services/sensorHealth';
 import { HealthEvents } from '../SensorHealth';
 import { WATER_PARAMS } from '../../../config/waterQuality';
@@ -215,7 +216,7 @@ export default function BuoyPanel({
                 <tbody>
                   {ultimas.slice(0, 10).map((r, i) => (
                     <tr key={`${+r.time}-${i}`}>
-                      <td>{r.time.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+                      <td>{formatDataHoraSeg(r.time)}</td>
                       <td>{celula(r.temperatura, 'temperatura')}</td>
                       <td>{celula(r.ph, 'ph')}</td>
                       <td>{celula(r.turbidez, 'turbidez')}</td>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDataHoraSeg } from '../../../utils/format';
 
 /** Tooltip dos gráficos da visão geral: hora completa e valor já formatado. */
 export default function ChartTooltip({ active, payload, label, formatar }) {
@@ -6,7 +7,7 @@ export default function ChartTooltip({ active, payload, label, formatar }) {
   return (
     <div className="chart-tooltip">
       <span className="chart-tooltip-time">
-        {new Date(label).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        {formatDataHoraSeg(label)}
       </span>
       <span className="chart-tooltip-value">{formatar(payload[0].value)}</span>
     </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatIdade, formatUptime, formatData, formatDataHora, formatDataHoraSeg, formatRssi } from './format';
+import { formatIdade, formatUptime, formatData, formatDataHora, formatDataHoraSeg, formatRssi, formatHora, formatDiaMes } from './format';
 
 describe('formatIdade', () => {
   it('seconds, minutes, hours, days', () => {
@@ -79,5 +79,20 @@ describe('formatDataHoraSeg (Maceio, with seconds)', () => {
     expect(formatDataHoraSeg('2026-11-23')).toBe('23/11/2026');
     expect(formatDataHoraSeg('lixo')).toBe('—');
     expect(formatDataHoraSeg(null)).toBe('—');
+  });
+});
+
+describe('formatHora / formatDiaMes (Maceió)', () => {
+  const t = Date.UTC(2026, 10, 22, 12, 5); // 09:05 em Maceió
+  it('hora e dia no fuso de Maceió, não no do navegador', () => {
+    expect(formatHora(t)).toBe('09:05');
+    expect(formatDiaMes(t)).toBe('22/11');
+    expect(formatHora(Date.UTC(2026, 10, 23, 1, 0))).toBe('22:00');
+    expect(formatDiaMes(Date.UTC(2026, 10, 23, 1, 0))).toBe('22/11');
+  });
+  it('inválido = traço, dia do calendário sem hora também', () => {
+    expect(formatHora(null)).toBe('—');
+    expect(formatHora('2026-11-22')).toBe('—');
+    expect(formatDiaMes('lixo')).toBe('—');
   });
 });

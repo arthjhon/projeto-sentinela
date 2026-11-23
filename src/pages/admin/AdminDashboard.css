@@ -2,13 +2,6 @@
    todas as páginas admin). Os componentes da visão geral usam
    components/admin/dashboard/dashboard.css. */
 
-.dash-alert {
-  display: flex;
-  flex-wrap: wrap;
-  border-radius: 8px;
-  padding: 0.6rem 1rem;
-}
-
 .dash-empty {
   display: flex;
   flex-direction: column;

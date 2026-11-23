@@ -1,6 +1,6 @@
 import { valorAtual, piorSaude, num } from './dashboard';
 import { estadoConexao, SEM_LEITURA_MS, ROTULO_CONEXAO, TOM_CONEXAO } from './buoyConnection';
-import { formatIdade } from './format';
+import { formatIdade, formatHora, formatDiaMes, formatData } from './format';
 import { serialValido } from './deviceIds';
 import { healthForDevice, jobStaleness, jobTitle } from '../services/sensorHealth';
 import { normalizeModo } from '../services/buoyRegistry';
@@ -64,24 +64,18 @@ export function rotuloConexao(estado, idade) {
   };
 }
 
-const p2 = (n) => String(n).padStart(2, '0');
-
-/** "gravada às HH:MM" (mesmo dia) ou "gravada em DD/MM às HH:MM"; hora local. */
+/** "gravada às HH:MM" (mesmo dia) ou "gravada em DD/MM às HH:MM"; hora e dia de Maceió. */
 export function rotuloGravada(emMs, agoraMs) {
   if (emMs == null || !Number.isFinite(emMs)) return null;
-  const d = new Date(emMs);
-  const hoje = new Date(agoraMs);
-  const hora = `${p2(d.getHours())}:${p2(d.getMinutes())}`;
-  const mesmoDia = d.getFullYear() === hoje.getFullYear()
-    && d.getMonth() === hoje.getMonth() && d.getDate() === hoje.getDate();
-  return mesmoDia ? `gravada às ${hora}` : `gravada em ${p2(d.getDate())}/${p2(d.getMonth() + 1)} às ${hora}`;
+  const hora = formatHora(emMs);
+  return formatDiaMes(emMs) === formatDiaMes(agoraMs) && formatData(emMs) === formatData(agoraMs)
+    ? `gravada às ${hora}`
+    : `gravada em ${formatDiaMes(emMs)} às ${hora}`;
 }
 
-/** Rótulo do eixo de tempo: 1h/24h só a hora; 7d/30d com a data (30 dias de "14:32" não diz nada). */
+/** Rótulo do eixo de tempo (Maceió): 1h/24h só a hora; 7d/30d com a data (30 dias de "14:32" não diz nada). */
 export function formatTick(ms, periodo) {
-  const d = new Date(ms);
-  const hora = `${p2(d.getHours())}:${p2(d.getMinutes())}`;
-  return periodo === '1h' || periodo === '24h' ? hora : `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${hora}`;
+  return periodo === '1h' || periodo === '24h' ? formatHora(ms) : `${formatDiaMes(ms)} ${formatHora(ms)}`;
 }
 
 const PARAM = Object.fromEntries(WATER_PARAMS.map((p) => [p.key, p]));

@@ -63,12 +63,17 @@ describe('rotuloConexao', () => {
 });
 
 describe('rotuloGravada', () => {
-  const agora = new Date(2026, 10, 22, 15, 0).getTime();
+  // instantes UTC: Maceió = UTC-3 (sem horário de verão), independente do fuso do navegador/CI
+  const agora = Date.UTC(2026, 10, 22, 18, 0); // 15:00 em Maceió
   it('mesmo dia: só a hora', () => {
-    expect(rotuloGravada(new Date(2026, 10, 22, 9, 5).getTime(), agora)).toBe('gravada às 09:05');
+    expect(rotuloGravada(Date.UTC(2026, 10, 22, 12, 5), agora)).toBe('gravada às 09:05');
   });
   it('outro dia: data e hora', () => {
-    expect(rotuloGravada(new Date(2026, 9, 3, 14, 32).getTime(), agora)).toBe('gravada em 03/10 às 14:32');
+    expect(rotuloGravada(Date.UTC(2026, 9, 3, 17, 32), agora)).toBe('gravada em 03/10 às 14:32');
+  });
+  it('virada de dia vale em Maceió, não em UTC (01:00Z = 22:00 do dia anterior)', () => {
+    const agoraNoite = Date.UTC(2026, 10, 23, 2, 0); // 23:00 de 22/11 em Maceió
+    expect(rotuloGravada(Date.UTC(2026, 10, 23, 1, 0), agoraNoite)).toBe('gravada às 22:00');
   });
   it('sem hora = null', () => {
     expect(rotuloGravada(null, agora)).toBeNull();
@@ -199,7 +204,7 @@ describe('resumoBoia', () => {
 });
 
 describe('formatTick', () => {
-  const t = new Date(2026, 10, 22, 9, 5).getTime();
+  const t = Date.UTC(2026, 10, 22, 12, 5); // 09:05 em Maceió
   it('janelas curtas só com a hora; longas com a data', () => {
     expect(formatTick(t, '1h')).toBe('09:05');
     expect(formatTick(t, '24h')).toBe('09:05');

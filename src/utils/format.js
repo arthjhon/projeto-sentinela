@@ -74,6 +74,18 @@ export function formatDataHoraSeg(valor) {
   return `${p.dia}/${p.mes}/${p.ano} ${p.hora}:${p.minuto}:${seg}`;
 }
 
+/** "HH:MM" (Maceió); sem hora (ou inválido) = "—". */
+export function formatHora(valor) {
+  const p = partes(valor);
+  return p && p.hora != null ? `${p.hora}:${p.minuto}` : VAZIO;
+}
+
+/** "DD/MM" (Maceió); inválido = "—". */
+export function formatDiaMes(valor) {
+  const p = partes(valor);
+  return p ? `${p.dia}/${p.mes}` : VAZIO;
+}
+
 /** Qualidade do RSSI (dBm). */
 export function qualidadeSinal(rssi) {
   if (!isNum(rssi)) return 'sem leitura';
