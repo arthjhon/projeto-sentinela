@@ -14,10 +14,11 @@ import {
 } from '../../../utils/boiasView';
 
 /** Botão desabilitado (nunca escondido) com a explicação no tooltip. */
-function BotaoAcao({ permissao, className, onClick, btnRef, children }) {
+function BotaoAcao({ permissao, className, onClick, btnRef, descrito, children }) {
   return (
     <button
       ref={btnRef}
+      aria-describedby={permissao.permitido ? undefined : descrito}
       type="button"
       className={className}
       onClick={onClick}
@@ -34,7 +35,7 @@ function BotaoAcao({ permissao, className, onClick, btnRef, children }) {
  * de manutenção e ações. Os dados persistidos são desta bóia (useBuoyDetails) e
  * somem ao fechar a linha.
  */
-export default function BuoyDetails({ linha, onEditar, onRemover, onMudou }) {
+export default function BuoyDetails({ linha, notas, onNotas, onEditar, onRemover, onMudou }) {
   const { currentUser } = useAuth();
   const role = currentUser?.role;
   const { timeline, aberta, calibracoes, error, carregando, recarregar } = useBuoyDetails(linha.id);
@@ -48,6 +49,12 @@ export default function BuoyDetails({ linha, onEditar, onRemover, onMudou }) {
   const calibracao = permissaoAcao(role, 'calibracao');
   const saude = linha.saude;
   const diverge = divergeFirmware(saude);
+  const idAviso = `acao-aviso-${linha.id}`;
+  const manutencaoEfetiva = error
+    ? { permitido: false, motivo: 'Estado da manutenção indisponível: recarregue a página.' }
+    : manutencao;
+  // Motivos dos botões desabilitados, visíveis sem hover (toque): uma linha, sem repetição.
+  const avisos = [...new Set([cadastro, calibracao, manutencaoEfetiva].filter((p) => !p.permitido).map((p) => p.motivo))];
 
   const aposMudanca = async () => { await recarregar(); onMudou?.(); };
 
@@ -124,6 +131,7 @@ export default function BuoyDetails({ linha, onEditar, onRemover, onMudou }) {
           <div className="info-block">
             <span className="info-label">Latência MQTT</span>
             <span className="info-value">{saude.mqtt_latency} ms</span>
+            <span className="info-sub text-muted">{idadeStatus}</span>
           </div>
         )}
         {saude.firmware && (
@@ -132,6 +140,7 @@ export default function BuoyDetails({ linha, onEditar, onRemover, onMudou }) {
             <span className="info-value" style={{ fontFamily: 'monospace' }}>
               {saude.firmware}{saude.board ? ` · ${saude.board}` : ''}
             </span>
+            <span className="info-sub text-muted">{idadeStatus}</span>
           </div>
         )}
         {typeof saude.calibrated === 'boolean' && (
@@ -140,6 +149,7 @@ export default function BuoyDetails({ linha, onEditar, onRemover, onMudou }) {
             <span className={`info-value ${saude.calibrated ? '' : 'text-warning'}`}>
               {saude.calibrated ? 'Calibrado' : 'Não calibrado'}
             </span>
+            <span className="info-sub text-muted">{idadeStatus}</span>
           </div>
         )}
       </div>
@@ -147,9 +157,13 @@ export default function BuoyDetails({ linha, onEditar, onRemover, onMudou }) {
       {painelAberto && aberta ? (
         <MaintenancePanel
           linha={linha}
+          notas={notas}
+          onNotas={onNotas}
+          onDesatualizado={aposMudanca}
           onFecharPainel={() => setPainelAberto(false)}
           onEncerrada={async () => {
             setPainelAberto(false);
+            onNotas('');
             await aposMudanca();
             // o painel (e o botão que abriu o diálogo) saiu da tela: devolve o foco ao gatilho da manutenção
             gatilhoManutencao.current?.focus();
@@ -177,7 +191,7 @@ export default function BuoyDetails({ linha, onEditar, onRemover, onMudou }) {
                           : carregando ? 'calibração: carregando...'
                             : `Calibração ${rotuloCalibracao(registro)}`}
                       </span>
-                      {registro?.observacao && <span className="calib-obs text-muted" title={registro.observacao}>{registro.observacao}</span>}
+                      {registro?.observacao && <span className="calib-obs text-muted">{registro.observacao}</span>}
                       {diverge && (
                         <span className="calib-diverge" role="status">
                           <AlertTriangle size={12} aria-hidden="true" /> firmware informa não calibrado
@@ -185,6 +199,7 @@ export default function BuoyDetails({ linha, onEditar, onRemover, onMudou }) {
                       )}
                       <BotaoAcao
                         permissao={calibracao}
+                        descrito={idAviso}
                         className="btn-table action-btn btn-sm calib-btn"
                         onClick={() => setCalibrando(sensor)}
                       >
@@ -197,17 +212,18 @@ export default function BuoyDetails({ linha, onEditar, onRemover, onMudou }) {
             </div>
           </div>
           <div className="details-footer" style={{ flexWrap: 'wrap' }}>
-            <BotaoAcao permissao={cadastro} className="btn-table action-btn" onClick={() => onEditar(linha)}>
+            <BotaoAcao permissao={cadastro} descrito={idAviso} className="btn-table action-btn" onClick={() => onEditar(linha)}>
               <Edit2 size={16} /> Editar
             </BotaoAcao>
-            <BotaoAcao permissao={cadastro} className="btn-table action-btn danger-btn" onClick={() => onRemover(linha.id)}>
+            <BotaoAcao permissao={cadastro} descrito={idAviso} className="btn-table action-btn danger-btn" onClick={() => onRemover(linha.id)}>
               <Trash2 size={16} /> Remover
             </BotaoAcao>
             <Link className="btn-table action-btn" to={hrefHistorico(linha.id)}>
               <History size={16} /> Ver histórico e exportar
             </Link>
             <BotaoAcao
-              permissao={error ? { permitido: false, motivo: 'Estado da manutenção indisponível: recarregue a página.' } : manutencao}
+              permissao={manutencaoEfetiva}
+              descrito={idAviso}
               className="btn-table action-btn maintenance-trigger-btn"
               btnRef={gatilhoManutencao}
               onClick={() => {
@@ -220,6 +236,11 @@ export default function BuoyDetails({ linha, onEditar, onRemover, onMudou }) {
               {aberta ? 'Continuar Manutenção' : 'Entrar em Modo Manutenção'}
             </BotaoAcao>
           </div>
+          {avisos.length > 0 && (
+            <p className="acao-aviso text-muted" id={idAviso}>
+              Ações desabilitadas: {avisos.join(' ')}
+            </p>
+          )}
         </>
       )}
 

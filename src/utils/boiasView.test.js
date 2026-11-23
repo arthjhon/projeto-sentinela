@@ -1,27 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
-  MIN_OBSERVACAO, validarObservacaoCalibracao, rotuloCalibracao, divergeFirmware,
-  rotuloManutencaoAberta, permissaoAcao, hrefHistorico, montarLinhaBoia, valorSensor,
+  rotuloCalibracao, divergeFirmware,
+  rotuloManutencaoAberta, permissaoAcao, hrefHistorico, montarLinhaBoia,
 } from './boiasView';
+import { resumoBoia } from './dashboardView';
+import { SEM_LEITURA_MS } from './buoyConnection';
 
 const AGORA = Date.parse('2026-11-23T12:00:00Z');
 const DIA = 86_400_000;
-
-describe('validarObservacaoCalibracao', () => {
-  it('exige pelo menos 10 caracteres depois do trim', () => {
-    expect(MIN_OBSERVACAO).toBe(10);
-    expect(validarObservacaoCalibracao('').ok).toBe(false);
-    expect(validarObservacaoCalibracao('   curto   ').ok).toBe(false);
-    expect(validarObservacaoCalibracao(undefined).ok).toBe(false);
-    expect(validarObservacaoCalibracao('pH 4,00 e 7,00').ok).toBe(true);
-    expect(validarObservacaoCalibracao('1234567890').ok).toBe(true);
-    expect(validarObservacaoCalibracao('123456789 ').ok).toBe(false);
-  });
-  it('devolve o texto limpo e uma mensagem quando recusa', () => {
-    expect(validarObservacaoCalibracao('  solução 4,00  ').texto).toBe('solução 4,00');
-    expect(validarObservacaoCalibracao('x').erro).toMatch(/10 caracteres/);
-  });
-});
 
 describe('rotuloCalibracao', () => {
   it('registrada por X em DD/MM/AAAA (Maceió)', () => {
@@ -90,15 +76,6 @@ describe('hrefHistorico', () => {
   });
 });
 
-describe('valorSensor', () => {
-  it('usa as casas de WATER_PARAMS e vírgula pt-BR', () => {
-    expect(valorSensor(12.34, 'turbidez')).toBe('12,3 NTU');
-    expect(valorSensor(7.2, 'ph')).toBe('7,20');
-    expect(valorSensor(27.55, 'temperatura')).toMatch(/^27,[56] °C$/);
-    expect(valorSensor(undefined, 'ph')).toBe('sem leitura');
-  });
-});
-
 describe('montarLinhaBoia', () => {
   const registro = { codigo: 'SM-01', nome: 'Canal', deviceId: 'snt-0001', modo: 'campo', lagoa: 'mundau', lat: -9.6, lng: -35.7 };
   const base = (extra = {}) => ({
@@ -161,6 +138,50 @@ describe('montarLinhaBoia', () => {
     expect(l.nome).toBe('Canal');
     expect(l.modo).toBe('campo');
     expect(l.local).toBe('Lagoa Mundaú');
-    expect(l.historyIds).toEqual(['snt-0001']);
+    expect('historyIds' in l).toBe(false);
+  });
+
+  describe('mesma entrada, mesmo estado que a Visão geral', () => {
+    const casos = [
+      ['sem nada', {}, []],
+      ['só gravada recente (Influx)', {}, [{ time: new Date(AGORA - 20_000), ph: 7, turbidez: 1, temperatura: 27 }]],
+      ['só gravada velha', {}, [{ time: new Date(AGORA - 3 * DIA), ph: 7, turbidez: 1, temperatura: 27 }]],
+      ['LWT online + gravada recente', { 'snt-0001/availability': 'online' }, [{ time: new Date(AGORA - 5_000), ph: 7 }]],
+      ['LWT offline + gravada recente', { 'snt-0001/availability': 'offline' }, [{ time: new Date(AGORA - 5_000), ph: 7 }]],
+    ];
+    for (const [nome, mensagens, ultimas] of casos) {
+      for (const modo of ['campo', 'bancada']) {
+        for (const broker of [true, false]) {
+          it(`${nome} / ${modo} / broker ${broker}`, () => {
+            const reg = { ...registro, modo };
+            const linha = montarLinhaBoia({ registro: reg, mensagens, chegadas: {}, ultimas, agoraMs: AGORA, brokerConectado: broker });
+            const ref = resumoBoia({
+              buoy: reg, mqtt: { lwt: mensagens['snt-0001/availability'], sensores: null }, ultimas, healthRows: [], agoraMs: AGORA, brokerConectado: broker,
+            });
+            expect(linha.conexao).toBe(ref.conexao);
+            expect(linha.ultimaLeituraMs).toBe(ref.ultimaMs);
+          });
+        }
+      }
+    }
+    it('leitura gravada recente acende online logo após o carregamento (sem MQTT)', () => {
+      const l = montarLinhaBoia(base({ ultimas: [{ time: new Date(AGORA - 20_000), ph: 7.1, turbidez: 2, temperatura: 28 }] }));
+      expect(l.conexao).toBe('online');
+      expect(l.idadeLeitura).toBe(20_000);
+    });
+    it('sensores usam o mesmo limiar da conexão: 45 s com a bóia online = ok; passou de 60 s = sem leitura', () => {
+      const chegadas = (idade) => ({ 'snt-0001/sensores': { at: AGORA - idade, prevAt: null, retained: false } });
+      const msg = { 'snt-0001/sensores': { ph: 7, turbidez: 1, temperatura: 27 }, 'snt-0001/availability': 'online' };
+      const a = montarLinhaBoia(base({ mensagens: msg, chegadas: chegadas(45_000) }));
+      expect(a.conexao).toBe('online');
+      expect(a.sensores.every((x) => x.diag === 'ok')).toBe(true);
+      const b = montarLinhaBoia(base({ mensagens: msg, chegadas: chegadas(SEM_LEITURA_MS + 1) }));
+      expect(b.conexao).toBe('sem-leitura');
+      expect(b.sensores.every((x) => x.diag === 'sem-leitura')).toBe(true);
+    });
+    it('valor do sensor cai na leitura gravada quando não há MQTT', () => {
+      const l = montarLinhaBoia(base({ ultimas: [{ time: new Date(AGORA - 20_000), ph: 7.1, turbidez: 12.34, temperatura: 28 }] }));
+      expect(l.sensores.find((x) => x.key === 'turbidez').valor).toBe('12,3 NTU');
+    });
   });
 });

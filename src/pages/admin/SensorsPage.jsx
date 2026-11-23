@@ -29,6 +29,8 @@ const SensorsPage = () => {
   const [formulario, setFormulario] = useState(null); // { inicial, editando }
   const [aRemover, setARemover] = useState(null);
   const [removendo, setRemovendo] = useState(false);
+  // Notas da manutenção por bóia: sobrevivem a fechar o painel, recolher a linha ou filtrar a busca.
+  const [notasManut, setNotasManut] = useState({});
 
   const cadastro = permissaoAcao(currentUser?.role, 'cadastro');
 
@@ -121,6 +123,7 @@ const SensorsPage = () => {
             type="button"
             className="btn-primary"
             onClick={abrirCadastro}
+            aria-describedby={cadastro.permitido ? undefined : 'aviso-cadastro'}
             disabled={!cadastro.permitido || Boolean(registryError)}
             title={cadastro.motivo ?? (registryError ? 'Cadastro indisponível: não dá para cadastrar com o registro ilegível.' : undefined)}
           >
@@ -128,6 +131,8 @@ const SensorsPage = () => {
           </button>
         </div>
       </div>
+
+      {!cadastro.permitido && <p className="acao-aviso text-muted" id="aviso-cadastro">Nova Bóia, Editar e Remover desabilitados: {cadastro.motivo}</p>}
 
       <RegistryErrorBanner error={registryError} onRetry={reloadRegistry} />
 
@@ -196,6 +201,8 @@ const SensorsPage = () => {
               >
                 <BuoyDetails
                   linha={linha}
+                  notas={notasManut[linha.id] ?? ''}
+                  onNotas={(texto) => setNotasManut((n) => ({ ...n, [linha.id]: texto }))}
                   onEditar={abrirEdicao}
                   onRemover={setARemover}
                   onMudou={recarregarManutencoes}

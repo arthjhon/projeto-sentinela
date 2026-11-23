@@ -1,6 +1,5 @@
 import { supabase } from '../lib/supabase';
 import { logAcao, AUDIT } from './auditLog';
-import { validarObservacaoCalibracao } from '../utils/boiasView';
 
 // Manutenção (3.1) e calibração (3.2).
 //
@@ -24,6 +23,21 @@ async function operadorAtual() {
     .from('profiles').select('name').eq('id', user.id).single();
   return { id: user.id, nome: nomeDoOperador(perfil) };
 }
+
+/** Calibração: observação mínima (padrão/solução usada). */
+export const MIN_OBSERVACAO = 10;
+
+/** Observação obrigatória da calibração: >= 10 caracteres úteis. */
+export function validarObservacaoCalibracao(texto) {
+  const limpo = typeof texto === 'string' ? texto.trim() : '';
+  if (limpo.length < MIN_OBSERVACAO) {
+    return { ok: false, texto: limpo, erro: `Descreva o padrão ou a solução usada (mínimo ${MIN_OBSERVACAO} caracteres).` };
+  }
+  return { ok: true, texto: limpo, erro: null };
+}
+
+/** `error.code` de "não há manutenção aberta": a UI recarrega em vez de manter um painel velho. */
+export const SEM_MANUTENCAO_ABERTA = 'SEM_MANUTENCAO_ABERTA';
 
 // ── 3.1 Manutenção ────────────────────────────────────────────
 
@@ -65,7 +79,9 @@ async function buscarAberta(boiaId) {
     .is('timestamp_fim', null)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!aberta) throw new Error('Não há manutenção aberta para esta bóia.');
+  if (!aberta) {
+    throw Object.assign(new Error('Não há manutenção aberta para esta bóia.'), { code: SEM_MANUTENCAO_ABERTA });
+  }
   return aberta;
 }
 
@@ -95,20 +111,21 @@ export async function finalizarManutencao(boiaId, observacao) {
   return data;
 }
 
-/** Campos do UPDATE que cancela: fecha o registro (timestamp_fim) e anota "cancelada". */
-export function montarCancelamento(aberta, fimIso) {
-  return { timestamp_fim: fimIso, motivo: `${aberta.motivo}\n— Manutenção cancelada` };
+/** Campos do UPDATE que cancela: fecha o registro (timestamp_fim), anota "cancelada" e as notas digitadas, se houver. */
+export function montarCancelamento(aberta, fimIso, notas) {
+  const extra = notas?.trim() ? `\n— Notas: ${notas.trim()}` : '';
+  return { timestamp_fim: fimIso, motivo: `${aberta.motivo}\n— Manutenção cancelada${extra}` };
 }
 
 /**
  * Cancela a manutenção aberta de verdade: fecha o registro (timestamp_fim = agora)
- * com a nota "cancelada", sem exigir observação. A bóia sai de "em manutenção" no
- * painel e no worker; o registro continua no histórico.
+ * com a nota "cancelada" (mais as notas já digitadas, se houver; não exige notas).
+ * A bóia sai de "em manutenção" no painel e no worker; o registro fica no histórico.
  */
-export async function cancelarManutencao(boiaId) {
+export async function cancelarManutencao(boiaId, notas) {
   const aberta = await buscarAberta(boiaId);
-  const data = await fecharRegistro(aberta.id, montarCancelamento(aberta, new Date().toISOString()));
-  logAcao(AUDIT.MANUTENCAO_FIM, boiaId, { cancelada: true });
+  const data = await fecharRegistro(aberta.id, montarCancelamento(aberta, new Date().toISOString(), notas));
+  logAcao(AUDIT.MANUTENCAO_CANCELAR, boiaId, { cancelada: true, notas: notas?.trim() || null });
   return data;
 }
 
@@ -138,6 +155,25 @@ export async function manutencaoAberta(boiaId) {
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data;
+}
+
+/**
+ * Manutenção aberta de várias bóias numa só consulta (timestamp_fim nulo).
+ * @returns {Promise<Record<string, object|null>>} codigo -> registro mais recente aberto | null
+ */
+export async function manutencoesAbertas(codigos) {
+  const { data, error } = await supabase
+    .from('maintenance_logs')
+    .select('*')
+    .is('timestamp_fim', null)
+    .order('timestamp_inicio', { ascending: false });
+  if (error) throw new Error(error.message);
+  const porBoia = Object.fromEntries(codigos.map((c) => [c, null]));
+  for (const m of data ?? []) {
+    const atual = porBoia[m.boia_id];
+    if (m.boia_id in porBoia && (!atual || Date.parse(m.timestamp_inicio) > Date.parse(atual.timestamp_inicio))) porBoia[m.boia_id] = m;
+  }
+  return porBoia;
 }
 
 // ── 3.2 Calibração ────────────────────────────────────────────

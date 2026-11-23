@@ -1,4 +1,5 @@
 import { formatIdade } from './format';
+import { SEM_LEITURA_MS } from './buoyConnection';
 
 // Formatos e diagnóstico de sensor da página Bóias. O estado de conexão vive em
 // buoyConnection.js (única definição); nada de valor default "online" / 100%.
@@ -22,12 +23,9 @@ export function formatInterval(ms) {
   return `~${Math.round(s / 60)} min`;
 }
 
-// Leitura mais velha que isso não conta como "sensor respondendo" (o firmware
-// publica a cada 5 s; 30 s tolera algumas perdas sem mascarar uma queda).
-export const LEITURA_RECENTE_MS = 30_000;
-
 /**
- * Diagnóstico de um sensor a partir da última leitura recebida nesta sessão.
+ * Diagnóstico de um sensor a partir da última leitura. Mesmo limiar da conexão
+ * (SEM_LEITURA_MS, buoyConnection): sensor e linha nunca discordam.
  * @param {object|undefined} reading  payload de /sensores
  * @param {string} key                campo do payload (ph, turbidez, temperatura)
  * @param {number|null} ageMs         idade da leitura
@@ -36,6 +34,6 @@ export const LEITURA_RECENTE_MS = 30_000;
  *   temperatura quando o DS18B20 não responde).
  */
 export function sensorDiagnosis(reading, key, ageMs) {
-  if (!reading || !Number.isFinite(ageMs) || ageMs > LEITURA_RECENTE_MS) return 'sem-leitura';
+  if (!reading || !Number.isFinite(ageMs) || ageMs > SEM_LEITURA_MS) return 'sem-leitura';
   return Number.isFinite(reading[key]) ? 'ok' : 'sem-valor';
 }

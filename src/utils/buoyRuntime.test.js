@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatCoords, formatAge, formatInterval, sensorDiagnosis,
-  LEITURA_RECENTE_MS,
 } from './buoyRuntime';
+import { SEM_LEITURA_MS } from './buoyConnection';
 
 describe('formatos', () => {
   it('coordenadas', () => {
@@ -26,13 +26,17 @@ describe('formatos', () => {
 });
 
 describe('sensorDiagnosis', () => {
+  it('usa o limiar único da conexão (60 s), não um segundo', () => {
+    expect(sensorDiagnosis({ ph: 7 }, 'ph', SEM_LEITURA_MS)).toBe('ok');
+    expect(sensorDiagnosis({ ph: 7 }, 'ph', 45_000)).toBe('ok');
+  });
   const r = { ph: 7.2, turbidez: 10 };
   it('ok só com leitura recente e valor numérico', () => {
     expect(sensorDiagnosis(r, 'ph', 1_000)).toBe('ok');
     expect(sensorDiagnosis(r, 'temperatura', 1_000)).toBe('sem-valor');
   });
   it('leitura velha ou ausente = sem leitura', () => {
-    expect(sensorDiagnosis(r, 'ph', LEITURA_RECENTE_MS + 1)).toBe('sem-leitura');
+    expect(sensorDiagnosis(r, 'ph', SEM_LEITURA_MS + 1)).toBe('sem-leitura');
     expect(sensorDiagnosis(undefined, 'ph', 1_000)).toBe('sem-leitura');
     expect(sensorDiagnosis(r, 'ph', null)).toBe('sem-leitura');
   });

@@ -1,8 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import Modal from '../Modal';
 import { useToast } from '../../../contexts/ToastContext';
-import { registrarCalibracao } from '../../../services/maintenance';
-import { MIN_OBSERVACAO, validarObservacaoCalibracao } from '../../../utils/boiasView';
+import { registrarCalibracao, MIN_OBSERVACAO, validarObservacaoCalibracao } from '../../../services/maintenance';
 
 /**
  * Registra que a calibração de um sensor foi realizada (o protocolo é feito na

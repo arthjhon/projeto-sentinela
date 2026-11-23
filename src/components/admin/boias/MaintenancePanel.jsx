@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { Wrench, FileText, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 import Modal from '../Modal';
 import { useToast } from '../../../contexts/ToastContext';
-import { iniciarManutencao, finalizarManutencao, cancelarManutencao } from '../../../services/maintenance';
+import { iniciarManutencao, finalizarManutencao, cancelarManutencao, SEM_MANUTENCAO_ABERTA } from '../../../services/maintenance';
 import { formatIdade } from '../../../utils/format';
 import { ICONES_SENSOR } from './sensorIcons';
 
@@ -65,12 +65,13 @@ export function MaintenanceStartModal({ boiaId, onClose, onStarted }) {
 /**
  * Painel da manutenção ABERTA. "Fechar painel" só esconde o painel (a manutenção
  * continua aberta); "Cancelar manutenção" fecha o registro de verdade;
- * "Salvar e concluir" exige notas. As notas moram aqui: sumem ao fechar o painel
- * e nunca passam para outra bóia. `salvando` impede o envio duplo.
+ * "Salvar e concluir" exige notas. As notas são do dono do painel (por bóia, em
+ * SensorsPage): sobrevivem a fechar o painel, recolher a linha ou filtrar a busca, e
+ * nunca passam para outra bóia. Se a manutenção já não está aberta (outra sessão a
+ * fechou), `onDesatualizado` recarrega o detalhe. `salvando` impede o envio duplo.
  */
-export function MaintenancePanel({ linha, onFecharPainel, onEncerrada }) {
+export function MaintenancePanel({ linha, notas, onNotas, onFecharPainel, onEncerrada, onDesatualizado }) {
   const { addToast } = useToast();
-  const [notas, setNotas] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [confirmarCancelar, setConfirmarCancelar] = useState(false);
 
@@ -84,6 +85,7 @@ export function MaintenancePanel({ linha, onFecharPainel, onEncerrada }) {
     } catch (err) {
       addToast(`Não foi possível fechar a manutenção: ${err.message}`, 'error');
       setSalvando(false);
+      if (err.code === SEM_MANUTENCAO_ABERTA) onDesatualizado();
     }
   };
 
@@ -91,13 +93,14 @@ export function MaintenancePanel({ linha, onFecharPainel, onEncerrada }) {
     if (salvando) return;
     setSalvando(true);
     try {
-      await cancelarManutencao(linha.id);
+      await cancelarManutencao(linha.id, notas);
       addToast(`Manutenção da bóia ${linha.id} cancelada.`, 'success');
       setConfirmarCancelar(false);
       onEncerrada();
     } catch (err) {
       addToast(`Não foi possível cancelar a manutenção: ${err.message}`, 'error');
       setSalvando(false);
+      if (err.code === SEM_MANUTENCAO_ABERTA) { setConfirmarCancelar(false); onDesatualizado(); }
     }
   };
 
@@ -159,7 +162,7 @@ export function MaintenancePanel({ linha, onFecharPainel, onEncerrada }) {
               aria-label="Registro da intervenção"
               placeholder="Descreva as peças substituídas, limpeza realizada, recalibração ou quaisquer anomalias..."
               value={notas}
-              onChange={(e) => setNotas(e.target.value)}
+              onChange={(e) => onNotas(e.target.value)}
             />
           </div>
           <div className="report-footer">
@@ -179,7 +182,7 @@ export function MaintenancePanel({ linha, onFecharPainel, onEncerrada }) {
           footer={(
             <>
               <button type="button" className="btn-table" onClick={() => setConfirmarCancelar(false)} disabled={salvando}>Voltar</button>
-              <button type="button" className="btn-primary" onClick={cancelar} disabled={salvando}>
+              <button type="button" className="btn-primary danger-btn" onClick={cancelar} disabled={salvando}>
                 {salvando ? 'Cancelando...' : 'Cancelar manutenção'}
               </button>
             </>
@@ -189,6 +192,9 @@ export function MaintenancePanel({ linha, onFecharPainel, onEncerrada }) {
             Fecha o registro de manutenção da bóia agora, com a nota &quot;cancelada&quot;. A bóia deixa de
             aparecer como &quot;em manutenção&quot; no painel e no detector. O registro continua no histórico.
           </p>
+          {notas.trim() && (
+            <p>O texto que você digitou no registro de intervenção será salvo junto com o cancelamento.</p>
+          )}
         </Modal>
       )}
     </div>

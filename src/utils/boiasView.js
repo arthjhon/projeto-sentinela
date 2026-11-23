@@ -1,7 +1,8 @@
-import { estadoConexao, leituraMsDaChegada, ROTULO_CONEXAO, TOM_CONEXAO } from './buoyConnection';
+import { leituraMsDaChegada, ROTULO_CONEXAO, TOM_CONEXAO } from './buoyConnection';
 import { formatData } from './format';
-import { formatValor, mensagemDaSessao } from './dashboardView';
-import { deviceIdsOf, serialValido } from './deviceIds';
+import { formatValor, mensagemDaSessao, resumoBoia } from './dashboardView';
+import { valorAtual } from './dashboard';
+import { serialValido } from './deviceIds';
 import { sensorDiagnosis, formatCoords } from './buoyRuntime';
 import { LAGOA_LABEL, normalizeModo } from '../services/buoyRegistry';
 
@@ -18,17 +19,6 @@ export const SENSORES_BOIA = [
 
 /** Formulário de cadastro de bóia, vazio. */
 export const FORM_VAZIO = { id: '', deviceId: '', name: '', lagoa: 'mundau', modo: 'bancada', lat: '', lng: '' };
-
-export const MIN_OBSERVACAO = 10;
-
-/** Observação obrigatória da calibração (padrão/solução usada): >= 10 caracteres úteis. */
-export function validarObservacaoCalibracao(texto) {
-  const limpo = typeof texto === 'string' ? texto.trim() : '';
-  if (limpo.length < MIN_OBSERVACAO) {
-    return { ok: false, texto: limpo, erro: `Descreva o padrão ou a solução usada (mínimo ${MIN_OBSERVACAO} caracteres).` };
-  }
-  return { ok: true, texto: limpo, erro: null };
-}
 
 /** "registrada por X em DD/MM/AAAA" a partir do registro de sensor_calibrations. */
 export function rotuloCalibracao(registro) {
@@ -74,43 +64,36 @@ export function hrefHistorico(codigo) {
   return `/admin/dashboard?boia=${encodeURIComponent(codigo)}`;
 }
 
-/** Valor de um sensor com as casas e a unidade de WATER_PARAMS (1 casa nas decimais pt-BR, ver formatValor). */
-export function valorSensor(valor, campo) {
-  return formatValor(valor, campo);
-}
-
 const DIAG_CLASSE = { ok: 'online', 'sem-valor': 'warning', 'sem-leitura': 'offline' };
 
 /**
  * Linha da tabela de uma bóia, derivada só do que é real: registro (identidade,
- * posição), LWT e mensagens MQTT VIVAS desta sessão (retidas não contam, como na
- * Visão geral e no Status). `mensagens`/`chegadas` = messages/receivedAt do useMqtt.
+ * posição), LWT, mensagens MQTT VIVAS desta sessão (retidas não contam) e, como na
+ * Visão geral, as últimas leituras GRAVADAS (`ultimas`, InfluxDB) como piso da
+ * "última leitura". Conexão e hora da leitura saem de resumoBoia (a mesma função da
+ * Visão geral): mesma entrada, mesmo estado. `mensagens`/`chegadas` = messages/receivedAt do useMqtt.
  */
-export function montarLinhaBoia({ registro, mensagens, chegadas, agoraMs, brokerConectado = true }) {
+export function montarLinhaBoia({ registro, mensagens, chegadas, ultimas = [], agoraMs, brokerConectado = true }) {
   const serial = serialValido(registro);
   const modo = normalizeModo(registro.modo);
   const topico = (t) => (serial ? `${serial}/${t}` : null);
-  const chegSensores = serial ? chegadas[topico('sensores')] : undefined;
   const chegStatus = serial ? chegadas[topico('status')] : undefined;
+  const chegSensores = serial ? chegadas[topico('sensores')] : undefined;
   const leitura = serial ? mensagemDaSessao(mensagens[topico('sensores')], chegSensores) : null;
   const status = serial ? mensagemDaSessao(mensagens[topico('status')], chegStatus) : null;
-  const ultimaLeituraMs = leituraMsDaChegada(chegSensores);
+  const lwt = serial ? mensagens[topico('availability')] : undefined;
+  const resumo = resumoBoia({
+    buoy: registro, mqtt: { lwt, sensores: leitura }, ultimas, healthRows: [], agoraMs, brokerConectado,
+  });
+  const conexao = resumo.conexao;
+  const ultimaLeituraMs = resumo.ultimaMs;
   const idadeLeitura = ultimaLeituraMs == null ? null : agoraMs - ultimaLeituraMs;
   const recebidoStatus = leituraMsDaChegada(chegStatus);
-  const conexao = estadoConexao({
-    modo,
-    lwt: serial ? mensagens[topico('availability')] : undefined,
-    ultimaLeituraMs: ultimaLeituraMs ?? undefined,
-    agoraMs,
-    brokerConectado,
-    temHardware: Boolean(serial),
-  });
   const saude = status ? Object.fromEntries(Object.entries(status).filter(([k]) => k !== '_recebidoEm')) : {};
   return {
     id: registro.codigo,
     nome: registro.nome,
     deviceId: serial ?? '',
-    historyIds: deviceIdsOf(registro),
     local: LAGOA_LABEL[registro.lagoa] ?? registro.lagoa,
     modo,
     coordenadas: formatCoords(registro.lat, registro.lng),
@@ -125,8 +108,10 @@ export function montarLinhaBoia({ registro, mensagens, chegadas, agoraMs, broker
     bateria: Number.isFinite(saude.battery) ? saude.battery : null,
     saude,
     sensores: SENSORES_BOIA.map((s) => {
-      const diag = serial ? sensorDiagnosis(leitura, s.key, idadeLeitura) : 'sem-leitura';
-      return { ...s, diag, classe: DIAG_CLASSE[diag], valor: valorSensor(leitura?.[s.key], s.key) };
+      // valor ao vivo, ou o gravado mais recente (mesma regra da Visão geral)
+      const { valor } = valorAtual({ mqtt: leitura, ultimas }, s.key);
+      const diag = serial ? sensorDiagnosis(valor == null ? undefined : { [s.key]: valor }, s.key, idadeLeitura) : 'sem-leitura';
+      return { ...s, diag, classe: DIAG_CLASSE[diag], valor: formatValor(valor, s.key) };
     }),
   };
 }

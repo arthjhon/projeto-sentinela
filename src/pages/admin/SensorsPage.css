@@ -524,7 +524,7 @@
   color: #eab308; background: rgba(234, 179, 8, 0.14); border: 1px solid rgba(234, 179, 8, 0.4);
 }
 .maint-tag.indisponivel { color: var(--text-muted, #94a3b8); background: transparent; border-style: dashed; }
-.calib-obs { font-size: 0.72rem; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calib-obs { font-size: 0.72rem; display: block; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .calib-diverge {
   display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; color: #eab308;
 }
@@ -560,3 +560,7 @@
   .fleet-table .details-container { padding: 0.5rem; }
   .fleet-table td[data-label]::before { content: attr(data-label) ': '; color: var(--text-muted); font-size: 0.78rem; }
 }
+
+.acao-aviso { margin: 0.5rem 0 0; font-size: 0.8rem; }
+.btn-primary.danger-btn { background: #ef4444; border-color: #ef4444; color: #fff; box-shadow: none; }
+.btn-primary.danger-btn:hover:not(:disabled) { background: #dc2626; }
