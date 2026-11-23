@@ -1,7 +1,11 @@
+import { formatIdade } from './format';
+
 // Estado de uma bóia no painel derivado só do que é real: registro (map_buoys)
 // e o que chega do firmware pelo MQTT. Nada de valor default "online" / 100%.
 
 /**
+ * @deprecated Regra de conexão própria (só LWT): substituída por estadoConexao
+ * (utils/buoyConnection.js). Sai das telas nas Tasks 3-5 do plano admin-ondas.
  * @param {string|null} deviceId
  * @param {string|undefined} availability  payload do LWT (<deviceId>/availability)
  * @returns {'planejada'|'online'|'offline'|'sem-sinal'}
@@ -28,15 +32,9 @@ export function formatCoords(lat, lng) {
   return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
 
-/** Idade de um evento: "há 4 s", "há 3 min", "há 2 h". */
+/** Idade de um evento ("há 4 s"); inválida = "--". Formatação em format.js. */
 export function formatAge(ms) {
-  if (!Number.isFinite(ms)) return '--';
-  if (ms < 0) return 'agora'; // relógio adiantado / primeira renderização
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `há ${s} s`;
-  const min = Math.floor(s / 60);
-  if (min < 60) return `há ${min} min`;
-  return `há ${Math.floor(min / 60)} h`;
+  return formatIdade(ms) ?? '--';
 }
 
 /** Intervalo entre as duas últimas leituras recebidas: "~5 s", "~2 min". */

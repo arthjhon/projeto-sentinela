@@ -379,3 +379,21 @@ describe('serial fora do formato (DEVICE_RE) = sem serial válido', () => {
     expect(r.saude).toBeNull();
   });
 });
+
+describe('conexão de bóia de bancada (mesma regra de buoyConnection)', () => {
+  const agoraMs = 1_000_000;
+  const buoy = { codigo: 'SM-09', deviceId: 'snt-0009', modo: 'bancada' };
+  it('desligada: bancada-offline, nunca offline vermelho', () => {
+    expect(resumoBoia({ buoy, mqtt: { lwt: 'offline' }, ultimas: [], healthRows: [], agoraMs }).conexao).toBe('bancada-offline');
+  });
+  it('ligada e transmitindo: online', () => {
+    const mqtt = { lwt: 'online', sensores: { ph: 7, _recebidoEm: agoraMs - 3000 } };
+    expect(resumoBoia({ buoy, mqtt, ultimas: [], healthRows: [], agoraMs }).conexao).toBe('online');
+  });
+  it('rotuloConexao: neutro com texto próprio', () => {
+    expect(rotuloConexao('bancada-offline', 'há 3 min')).toEqual({ texto: 'bancada, offline é normal', tom: 'neutral' });
+  });
+  it('conexaoDaBoia repassa modo', () => {
+    expect(conexaoDaBoia({ deviceId: 'snt-0009', modo: 'bancada', lwt: 'offline', agoraMs })).toBe('bancada-offline');
+  });
+});

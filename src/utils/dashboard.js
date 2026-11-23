@@ -3,20 +3,9 @@ import { estadoMeta, ESTADO_META, TONE_RANK } from '../services/sensorHealth';
 
 // Lógica pura do painel admin (visão geral). Sem React, sem I/O.
 
-/** Online (LWT) sem leitura há mais que isto vira 'sem-leitura'. */
-export const SEM_LEITURA_MS = 60000;
-
-/**
- * Conexão da bóia. LWT 'offline' prevalece; LWT 'online' sem leitura recente é
- * 'sem-leitura'; sem LWT (ainda não chegou) vale a leitura: recente = online,
- * senão 'desconhecido'.
- */
-export function estadoConexao({ lwt, ultimaLeituraMs, agoraMs }) {
-  const recente = Number.isFinite(ultimaLeituraMs) && agoraMs - ultimaLeituraMs <= SEM_LEITURA_MS;
-  if (lwt === 'offline') return 'offline';
-  if (lwt === 'online') return recente ? 'online' : 'sem-leitura';
-  return recente ? 'online' : 'desconhecido';
-}
+// Conexão da bóia vive em buoyConnection.js (uma definição só); reexportada
+// aqui para quem já importa daqui.
+export { SEM_LEITURA_MS, estadoConexao } from './buoyConnection';
 
 /** Só número finito ou string numérica não vazia; '' , true, NaN e Infinity viram null. */
 export function num(v) {
@@ -66,15 +55,8 @@ export function disponibilidadeDoPeriodo(historico, chave, periodo) {
   return disponibilidade(historico.data, periodo);
 }
 
-/** Qualidade do RSSI (dBm). */
-export function qualidadeSinal(rssi) {
-  const v = num(rssi);
-  if (v === null) return 'sem leitura';
-  if (v >= -60) return 'ótimo';
-  if (v >= -70) return 'bom';
-  if (v >= -80) return 'fraco';
-  return 'muito fraco';
-}
+// Qualidade do RSSI: format.js (reexportada).
+export { qualidadeSinal } from './format';
 
 /** Bóia selecionada pela URL; inválida/ausente cai na primeira e pede correção da URL. */
 export function resolverSelecao(buoys, codigoUrl) {

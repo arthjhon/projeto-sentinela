@@ -11,6 +11,7 @@ import { normalizeModo } from '../../../services/buoyRegistry';
 import {
   formatUptime, formatMemoria, formatRssi, blocosDetalhes, estadoFirmware, estadoManutencao, rotuloRecebido,
 } from '../../../utils/buoyDetails';
+import { formatDataHora } from '../../../utils/format';
 import { serialValido } from '../../../utils/deviceIds';
 import { destinoTab } from '../../../utils/focusTrap';
 import './BuoyDetailsModal.css';
@@ -20,11 +21,7 @@ const FALHA = 'indisponível (falha na leitura)';
 const NAO_MEDIDO = ['Bateria', 'Temperatura interna', 'GPS', 'Sinal de gateway'];
 const SENSOR_LABEL = { temperatura: 'Temperatura', ph: 'pH', turbidez: 'Turbidez' };
 
-const fmtData = (iso) => {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-};
+const fmtData = formatDataHora;
 
 const Row = ({ label, children }) => (
   <div className="bdm-row">

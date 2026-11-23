@@ -1,4 +1,6 @@
-import { estadoConexao, valorAtual, piorSaude, num, SEM_LEITURA_MS } from './dashboard';
+import { valorAtual, piorSaude, num } from './dashboard';
+import { estadoConexao, SEM_LEITURA_MS, ROTULO_CONEXAO, TOM_CONEXAO } from './buoyConnection';
+import { formatIdade } from './format';
 import { serialValido } from './deviceIds';
 import { healthForDevice, jobStaleness, jobTitle } from '../services/sensorHealth';
 import { normalizeModo } from '../services/buoyRegistry';
@@ -14,18 +16,8 @@ export const TOM_CLASSE = {
   ok: 'badge-online', warn: 'badge-warning', bad: 'badge-offline', info: 'sh-info', neutral: 'badge-planejada',
 };
 
-/** Idade legível: "há 4 s", "há 3 min", "há 2 h", "há 3 d"; sem valor = null. */
-export function formatIdade(ms) {
-  if (ms == null || !Number.isFinite(ms)) return null;
-  if (ms < 0) return 'agora'; // relógio do navegador atrás do device
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `há ${s} s`;
-  const min = Math.floor(s / 60);
-  if (min < 60) return `há ${min} min`;
-  const h = Math.floor(min / 60);
-  if (h < 48) return `há ${h} h`;
-  return `há ${Math.floor(h / 24)} d`;
-}
+// formatIdade vive em format.js; reexportada para quem já importa daqui.
+export { formatIdade };
 
 /**
  * Mensagem MQTT recebida nesta sessão, com a hora de chegada em `_recebidoEm`.
@@ -46,15 +38,14 @@ export function ultimaLeituraMs({ sensores, ultimas } = {}) {
 }
 
 /**
- * Bóia sem serial não tem conexão a avaliar. Com o PAINEL desconectado do
- * broker (`brokerConectado === false`), o LWT guardado é velho e a falta de
- * leitura é do painel, não da bóia: 'sem-broker', sem afirmar online/offline.
- * Fora isso, segue estadoConexao. Sem o parâmetro, vale conectado.
+ * Conexão da bóia no painel: adapta o registro (`deviceId` = serial válido ou
+ * vazio) à função única estadoConexao. `modo` 'bancada' vira 'bancada-offline'
+ * em vez de 'offline'. Sem `brokerConectado`, vale conectado.
  */
-export function conexaoDaBoia({ deviceId, lwt, ultimaMs, agoraMs, brokerConectado = true }) {
-  if (!deviceId) return 'sem-hardware';
-  if (brokerConectado === false) return 'sem-broker';
-  return estadoConexao({ lwt, ultimaLeituraMs: ultimaMs ?? undefined, agoraMs });
+export function conexaoDaBoia({ deviceId, modo, lwt, ultimaMs, agoraMs, brokerConectado = true }) {
+  return estadoConexao({
+    modo, lwt, ultimaLeituraMs: ultimaMs ?? undefined, agoraMs, brokerConectado, temHardware: Boolean(deviceId),
+  });
 }
 
 /** Aviso do topo: null (conectado) | 'conectando' (nunca conectou nesta montagem) | 'desconectado' (caiu). */
@@ -63,20 +54,14 @@ export function avisoBroker({ conectado, jaConectou }) {
   return jaConectou ? 'desconectado' : 'conectando';
 }
 
-const CONEXAO = {
-  online: { texto: 'online', tom: 'ok' },
-  offline: { texto: 'offline', tom: 'bad' },
-  'sem-leitura': { texto: 'online, sem leitura', tom: 'warn' },
-  desconhecido: { texto: 'sem sinal', tom: 'neutral' },
-  'sem-hardware': { texto: 'sem hardware', tom: 'neutral' },
-  'sem-broker': { texto: 'painel sem conexão com o broker', tom: 'neutral' },
-};
-
-/** Rótulo e tom (ok | warn | bad | neutral) do estado de conexão. */
+/** Rótulo e tom (ok | warn | bad | neutral) do estado de conexão (textos e tons: buoyConnection). */
 export function rotuloConexao(estado, idade) {
-  const base = CONEXAO[estado] ?? CONEXAO.desconhecido;
-  if (estado === 'sem-leitura' && idade) return { ...base, texto: `${base.texto} ${idade}` };
-  return { ...base };
+  const chave = estado in ROTULO_CONEXAO ? estado : 'desconhecido';
+  const texto = ROTULO_CONEXAO[chave];
+  return {
+    texto: chave === 'sem-leitura' && idade ? `${texto} ${idade}` : texto,
+    tom: TOM_CONEXAO[chave],
+  };
 }
 
 const p2 = (n) => String(n).padStart(2, '0');
@@ -223,7 +208,7 @@ export function resumoBoia({ buoy, mqtt, ultimas, healthRows, agoraMs, brokerCon
   const saude = serial ? piorSaude(healthForDevice(healthRows, serial, modo).sensores) : null;
   return {
     modo,
-    conexao: conexaoDaBoia({ deviceId: serial, lwt: mqtt?.lwt, ultimaMs, agoraMs, brokerConectado }),
+    conexao: conexaoDaBoia({ deviceId: serial, modo, lwt: mqtt?.lwt, ultimaMs, agoraMs, brokerConectado }),
     ultimaMs,
     valores,
     saude,

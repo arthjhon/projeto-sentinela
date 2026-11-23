@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { formatDataHora } from '../utils/format';
 
 // Saúde dos sensores (detector do worker). Somente leitura: as tabelas são
 // escritas pelo worker; a RLS libera SELECT a qualquer usuário autenticado.
@@ -27,13 +28,8 @@ const metaOf = estadoMeta;
 export const eventTone = (estado, modo) =>
   (modo === 'bancada' ? 'neutral' : estadoMeta(estado).tone);
 
-/** Data legível em pt-BR; ausente/inválida vira "—". */
-export function fmtDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-}
+/** Data e hora (Maceió); ausente/inválida vira "—". Formatação em utils/format.js. */
+export const fmtDate = formatDataHora;
 const rank = (estado) => TONE_RANK[metaOf(estado).tone];
 
 /**
