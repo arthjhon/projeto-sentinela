@@ -8,14 +8,14 @@
 --
 -- A data oficial que ancora os marcos automáticos de dias
 -- (app_settings.monitoramento_inicio) NÃO precisa de migração: app_settings
--- já existe e é genérica (ver supabase_backlog_schema.sql).
+-- já existe e é genérica (ver supabase/schema/03_backlog.sql).
 --
 -- Arquivo isolado de propósito: pode rodar em produção sem depender do resto
 -- do backlog já ter sido aplicado — só depende de `public.profiles` existir.
 --
 -- Ressalva: essa independência é só do SQL. A funcionalidade completa (contador
 -- de dias na página pública /evolucao) também depende de `app_settings` existir
--- (ver supabase_backlog_schema.sql) para ler monitoramento_inicio. Sem essa
+-- (ver supabase/schema/03_backlog.sql) para ler monitoramento_inicio. Sem essa
 -- tabela a página funciona em modo degradado (timeline sem o contador de dias
 -- no hero) — ver EvolucaoPage.jsx, que trata a falha de leitura de settings
 -- separadamente da falha de leitura de changelog_entries.

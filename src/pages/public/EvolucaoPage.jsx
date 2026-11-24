@@ -21,7 +21,7 @@ const EvolucaoPage = () => {
     (async () => {
       try {
         // allSettled (não all): uma falha em getSetting (app_settings ausente/
-        // mal configurada — ver nota de dependência em supabase_changelog_schema.sql)
+        // mal configurada — ver nota de dependência em supabase/schema/04_changelog.sql)
         // não pode derrubar a página inteira se listarPublicadas() funcionou.
         // Nesse caso degradamos para "timeline sem contador de dias" em vez de
         // mostrar o estado de erro — só a falha da entradas é fatal.

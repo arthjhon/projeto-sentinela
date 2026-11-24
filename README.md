@@ -192,13 +192,16 @@ vez de trocar de porta se ela estiver ocupada.
    VITE_SUPABASE_ANON_KEY="sua_chave_publica_jwt"
    ```
 4. **Desabilite confirmação por e-mail:** *Authentication → Providers → Email* → desligue `Confirm email` e `Secure email change`.
-5. **Esquema de dados:** No *SQL Editor* do Supabase, execute os arquivos abaixo, na ordem (todos são idempotentes — podem ser re-executados sem erro):
-   1. `supabase_schema.sql` — esquema base (perfis, papéis, RLS inicial).
-   2. `supabase_ota_schema.sql` — histórico de deploys de firmware OTA.
-   3. `supabase_backlog_schema.sql` — manutenção, calibração de sensores, log de auditoria e `app_settings` (configurações genéricas usadas por outras features, incluindo a data oficial do changelog abaixo).
-   4. `supabase_changelog_schema.sql` — tabela e bucket de Storage do changelog público (`/evolucao`). Depende de `app_settings` (arquivo 3) já existir para o contador de dias funcionar — ver nota no cabeçalho do próprio arquivo.
-   5. `supabase_profiles_rls_fix.sql` — trava a auto-escalada de role e habilita edição de operador por um admin. Sem este arquivo, qualquer usuário autenticado pode se promover a admin via API direta.
-   6. `supabase_visualizador_rls_fix.sql` — restringe escrita em `maintenance_logs`, `sensor_calibrations`, `firmware_deploys` e `audit_logs` a `role IN ('admin', 'operador')`. Sem este arquivo, qualquer usuário autenticado (inclusive `visualizador`) pode escrever nessas tabelas.
+5. **Esquema de dados:** No *SQL Editor* do Supabase, execute os arquivos de `supabase/schema/` na ordem do prefixo e depois os de `supabase/migrations/` na ordem do nome. Todos são idempotentes e podem ser re-executados sem erro.
+   1. `01_schema.sql`: esquema base (perfis, papéis, RLS inicial).
+   2. `02_ota.sql`: histórico de deploys de firmware OTA.
+   3. `03_backlog.sql`: manutenção, calibração de sensores, log de auditoria e `app_settings` (configurações genéricas usadas por outras features, incluindo a data oficial do changelog abaixo).
+   4. `04_changelog.sql`: tabela e bucket de Storage do changelog público (`/evolucao`). Depende de `app_settings` (arquivo 3) para o contador de dias funcionar; ver a nota no cabeçalho do próprio arquivo.
+   5. `05_profiles_rls_fix.sql`: trava a auto-escalada de role e habilita edição de operador por um admin. Sem este arquivo, qualquer usuário autenticado pode se promover a admin via API direta.
+   6. `06_visualizador_rls_fix.sql`: restringe escrita em `maintenance_logs`, `sensor_calibrations`, `firmware_deploys` e `audit_logs` a `role IN ('admin', 'operador')`. Sem este arquivo, qualquer usuário autenticado (inclusive `visualizador`) pode escrever nessas tabelas.
+   7. `07_signup_privilege_fix.sql`: todo signup público entra como `visualizador`. Sem este arquivo, o signup aberto cria administradores.
+   8. `08_profile_identity_lock_fix.sql`: impede que um usuário reescreva o próprio `name`/`username`. Redefine a policy do arquivo 5, por isso vem depois dele.
+   9. `supabase/migrations/*.sql`: tabelas e roles a partir de nov/2026 (saúde dos sensores, status do sistema, dispositivos, segurança do admin).
 6. **Primeiro acesso:** Crie seu usuário administrador em *Authentication → Add User*, depois rode no SQL Editor: `UPDATE public.profiles SET role = 'admin' WHERE id = '<uuid-do-usuario-criado>';` (o trigger do schema sempre cria o perfil como `visualizador` por padrão — nunca confia em metadata do cliente para decidir role, por segurança).
 
 <br/>

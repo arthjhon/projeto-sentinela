@@ -4,7 +4,7 @@ import { logAcao, AUDIT } from './auditLog';
 // Manutenção (3.1) e calibração (3.2).
 //
 // boia_id é TEXT ('SM-01') e não FK: a frota mora em config/fleet.js, não no
-// Postgres. Ver supabase_backlog_schema.sql.
+// Postgres. Ver supabase/schema/03_backlog.sql.
 
 /**
  * Nome gravado junto do registro: nome de exibição, nunca username nem e-mail
