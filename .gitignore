@@ -32,3 +32,34 @@ infra/stack/.env*
 
 # Python bytecode (infra/bin, worker, tests)
 __pycache__/
+
+# Segredos em qualquer nivel: .env, .env.production etc. (o Vite le todos); so o exemplo sobe
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Backups e dumps (podem conter dados de producao)
+*.bak
+*.dump
+*.sql.gz
+
+# Artefatos locais de teste e ferramentas
+coverage/
+.eslintcache
+test-results/
+playwright-report/
+.playwright-mcp/
+.venv/
+venv/
+.pytest_cache/
+supabase/.temp/
+supabase/.branches/
+
+# Locais por decisao (antes so em .git/info/exclude, que nao vale em outro clone)
+docs/
+.claude/
+.superpowers/
