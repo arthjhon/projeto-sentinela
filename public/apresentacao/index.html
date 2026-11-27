@@ -236,6 +236,8 @@ body.person #person { display: block; }
 #person .p-fala { font-size: 16.5px; line-height: 1.7; color: var(--text-muted); white-space: pre-wrap; }
 #person .p-tempo { display: inline-block; margin-top: 10px; font-size: 13px; color: var(--success); background: rgba(16,185,129,.1); border: 1px solid rgba(16,185,129,.3); padding: 3px 12px; border-radius: 99px; }
 #person .p-perg { white-space: pre-wrap; font-size: 15px; line-height: 1.65; color: var(--text-muted); }
+#person .p-q { font-size: 16px; font-weight: 600; color: #fff; margin-top: 16px; line-height: 1.45; }
+#person .p-a { font-size: 15.5px; color: var(--text-muted); line-height: 1.65; margin-top: 4px; }
 #person .p-nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
 #person .p-nav a { color: var(--primary); border: 1px solid rgba(0,240,255,.3); background: rgba(0,240,255,.06); padding: 8px 14px; border-radius: 10px; font-size: 15px; text-decoration: none; }
 #person .p-nav a.me { background: var(--primary); color: #020815; font-weight: 600; }
@@ -387,7 +389,21 @@ NÃO ESQUECER: quatro partes independentes; depois do broker os dados seguem doi
 
 SUGESTÃO DE FALA (adapte do seu jeito):
 Esse é o mapa geral. São quatro partes que conversam, mas não dependem umas das outras. A boia lê os sensores e manda os dados por MQTT, que é o protocolo mais usado em IoT, com conexão criptografada. Dali os dados seguem por dois caminhos: um vai direto para o site, em tempo real, e o outro grava tudo num banco de histórico. Por último, o site, com uma parte pública e um painel de administração. Cada um vai detalhar a parte em que trabalhou. Começando pelo hardware: Luiz.
-(cerca de 40 s)</div>
+(cerca de 40 s)
+
+PERGUNTAS PARA VOCÊ (Marcos)
+P: Por que pH, turbidez e temperatura, e não oxigênio dissolvido?
+R: Por custo e simplicidade: existe sensor barato e fácil de ligar para esses três. Oxigênio é o próximo, porque é ele que explica mortandade, mas um sensor confiável custa bem mais (os ópticos começam na casa de R$ 1.300).
+P: Isso substitui o monitoramento oficial?
+R: Não. O oficial é coleta e laboratório, e é ele que vale legalmente. A boia mede o tempo todo e serve de alarme: mostra onde e quando vale coletar uma amostra.
+P: Por que vocês dizem que é só triagem?
+R: Porque sensor barato desvia com o tempo, pega limo e ainda está sem calibração. Serve para perceber mudança e evento, não para laudo.
+P: Que método de desenvolvimento é esse?
+R: Ciclo iterativo e incremental: passos pequenos, e cada um só fechava com uma evidência, seja teste, medição na bancada ou funcionando no navegador.
+P: Por que MQTT e não HTTP?
+R: É leve, feito para IoT, trabalha com publicação e assinatura e tem o testamento, que avisa quando a boia cai. Com HTTP a gente teria que montar isso na mão.
+P: O que é o broker?
+R: É o intermediário: a boia publica nele e quem precisa dos dados (site, banco de histórico) assina ali. Assim ninguém fala direto com a boia.</div>
 </section>
 
 <!-- ═════════════════════ LUIZ ═════════════════════ -->
@@ -473,7 +489,21 @@ NÃO ESQUECER: modelo paramétrico, feito por script; v1 impressa; a caixa é o 
 
 SUGESTÃO DE FALA (adapte do seu jeito):
 A eletrônica vai dentro dessa caixa, que a gente modelou por script: muda uma medida e ela se refaz sozinha. Tem o-ring na tampa, prensa-cabos para os fios e um respiro. A própria caixa é a boia. Sozinha ela até flutua, mas fica instável, então projetamos um colar de espuma em volta e uma ancoragem com corda que afunda, corrente e uma âncora de concreto de uns 25 kg. A primeira versão já foi impressa, mas ainda falta o teste de vedação: deixar 30 minutos a 30 cm de profundidade e ver se entra água. Agora o Maycon fala do firmware.
-(cerca de 50 s)</div>
+(cerca de 50 s)
+
+PERGUNTAS PARA VOCÊ (Luiz)
+P: Por que trocaram o ESP32 pela Heltec?
+R: Ela já vem com Wi-Fi, rádio LoRa e display, tudo integrado, o que ajuda no diagnóstico em campo e abre a opção de transmitir por LoRa.
+P: Por que não usar um conversor analógico externo, tipo um ADS1115?
+R: Seria uma melhoria válida, porque o ADC do ESP32 não é linear nas pontas. Nesta etapa ficamos com o interno, usando a calibração de fábrica, sobreamostragem e média.
+P: Esse erro de 6% não invalida a medida?
+R: Não, porque é um erro sistemático: se a calibração for feita com o mesmo circuito que vai para a água, ele entra na curva e some.
+P: Como vocês garantem que a caixa não vaza?
+R: Ainda não garantimos, e isso está nas limitações. Tem o-ring com 25% de compressão e prensa-cabos, mas falta o teste de imersão (30 min a 30 cm), e peça impressa em 3D pode ter porosidade entre camadas.
+P: A boia não vira?
+R: Sozinha ela fica instável. Com o colar de espuma, a altura metacêntrica calculada sobe para uns 13 cm, o que dá estabilidade; isso ainda precisa ser testado na água.
+P: Quanto tempo dura a bateria?
+R: A gente ainda não mediu o consumo. O teste longo está nos próximos passos, e em campo a autonomia vai depender da placa solar.</div>
 </section>
 
 <!-- ═════════════════════ MAYCON ═════════════════════ -->
@@ -554,7 +584,21 @@ NÃO ESQUECER: cinco checagens antes de trocar a versão; se algo falha, fica a 
 
 SUGESTÃO DE FALA (adapte do seu jeito):
 Buscar a boia de barco só para trocar o código não dá, então ela se atualiza pela internet. Com cuidado: ela só aceita arquivo de um endereço autorizado, baixa por HTTPS, confere o hash e o modelo do chip, e só aí troca de versão. Se qualquer coisa der errado no caminho, continua com a versão que estava rodando. Quando entregamos o artigo, isso ainda não tinha sido testado de ponta a ponta; depois foi, e o Arthur conta daqui a pouco. Arthur, contigo.
-(cerca de 40 s)</div>
+(cerca de 40 s)
+
+PERGUNTAS PARA VOCÊ (Maycon)
+P: Por que FreeRTOS?
+R: Ele já roda dentro do ESP32 e deixa cada sensor numa tarefa separada, então o sensor lento não trava os outros.
+P: Por que ler a cada 5 segundos?
+R: É o valor definido no código para esta etapa. Mudar exige uma nova versão do firmware, que pode ir pela atualização remota. Em campo, faz sentido ler com menos frequência para poupar bateria.
+P: Se a internet cair, os dados se perdem?
+R: Hoje, sim: a placa não guarda as leituras enquanto está desconectada. Ela tenta reconectar e, depois de 10 minutos sem conexão, reinicia sozinha. Guardar e reenviar depois é uma melhoria que faz sentido.
+P: E se a atualização travar no meio?
+R: A nova versão vai para outra partição da memória. Se algo falha, a placa continua com a versão que estava rodando, e a partir da 5.1 ela volta sozinha se a nova não subir direito.
+P: O MQTT é seguro?
+R: A conexão é criptografada, com verificação de certificado. Depois do artigo, cada placa passou a ter usuário e senha próprios.
+P: Por que Wi-Fi e não LoRa?
+R: Wi-Fi foi o mais simples para a bancada. A placa já tem LoRa, e o Kodelab tem um gateway LoRaWAN liberado para testes.</div>
 </section>
 
 <!-- ═════════════════════ ARTHUR ═════════════════════ -->
@@ -656,7 +700,21 @@ NÃO ESQUECER: broker próprio (o HiveMQ encerra o plano gratuito em 31/12); tr�
 
 SUGESTÃO DE FALA (adapte do seu jeito):
 O artigo é uma foto de 13 de novembro, mas a gente continuou mexendo. O HiveMQ, que era o nosso broker, vai encerrar o plano gratuito no fim do ano, então montamos um próprio na VM da UMJ. A atualização remota, que estava pendente no artigo, foi testada: três atualizações de ponta a ponta em 23 e 24 de novembro, todas funcionando. O comando de atualização saiu do navegador e foi para o servidor, só para administrador, e cada placa ganhou a própria senha. E a caixa está sendo redesenhada num tubo de PVC de 150 mm, com um flutuador pensado para cada ambiente. O que continua pendente, o Anwar mostra agora.
-(cerca de 50 s)</div>
+(cerca de 50 s)
+
+PERGUNTAS PARA VOCÊ (Arthur)
+P: Por que dois bancos, Supabase e InfluxDB?
+R: Cada um faz uma coisa: o Supabase (PostgreSQL) guarda usuários, cadastro e auditoria; o InfluxDB é feito para série temporal, que é o que as leituras são.
+P: Quanto custa manter isso no ar?
+R: Hoje, praticamente nada: a VM é cedida pela UMJ, o túnel da Cloudflare é gratuito e o broker agora é nosso, na própria VM.
+P: E se o servidor da UMJ cair?
+R: O portal continua no ar por uma cópia estática, mas as leituras desse período se perdem, porque o broker também está na VM e a placa não guarda dados offline.
+P: Como vocês acharam aquela falha do cadastro?
+R: Numa revisão de segurança em agosto: o cadastro público criava conta com papel de administrador. Corrigimos e revisamos as permissões de escrita no banco.
+P: O índice de qualidade segue alguma norma?
+R: Não, ele é nosso. Só a faixa do pH vem da CONAMA para água salobra; o índice serve para visualização, não para avaliar a laguna.
+P: O código e os dados são abertos?
+R: O portal é público e qualquer pessoa vê os dados em tempo real. A exportação em CSV fica no painel administrativo.</div>
 </section>
 
 <!-- ═════════════════════ ANWAR ═════════════════════ -->
@@ -745,6 +803,20 @@ NÃO ESQUECER: a parte de engenharia está implementada e integrada; falta prova
 SUGESTÃO DE FALA (adapte do seu jeito):
 Para fechar: a parte de engenharia está de pé. Placa, comunicação segura, atualização remota, banco de dados e site com controle de acesso estão prontos e conversando entre si. O que falta é provar que os números medem a água de verdade, e esse é o próximo passo. E uma notícia boa: fora da disciplina, o projeto ficou em sétimo lugar entre 200 propostas na primeira fase do Centelha Alagoas. Obrigado! Estamos abertos a perguntas.
 (cerca de 30 s)
+
+PERGUNTAS PARA VOCÊ (Anwar)
+P: Qual foi a taxa de perda nesses 54 mil pontos?
+R: Não medimos, porque não era um ensaio planejado com duração definida. Esse número mostra que a cadeia funciona; disponibilidade e taxa de entrega ficam para o teste longo.
+P: Por que ainda não calibraram?
+R: A troca de placa em setembro invalidou as constantes antigas, e a calibração precisa ser feita com o circuito final, com as soluções-padrão de pH e de turbidez.
+P: Como vocês vão saber se o dado está certo em campo?
+R: Comparando com uma referência: soluções-padrão na bancada e, em campo, amostras analisadas em laboratório ou uma sonda de referência no mesmo ponto.
+P: Qual é o próximo passo concreto?
+R: Deixar a placa nova transmitindo sem parar. Sem isso não dá para calibrar nem fazer o teste longo.
+P: O que é o Centelha?
+R: É um programa de apoio a projetos inovadores, aqui pela FAPEAL. Ficamos em 7º de 200 na primeira fase, e a segunda fase está em andamento.
+P: Funciona em outros lugares, como praia ou outras lagoas?
+R: A eletrônica e a plataforma não dependem do lugar. A caixa nova está sendo desenhada com um flutuador para cada ambiente, começando pela laguna.
 
 PERGUNTAS PROVÁVEIS (respondam do jeito de vocês)
 • Por que a placa parou em 8/07? Anwar ou Luiz: não descobrimos; a aposta é falha de energia, pela leitura de 85 °C do sensor de temperatura.
@@ -852,11 +924,29 @@ PERGUNTAS PROVÁVEIS (respondam do jeito de vocês)
       root.appendChild(card);
     });
 
+    const minhas = [];
+    meus.forEach((k) => {
+      const t = slides[k].querySelector('.notes').textContent;
+      const a = t.indexOf('PERGUNTAS PARA VOCÊ');
+      if (a < 0) return;
+      let b = t.indexOf('\n\nPERGUNTAS PROVÁVEIS', a); if (b < 0) b = t.length;
+      t.slice(a, b).split('\n').forEach((ln) => {
+        if (ln.startsWith('P: ')) minhas.push([ln.slice(3), '']);
+        else if (ln.startsWith('R: ') && minhas.length) minhas[minhas.length - 1][1] = ln.slice(3);
+      });
+    });
+    if (minhas.length) {
+      const card = el('div', 'p-card');
+      card.appendChild(el('div', 'p-num', 'Perguntas que podem vir para você'));
+      minhas.forEach(([q, r]) => { card.appendChild(el('div', 'p-q', q)); card.appendChild(el('div', 'p-a', r)); });
+      root.appendChild(card);
+    }
+
     const ultimo = slides[total - 1].querySelector('.notes').textContent;
     const pi = ultimo.indexOf('PERGUNTAS PROVÁVEIS');
     if (pi >= 0) {
       const card = el('div', 'p-card');
-      card.appendChild(el('div', 'p-num', 'Para todos'));
+      card.appendChild(el('div', 'p-num', 'Perguntas para a equipe toda'));
       card.appendChild(el('div', 'p-perg', ultimo.slice(pi).trim()));
       root.appendChild(card);
     }
